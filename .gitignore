@@ -164,3 +164,14 @@ cython_debug/
 #.idea/
 
 # End of https://www.toptal.com/developers/gitignore/api/python
+
+
+# nextflow
+
+work/
+.nextflow.log
+.nextflow.log*
+.nextflow
+report.html*
+timeline.html*
+trace.txt*
