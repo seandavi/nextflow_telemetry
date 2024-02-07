@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .log import logger
 from . import models
+from .config import settings
 
 app = FastAPI()
 
@@ -10,7 +11,7 @@ from sqlalchemy import DateTime, create_engine
 from sqlalchemy import Table, Column, Integer, String, MetaData, insert, select
 from sqlalchemy.dialects.postgresql import JSONB
 
-engine = create_engine('postgresql://seandavis@localhost/cmgd_dev', echo=True)
+engine = create_engine(settings.SQLALCHEMY_URI)
 
 metadata = MetaData()
 
