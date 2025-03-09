@@ -35,6 +35,16 @@ app.add_middleware(
     allow_origins=["*"],
 )
 
+# health check
+@app.get("/health")
+async def healthcheck():
+    try:
+        with engine.connect() as conn:
+            conn.execute(select(1))  # Simple DB check
+        return {"message": "App Started", "status": "Healthy", "database": "Connected"}
+    except Exception as e:
+        return {"message": "App Started", "status": "Unhealthy", "database": f"Error: {str(e)}"}
+
 
 @app.post("/telemetry")
 async def telemetry(body: dict):

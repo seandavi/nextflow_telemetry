@@ -1,0 +1,6 @@
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=cmdg_dev
+POSTGRES_HOST=nextflow_database
+PGADMIN_DEFAULT_EMAIL=admin@email.com
+PGADMIN_DEFAULT_PASSWORD=admin
