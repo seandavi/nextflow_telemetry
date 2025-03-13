@@ -24,20 +24,37 @@ the following columns:
 
 Either metadata OR trace are present, never both.
 
-## Building
+## Building and Running
+
+Setting up the project has been simplified using the docker compose technology which sets up the Nextflow_Teletry_Api, a Postgres DB and PGadmin to monitor said database.
+
+*You'll need to supply the following environment variables to the setup:*
+
+* POSTGRES_DB=''
+* POSTGRES_HOST=''
+* POSTGRES_USER=''
+* POSTGRES_PASSWORD=''
+
+You can reference the env_template file here; [env_template](env)
+
+- To set up all three;
 
 ```
-docker build --platform=linux/amd64 --tag gcr.io/$PROJECT/$IMAGE --push
+docker compose --profile all up -d 
 ```
-
-## Running
-
-You'll need to supply the following environment variables to the setup:
-
-* SQLALCHEMY_URI='postgresql://user:pass@host/dbname'
-
-Then:
+- To set up just the Nextflow_Telemetry_Api assuming one has their own custom database and doesn't need to monitor the DB;
 
 ```
-docker run -p 8000:8000 -e SQLALCHEMY_URI=.... gcr.io/$PROJECT/$IMAGE
+docker compose --profile api up -d
 ```
+
+## Testing the API
+
+After the Nextflow_Telemetry_Api container is in health state, to test that it works, run the command;
+
+```
+curl -X POST -H "Content-Type: application/json" -d '{"runId": "test123", "runName": "test_run", "event": "test_event", "utcTime": "2024-01-01T00:00:00", "metadata": {"workflow": {}}, "trace": {}}' http://localhost:8000/telemetry
+```
+With the DB monitor (PGadmin), in the Tables section, the metadata would have been created and success response would be seen in the container logs.
+
+
