@@ -27,7 +27,8 @@ telemetry_tbl = Table(
     Column('trace', JSONB),
 )
 
-metadata.create_all(engine)
+if not settings.SKIP_DB_INIT:
+    metadata.create_all(engine)
 
 
 app.add_middleware(

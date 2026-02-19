@@ -1,25 +1,32 @@
-[tool.poetry]
-name = "nextflow_telemetry"
+[project]
+name = "nextflow-telemetry"
 version = "0.1.0"
 description = "Web api for accepting nextflow callbacks"
-authors = ["Sean Davis <seandavi@gmail.com>"]
-license = "MIT"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Sean Davis", email = "seandavi@gmail.com" }]
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.86.0,<0.87.0",
+    "sqlalchemy>=2.0.0,<3.0.0",
+    "alembic>=1.8.1,<2.0.0",
+    "orjson>=3.8.1,<4.0.0",
+    "anyio>=3.6.2,<4.0.0",
+    "uvicorn>=0.27.0.post1,<0.28.0",
+    "psycopg2-binary>=2.9.9,<3.0.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.9"
-fastapi = "^0.86.0"
-SQLAlchemy = {extras = ["asyncpg"], version = "^1.4.43"}
-alembic = "^1.8.1"
-databases = {extras = ["asyncpg"], version = "^0.6.1"}
-orjson = "^3.8.1"
-anyio = "^3.6.2"
-uvicorn = "^0.27.0.post1"
-psycopg2-binary = "^2.9.9"
-
-[tool.poetry.dev-dependencies]
-mypy = "^0.982"
-nf-core = "^2.6"
+[dependency-groups]
+dev = [
+    "mypy>=0.982,<1.0.0",
+    "nf-core>=2.6,<3.0.0",
+    "pytest>=8.3.4,<9.0.0",
+    "httpx>=0.27.2,<0.28.0",
+]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["nextflow_telemetry*"]

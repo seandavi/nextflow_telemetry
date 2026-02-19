@@ -57,4 +57,13 @@ curl -X POST -H "Content-Type: application/json" -d '{"runId": "test123", "runNa
 ```
 With the DB monitor (PGadmin), in the Tables section, the metadata would have been created and success response would be seen in the container logs.
 
+## Automated Tests
 
+Run the API test suite locally with:
+
+``` 
+uv sync --group dev
+uv run pytest
+```
+
+The tests are in `tests/test_api.py` and cover health-check behavior and telemetry ingest path execution.

@@ -1,44 +1,18 @@
-# https://www.mktr.ai/the-data-scientists-quick-guide-to-dockerfiles-with-examples/
+FROM python:3.11-slim
 
-###############################################
-# Base Image
-###############################################
-FROM python:3.9-slim
-
-# Combine all ENV variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=off \
-    PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_DEFAULT_TIMEOUT=100 \
-    POETRY_VERSION=1.4.1 \
-    POETRY_HOME="/opt/poetry" \
-    POETRY_VIRTUALENVS_IN_PROJECT=true \
-    POETRY_NO_INTERACTION=1 \
-    PYSETUP_PATH="/opt/pysetup" \
-    VENV_PATH="/opt/pysetup/.venv" \
-    PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
+    UV_LINK_MODE=copy
 
-# Install system dependencies and poetry in one layer
-RUN apt-get update && \
-    apt-get install --no-install-recommends -y \
-    build-essential \
-    curl && \
-    rm -rf /var/lib/apt/lists/* && \
-    pip install "poetry==$POETRY_VERSION" uvicorn
+COPY --from=ghcr.io/astral-sh/uv:0.8.11 /uv /uvx /bin/
 
-WORKDIR $PYSETUP_PATH
+WORKDIR /app
 
-# Copy only what's needed for dependency installation
-COPY pyproject.toml poetry.lock ./
-
-# Install dependencies including FastAPI and uvicorn
-RUN poetry config virtualenvs.create false \
-    && poetry install --no-dev \
-    && poetry add fastapi uvicorn
-
-# Copy application code
 COPY . .
+
+RUN uv sync --frozen --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 

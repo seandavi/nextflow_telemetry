@@ -13,10 +13,11 @@
 ## Build, Test, and Development Commands
 - `docker compose --profile all up -d`: Start API + Postgres + pgAdmin.
 - `docker compose --profile api up -d`: Start API service only (external DB expected).
-- `poetry install`: Install Python dependencies for local development.
-- `poetry run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000`: Run API locally.
+- `uv sync --group dev`: Install Python dependencies for local development.
+- `uv run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000`: Run API locally.
 - `curl -X POST ... http://localhost:8000/telemetry`: Send a sample telemetry event (see `README.md` for full payload).
-- `poetry run mypy nextflow_telemetry`: Type-check core package.
+- `uv run mypy nextflow_telemetry`: Type-check core package.
+- `uv run pytest`: Run API tests in `tests/test_api.py`.
 
 ## Coding Style & Naming Conventions
 - Follow PEP 8 with 4-space indentation.
@@ -32,7 +33,7 @@
 - Minimum checks before a PR:
   - API health endpoint responds: `GET /health`.
   - Telemetry ingest writes to Postgres via `POST /telemetry`.
-  - `poetry run mypy nextflow_telemetry` passes.
+  - `uv run mypy nextflow_telemetry` passes.
 - Add new tests under a `tests/` directory using `test_*.py` naming when introducing non-trivial logic.
 
 ## Commit & Pull Request Guidelines
