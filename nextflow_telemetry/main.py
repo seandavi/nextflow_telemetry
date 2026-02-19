@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .log import logger
@@ -32,6 +32,8 @@ metadata.create_all(engine)
 
 app.add_middleware(
     CORSMiddleware,
+    # Security exception: wildcard CORS is currently required by deployment constraints.
+    # Treat this as an accepted risk and tighten origins when feasible.
     allow_origins=["*"],
 )
 
@@ -43,7 +45,10 @@ async def healthcheck():
             conn.execute(select(1))  # Simple DB check
         return {"message": "App Started", "status": "Healthy", "database": "Connected"}
     except Exception as e:
-        return {"message": "App Started", "status": "Unhealthy", "database": f"Error: {str(e)}"}
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "App Started", "status": "Unhealthy", "database": f"Error: {str(e)}"},
+        )
 
 
 @app.post("/telemetry")
@@ -51,15 +56,15 @@ async def telemetry(body: dict):
     #logger.debug(body)
     try:
         del(body['metadata']['workflow']['start']['offset']['availableZoneIds'])
-    except:
+    except (KeyError, TypeError):
         pass
     try:
         del(body['metadata']['workflow']['complete']['offset']['availableZoneIds'])
-    except:
+    except (KeyError, TypeError):
         pass
     tel = models.Telemetry(**body)
     logger.debug(tel)
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         conn.execute(insert(telemetry_tbl).values(
             run_id=tel.run_id,
             run_name=tel.run_name,
