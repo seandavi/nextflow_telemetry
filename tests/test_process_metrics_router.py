@@ -5,6 +5,16 @@ from nextflow_telemetry.routers.process_metrics import create_process_metrics_ro
 
 
 class FakeProcessMetricsService:
+    def summary(self, *, window_days=None, min_samples=50, limit=10):
+        return {
+            "window_days": window_days,
+            "cards": {"process_completed_rows": 123, "failure_pct": 4.2},
+            "event_mix": [{"event": "process_completed", "rows": 123}],
+            "top_failures": [{"process": "kneaddata", "failed": 3}],
+            "top_retries": [{"process": "kneaddata", "retried": 8}],
+            "top_failure_exit_codes": [{"exit_code": "1", "failures": 10}],
+        }
+
     def retries(self, *, window_days=None, min_samples=50, limit=50):
         return {
             "window_days": window_days,
@@ -37,6 +47,17 @@ def test_retries_endpoint_returns_summary_shape():
     body = response.json()
     assert body["window_days"] == 7
     assert body["summary"]["process_completed_rows"] == 10
+
+
+def test_summary_endpoint_returns_dashboard_cards():
+    with _client() as client:
+        response = client.get("/metrics/processes/summary", params={"window_days": 14, "limit": 5})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["window_days"] == 14
+    assert body["cards"]["process_completed_rows"] == 123
+    assert body["top_failure_exit_codes"][0]["exit_code"] == "1"
 
 
 def test_resources_by_attempt_endpoint_returns_rows():

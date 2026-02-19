@@ -26,6 +26,140 @@ class ProcessMetricsService:
             return "", {}
         return " and t.utc_time >= now() - make_interval(days => :window_days)", {"window_days": normalized}
 
+    def summary(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 10) -> dict[str, Any]:
+        if min_samples < 1:
+            raise ValueError("min_samples must be >= 1")
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+
+        window_clause, params = self._window_clause(window_days)
+        params = {**params, "min_samples": min_samples, "limit": limit}
+
+        cards_sql = text(
+            f"""
+            with x as (
+              select
+                t.run_id,
+                t.utc_time,
+                coalesce(t.trace->>'process','<null>') as process,
+                coalesce(t.trace->>'status','') as status,
+                coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt
+              from telemetry t
+              where t.event = 'process_completed'
+                and t.trace is not null
+                {window_clause}
+            )
+            select
+              count(*) as process_completed_rows,
+              count(distinct run_id) as distinct_runs,
+              count(distinct process) as distinct_processes,
+              count(*) filter (where status = 'COMPLETED') as success_rows,
+              count(*) filter (where status in ('FAILED', 'ABORTED')) as failure_rows,
+              round(100.0 * count(*) filter (where status in ('FAILED', 'ABORTED'))::numeric / nullif(count(*), 0), 2) as failure_pct,
+              count(*) filter (where attempt > 1) as retried_rows,
+              round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2) as retry_pct,
+              round(100.0 * count(*) filter (where attempt > 1 and status = 'COMPLETED')::numeric /
+                    nullif(count(*) filter (where attempt > 1), 0), 2) as retry_success_pct,
+              max(utc_time) as latest_process_completed_utc
+            from x
+            """
+        )
+
+        top_failures_sql = text(
+            f"""
+            with x as (
+              select
+                coalesce(t.trace->>'process','<null>') as process,
+                coalesce(t.trace->>'status','') as status
+              from telemetry t
+              where t.event = 'process_completed'
+                and t.trace is not null
+                {window_clause}
+            )
+            select
+              process,
+              count(*) as total_completed,
+              count(*) filter (where status in ('FAILED', 'ABORTED')) as failed,
+              round(100.0 * count(*) filter (where status in ('FAILED', 'ABORTED'))::numeric / nullif(count(*), 0), 2) as failure_pct
+            from x
+            group by process
+            having count(*) >= :min_samples
+            order by failed desc, failure_pct desc, total_completed desc
+            limit :limit
+            """
+        )
+
+        top_retries_sql = text(
+            f"""
+            with x as (
+              select
+                coalesce(t.trace->>'process','<null>') as process,
+                coalesce(t.trace->>'status','') as status,
+                coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt
+              from telemetry t
+              where t.event = 'process_completed'
+                and t.trace is not null
+                {window_clause}
+            )
+            select
+              process,
+              count(*) as total_completed,
+              count(*) filter (where attempt > 1) as retried,
+              round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2) as retried_pct,
+              count(*) filter (where attempt > 1 and status = 'COMPLETED') as retried_success,
+              count(*) filter (where attempt > 1 and status in ('FAILED', 'ABORTED')) as retried_failed
+            from x
+            group by process
+            having count(*) >= :min_samples
+            order by retried desc, retried_pct desc, total_completed desc
+            limit :limit
+            """
+        )
+
+        top_exit_codes_sql = text(
+            f"""
+            select
+              coalesce(t.trace->>'exit','<null>') as exit_code,
+              count(*) as failures
+            from telemetry t
+            where t.event = 'process_completed'
+              and t.trace is not null
+              and coalesce(t.trace->>'status','') in ('FAILED', 'ABORTED')
+              {window_clause}
+            group by exit_code
+            order by failures desc, exit_code
+            limit :limit
+            """
+        )
+
+        event_mix_sql = text(
+            f"""
+            select t.event, count(*) as rows
+            from telemetry t
+            where true
+              {window_clause}
+            group by t.event
+            order by rows desc, t.event
+            """
+        )
+
+        with self.engine.connect() as conn:
+            cards = dict(conn.execute(cards_sql, params).mappings().one())
+            top_failures = [dict(row) for row in conn.execute(top_failures_sql, params).mappings().all()]
+            top_retries = [dict(row) for row in conn.execute(top_retries_sql, params).mappings().all()]
+            top_exit_codes = [dict(row) for row in conn.execute(top_exit_codes_sql, params).mappings().all()]
+            event_mix = [dict(row) for row in conn.execute(event_mix_sql, params).mappings().all()]
+
+        return {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "window_days": window_days,
+            "cards": cards,
+            "event_mix": event_mix,
+            "top_failures": top_failures,
+            "top_retries": top_retries,
+            "top_failure_exit_codes": top_exit_codes,
+        }
+
     def retries(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 50) -> dict[str, Any]:
         if min_samples < 1:
             raise ValueError("min_samples must be >= 1")

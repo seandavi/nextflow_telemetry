@@ -8,6 +8,17 @@ from ..services.process_metrics import ProcessMetricsService
 def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
     router = APIRouter(prefix="/metrics/processes", tags=["process-metrics"])
 
+    @router.get("/summary")
+    async def process_summary(
+        window_days: int | None = Query(default=None, ge=1),
+        min_samples: int = Query(default=50, ge=1),
+        limit: int = Query(default=10, ge=1, le=200),
+    ):
+        try:
+            return service.summary(window_days=window_days, min_samples=min_samples, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @router.get("/retries")
     async def process_retries(
         window_days: int | None = Query(default=None, ge=1),
