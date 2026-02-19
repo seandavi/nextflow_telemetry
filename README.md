@@ -14,12 +14,12 @@ types of events are produced:
 The events are stored in a single postgresql table with 
 the following columns:
 
-* id integer
-* run_id 
+* id uuid
+* run_id uuid
 * run_name
-* timestamp (datetime)
+* utc_time (timestamp with time zone)
 * event (string)
-* metadata (a dict or NULL)
+* metadata_ (jsonb, nullable)
 * trace (a dict or NULL)
 
 Either metadata OR trace are present, never both.
@@ -74,6 +74,22 @@ curl -X POST -H "Content-Type: application/json" -d '{"runId": "test123", "runNa
 ```
 With the DB monitor (PGadmin), in the Tables section, the metadata would have been created and success response would be seen in the container logs.
 
+## Metrics Endpoints
+
+Process-level metrics endpoints are available under `/metrics/processes`:
+
+- `/metrics/processes/summary`
+- `/metrics/processes/retries`
+- `/metrics/processes/resources-by-attempt`
+- `/metrics/processes/failures`
+- `/metrics/processes/failure-signatures`
+
+Example:
+
+```
+curl "http://localhost:8000/metrics/processes/summary?window_days=180&limit=5"
+```
+
 ## Automated Tests
 
 Run the API test suite locally with:
@@ -83,4 +99,4 @@ uv sync --group dev
 uv run pytest
 ```
 
-The tests are in `tests/test_api.py` and cover health-check behavior and telemetry ingest path execution.
+Tests are in `tests/` and cover health-check behavior, telemetry ingest path execution, and process-metrics router behavior.
