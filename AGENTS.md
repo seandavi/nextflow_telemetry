@@ -5,6 +5,8 @@
   - `main.py` defines routes (`/health`, `/telemetry`) and database table setup.
   - `models.py` contains request/telemetry models.
   - `config.py` reads runtime settings (for example `SQLALCHEMY_URI`).
+  - `routers/` defines API surface area and request/query parameter handling.
+  - `services/` contains SQL and aggregation logic used by routers.
 - `nf_testing/`: Nextflow test workflow (`main.nf`) for event publishing checks.
 - Root infra files: `docker-compose.yml`, `Dockerfile`, `init.sql`, `env` (template), `pyproject.toml`.
 - Example payloads and sample data: `telemetry.json`.
@@ -48,3 +50,9 @@
 ## Security & Configuration Tips
 - Do not commit secrets; use `.env` locally.
 - Validate required DB variables (`POSTGRES_*`, `SQLALCHEMY_URI`) before starting services.
+
+## Architecture Decisions
+- Keep API handlers in routers thin: parsing/validation only, no embedded SQL.
+- Put telemetry metric queries in `services/` to keep logic testable and reusable.
+- Align queries to production telemetry schema (`utc_time`, `metadata_`, `trace`).
+- Start with Python-managed SQL; add database views/materialized views only if query latency requires it.

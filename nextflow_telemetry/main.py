@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .log import logger
 from . import models
 from .config import settings
+from .routers.process_metrics import create_process_metrics_router
+from .services.process_metrics import ProcessMetricsService
 
 app = FastAPI()
 
@@ -16,15 +18,15 @@ engine = create_engine(settings.SQLALCHEMY_URI)
 metadata = MetaData()
 
 telemetry_tbl = Table(
-    'telemetry', 
+    "telemetry",
     metadata,
-    Column('id', Integer, primary_key=True),
-    Column('run_id', String),
-    Column('run_name', String),
-    Column('event', String),
-    Column('timestamp', DateTime),
-    Column('metadata', JSONB),
-    Column('trace', JSONB),
+    Column("id", Integer, primary_key=True),
+    Column("run_id", String),
+    Column("run_name", String),
+    Column("event", String),
+    Column("utc_time", DateTime(timezone=True)),
+    Column("metadata_", JSONB),
+    Column("trace", JSONB),
 )
 
 if not settings.SKIP_DB_INIT:
@@ -37,6 +39,9 @@ app.add_middleware(
     # Treat this as an accepted risk and tighten origins when feasible.
     allow_origins=["*"],
 )
+
+process_metrics_service = ProcessMetricsService(engine=engine)
+app.include_router(create_process_metrics_router(process_metrics_service))
 
 # health check
 @app.get("/health")
@@ -70,8 +75,8 @@ async def telemetry(body: dict):
             run_id=tel.run_id,
             run_name=tel.run_name,
             event=tel.event,
-            timestamp=tel.timestamp,
-            metadata=tel.metadata,
+            utc_time=tel.timestamp,
+            metadata_=tel.metadata,
             trace=tel.trace
         ))
     return body
