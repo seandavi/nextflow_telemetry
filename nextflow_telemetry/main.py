@@ -1,5 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import DateTime, Column, Integer, MetaData, String, Table, insert, text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from .log import logger
 from . import models
@@ -9,11 +12,7 @@ from .services.process_metrics import ProcessMetricsService
 
 app = FastAPI()
 
-from sqlalchemy import DateTime, create_engine
-from sqlalchemy import Table, Column, Integer, String, MetaData, insert, select
-from sqlalchemy.dialects.postgresql import JSONB
-
-engine = create_engine(settings.SQLALCHEMY_URI)
+engine = create_async_engine(settings.SQLALCHEMY_URI)
 
 metadata = MetaData()
 
@@ -29,8 +28,12 @@ telemetry_tbl = Table(
     Column("trace", JSONB),
 )
 
-if not settings.SKIP_DB_INIT:
-    metadata.create_all(engine)
+@app.on_event("startup")
+async def maybe_init_db() -> None:
+    if settings.SKIP_DB_INIT:
+        return
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
 
 
 app.add_middleware(
@@ -47,8 +50,8 @@ app.include_router(create_process_metrics_router(process_metrics_service))
 @app.get("/health")
 async def healthcheck():
     try:
-        with engine.connect() as conn:
-            conn.execute(select(1))  # Simple DB check
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
         return {"message": "App Started", "status": "Healthy", "database": "Connected"}
     except Exception as e:
         raise HTTPException(
@@ -59,26 +62,28 @@ async def healthcheck():
 
 @app.post("/telemetry")
 async def telemetry(body: dict):
-    #logger.debug(body)
+    # logger.debug(body)
     try:
-        del(body['metadata']['workflow']['start']['offset']['availableZoneIds'])
+        del (body["metadata"]["workflow"]["start"]["offset"]["availableZoneIds"])
     except (KeyError, TypeError):
         pass
     try:
-        del(body['metadata']['workflow']['complete']['offset']['availableZoneIds'])
+        del (body["metadata"]["workflow"]["complete"]["offset"]["availableZoneIds"])
     except (KeyError, TypeError):
         pass
     tel = models.Telemetry(**body)
     logger.debug(tel)
-    with engine.begin() as conn:
-        conn.execute(insert(telemetry_tbl).values(
-            run_id=tel.run_id,
-            run_name=tel.run_name,
-            event=tel.event,
-            utc_time=tel.timestamp,
-            metadata_=tel.metadata,
-            trace=tel.trace
-        ))
+    async with engine.begin() as conn:
+        await conn.execute(
+            insert(telemetry_tbl).values(
+                run_id=tel.run_id,
+                run_name=tel.run_name,
+                event=tel.event,
+                utc_time=tel.timestamp,
+                metadata_=tel.metadata,
+                trace=tel.trace,
+            )
+        )
     return body
 
 

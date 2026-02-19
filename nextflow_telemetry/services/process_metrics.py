@@ -5,12 +5,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.engine import Engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 
 @dataclass
 class ProcessMetricsService:
-    engine: Engine
+    engine: AsyncEngine
 
     @staticmethod
     def _normalize_window_days(window_days: int | None) -> int | None:
@@ -26,7 +26,7 @@ class ProcessMetricsService:
             return "", {}
         return " and t.utc_time >= now() - make_interval(days => :window_days)", {"window_days": normalized}
 
-    def summary(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 10) -> dict[str, Any]:
+    async def summary(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 10) -> dict[str, Any]:
         if min_samples < 1:
             raise ValueError("min_samples must be >= 1")
         if limit < 1:
@@ -143,12 +143,12 @@ class ProcessMetricsService:
             """
         )
 
-        with self.engine.connect() as conn:
-            cards = dict(conn.execute(cards_sql, params).mappings().one())
-            top_failures = [dict(row) for row in conn.execute(top_failures_sql, params).mappings().all()]
-            top_retries = [dict(row) for row in conn.execute(top_retries_sql, params).mappings().all()]
-            top_exit_codes = [dict(row) for row in conn.execute(top_exit_codes_sql, params).mappings().all()]
-            event_mix = [dict(row) for row in conn.execute(event_mix_sql, params).mappings().all()]
+        async with self.engine.connect() as conn:
+            cards = dict((await conn.execute(cards_sql, params)).mappings().one())
+            top_failures = [dict(row) for row in (await conn.execute(top_failures_sql, params)).mappings().all()]
+            top_retries = [dict(row) for row in (await conn.execute(top_retries_sql, params)).mappings().all()]
+            top_exit_codes = [dict(row) for row in (await conn.execute(top_exit_codes_sql, params)).mappings().all()]
+            event_mix = [dict(row) for row in (await conn.execute(event_mix_sql, params)).mappings().all()]
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -160,7 +160,7 @@ class ProcessMetricsService:
             "top_failure_exit_codes": top_exit_codes,
         }
 
-    def retries(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 50) -> dict[str, Any]:
+    async def retries(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 50) -> dict[str, Any]:
         if min_samples < 1:
             raise ValueError("min_samples must be >= 1")
         if limit < 1:
@@ -236,10 +236,10 @@ class ProcessMetricsService:
             """
         )
 
-        with self.engine.connect() as conn:
-            summary = dict(conn.execute(summary_sql, params).mappings().one())
-            by_process = [dict(row) for row in conn.execute(by_process_sql, params).mappings().all()]
-            by_attempt = [dict(row) for row in conn.execute(by_attempt_sql, params).mappings().all()]
+        async with self.engine.connect() as conn:
+            summary = dict((await conn.execute(summary_sql, params)).mappings().one())
+            by_process = [dict(row) for row in (await conn.execute(by_process_sql, params)).mappings().all()]
+            by_attempt = [dict(row) for row in (await conn.execute(by_attempt_sql, params)).mappings().all()]
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -249,7 +249,7 @@ class ProcessMetricsService:
             "by_process": by_process,
         }
 
-    def resources_by_attempt(
+    async def resources_by_attempt(
         self,
         *,
         window_days: int | None = None,
@@ -310,8 +310,8 @@ class ProcessMetricsService:
             """
         )
 
-        with self.engine.connect() as conn:
-            rows = [dict(row) for row in conn.execute(sql, params).mappings().all()]
+        async with self.engine.connect() as conn:
+            rows = [dict(row) for row in (await conn.execute(sql, params)).mappings().all()]
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -319,7 +319,7 @@ class ProcessMetricsService:
             "rows": rows,
         }
 
-    def failures(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 50) -> dict[str, Any]:
+    async def failures(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 50) -> dict[str, Any]:
         if min_samples < 1:
             raise ValueError("min_samples must be >= 1")
         if limit < 1:
@@ -377,8 +377,8 @@ class ProcessMetricsService:
             """
         )
 
-        with self.engine.connect() as conn:
-            rows = [dict(row) for row in conn.execute(sql, params).mappings().all()]
+        async with self.engine.connect() as conn:
+            rows = [dict(row) for row in (await conn.execute(sql, params)).mappings().all()]
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -386,7 +386,7 @@ class ProcessMetricsService:
             "rows": rows,
         }
 
-    def failure_signatures(self, *, window_days: int | None = None, limit: int = 100) -> dict[str, Any]:
+    async def failure_signatures(self, *, window_days: int | None = None, limit: int = 100) -> dict[str, Any]:
         if limit < 1:
             raise ValueError("limit must be >= 1")
 
@@ -410,8 +410,8 @@ class ProcessMetricsService:
             """
         )
 
-        with self.engine.connect() as conn:
-            rows = [dict(row) for row in conn.execute(sql, params).mappings().all()]
+        async with self.engine.connect() as conn:
+            rows = [dict(row) for row in (await conn.execute(sql, params)).mappings().all()]
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),

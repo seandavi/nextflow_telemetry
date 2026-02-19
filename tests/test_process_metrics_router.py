@@ -5,7 +5,7 @@ from nextflow_telemetry.routers.process_metrics import create_process_metrics_ro
 
 
 class FakeProcessMetricsService:
-    def summary(self, *, window_days=None, min_samples=50, limit=10):
+    async def summary(self, *, window_days=None, min_samples=50, limit=10):
         return {
             "window_days": window_days,
             "cards": {"process_completed_rows": 123, "failure_pct": 4.2},
@@ -15,7 +15,7 @@ class FakeProcessMetricsService:
             "top_failure_exit_codes": [{"exit_code": "1", "failures": 10}],
         }
 
-    def retries(self, *, window_days=None, min_samples=50, limit=50):
+    async def retries(self, *, window_days=None, min_samples=50, limit=50):
         return {
             "window_days": window_days,
             "summary": {"process_completed_rows": 10},
@@ -23,13 +23,13 @@ class FakeProcessMetricsService:
             "by_process": [],
         }
 
-    def resources_by_attempt(self, *, window_days=None, min_samples=50, limit=100):
+    async def resources_by_attempt(self, *, window_days=None, min_samples=50, limit=100):
         return {"window_days": window_days, "rows": [{"process": "kneaddata", "attempt": 1}]}
 
-    def failures(self, *, window_days=None, min_samples=50, limit=50):
+    async def failures(self, *, window_days=None, min_samples=50, limit=50):
         return {"window_days": window_days, "rows": [{"process": "kneaddata", "failed": 2}]}
 
-    def failure_signatures(self, *, window_days=None, limit=100):
+    async def failure_signatures(self, *, window_days=None, limit=100):
         return {"window_days": window_days, "rows": [{"process": "kneaddata", "exit_code": "1"}]}
 
 
