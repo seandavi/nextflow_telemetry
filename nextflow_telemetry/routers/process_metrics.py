@@ -15,7 +15,7 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
         limit: int = Query(default=10, ge=1, le=200),
     ):
         try:
-            return service.summary(window_days=window_days, min_samples=min_samples, limit=limit)
+            return await service.summary(window_days=window_days, min_samples=min_samples, limit=limit)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -26,7 +26,7 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
         limit: int = Query(default=50, ge=1, le=500),
     ):
         try:
-            return service.retries(window_days=window_days, min_samples=min_samples, limit=limit)
+            return await service.retries(window_days=window_days, min_samples=min_samples, limit=limit)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -37,7 +37,7 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
         limit: int = Query(default=100, ge=1, le=1000),
     ):
         try:
-            return service.resources_by_attempt(window_days=window_days, min_samples=min_samples, limit=limit)
+            return await service.resources_by_attempt(window_days=window_days, min_samples=min_samples, limit=limit)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -48,7 +48,7 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
         limit: int = Query(default=50, ge=1, le=500),
     ):
         try:
-            return service.failures(window_days=window_days, min_samples=min_samples, limit=limit)
+            return await service.failures(window_days=window_days, min_samples=min_samples, limit=limit)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -58,7 +58,7 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
         limit: int = Query(default=100, ge=1, le=1000),
     ):
         try:
-            return service.failure_signatures(window_days=window_days, limit=limit)
+            return await service.failure_signatures(window_days=window_days, limit=limit)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

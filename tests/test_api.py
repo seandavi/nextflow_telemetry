@@ -17,13 +17,13 @@ def app_module(monkeypatch):
 
 def test_health_returns_healthy_when_database_is_available(app_module, monkeypatch):
     class FakeConnection:
-        def __enter__(self):
+        async def __aenter__(self):
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        def execute(self, _statement):
+        async def execute(self, _statement):
             return None
 
     class FakeEngine:
@@ -57,13 +57,13 @@ def test_telemetry_happy_path_executes_insert(app_module, monkeypatch):
     captured = {}
 
     class FakeTransaction:
-        def __enter__(self):
+        async def __aenter__(self):
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        def execute(self, statement):
+        async def execute(self, statement):
             captured["statement"] = statement
             return None
 
