@@ -19,6 +19,7 @@ help:
 	@echo "  just test          Run pytest suite (tests/test_api.py and future tests)."
 	@echo "  just typecheck     Run mypy against nextflow_telemetry package."
 	@echo "  just check         Run typecheck then tests (good pre-commit baseline)."
+	@echo "  just ci            CI-equivalent local gate: sync dev deps, typecheck, tests."
 	@echo ""
 	@echo "Container workflows"
 	@echo "  just up-all        Start API + Postgres + pgAdmin via docker compose profile 'all'."
@@ -61,6 +62,12 @@ typecheck:
 
 # Fast pre-commit quality gate.
 check: typecheck test
+
+# CI-equivalent local gate for reproducible verification.
+ci:
+	uv sync --group dev --frozen
+	uv run mypy nextflow_telemetry
+	uv run pytest
 
 # Start full stack (API + DB + admin UI) via compose profiles.
 up-all:

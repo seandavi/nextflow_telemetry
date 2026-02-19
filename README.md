@@ -62,6 +62,7 @@ Common workflows:
 just sync      # install dev dependencies with uv
 just run       # run API locally with reload
 just check     # run typecheck + tests
+just ci        # CI-equivalent local gate (sync --frozen + mypy + pytest)
 just up-all    # start API + DB + pgAdmin
 ```
 
