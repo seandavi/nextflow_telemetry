@@ -48,6 +48,23 @@ docker compose --profile all up -d
 docker compose --profile api up -d
 ```
 
+## Command Runner (just)
+
+This repository includes a `justfile` with task-oriented commands and context notes.
+
+```
+just help
+```
+
+Common workflows:
+
+```
+just sync      # install dev dependencies with uv
+just run       # run API locally with reload
+just check     # run typecheck + tests
+just up-all    # start API + DB + pgAdmin
+```
+
 ## Testing the API
 
 After the Nextflow_Telemetry_Api container is in health state, to test that it works, run the command;
