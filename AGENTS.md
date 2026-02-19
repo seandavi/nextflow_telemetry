@@ -13,7 +13,7 @@
 - Use modern fastapi patterns including dependency injection, pydantic models for validation, and async/await for I/O operations, and routers for modular route organization as the codebase grows.
 
 ## Build, Test, and Development Commands
-- `docker compose --profile all up -d`: Start API + Postgres + pgAdmin.
+- `docker compose --profile all up -d`: Start API + pgAdmin (external Postgres).
 - `docker compose --profile api up -d`: Start API service only (external DB expected).
 - `uv sync --group dev`: Install Python dependencies for local development.
 - `uv run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000`: Run API locally.
@@ -49,7 +49,7 @@
 
 ## Security & Configuration Tips
 - Do not commit secrets; use `.env` locally.
-- Validate required DB variables (`POSTGRES_*`, `SQLALCHEMY_URI`) before starting services.
+- Validate required DB variables (at minimum `SQLALCHEMY_URI`) before starting services.
 
 ## Architecture Decisions
 - Keep API handlers in routers thin: parsing/validation only, no embedded SQL.

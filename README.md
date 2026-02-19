@@ -26,23 +26,22 @@ Either metadata OR trace are present, never both.
 
 ## Building and Running
 
-Setting up the project has been simplified using the docker compose technology which sets up the Nextflow_Teletry_Api, a Postgres DB and PGadmin to monitor said database.
+Docker compose in this repository runs the Nextflow telemetry API and pgAdmin. The database is expected to be an external/dedicated Postgres service.
 
 *You'll need to supply the following environment variables to the setup:*
 
-* POSTGRES_DB=''
-* POSTGRES_HOST=''
-* POSTGRES_USER=''
-* POSTGRES_PASSWORD=''
+* SQLALCHEMY_URI=''
+* PGADMIN_DEFAULT_EMAIL=''
+* PGADMIN_DEFAULT_PASSWORD=''
 
 You can reference the env_template file here; [env_template](env)
 
-- To set up all three;
+- To start API + pgAdmin:
 
 ```
 docker compose --profile all up -d 
 ```
-- To set up just the Nextflow_Telemetry_Api assuming one has their own custom database and doesn't need to monitor the DB;
+- To start just the Nextflow_Telemetry_Api (external DB only):
 
 ```
 docker compose --profile api up -d
@@ -63,7 +62,7 @@ just sync      # install dev dependencies with uv
 just run       # run API locally with reload
 just check     # run typecheck + tests
 just ci        # CI-equivalent local gate (sync --frozen + mypy + pytest)
-just up-all    # start API + DB + pgAdmin
+just up-all    # start API + pgAdmin (external DB)
 ```
 
 ## Testing the API

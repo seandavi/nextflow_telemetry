@@ -22,8 +22,8 @@ help:
 	@echo "  just ci            CI-equivalent local gate: sync dev deps, typecheck, tests."
 	@echo ""
 	@echo "Container workflows"
-	@echo "  just up-all        Start API + Postgres + pgAdmin via docker compose profile 'all'."
-	@echo "  just up-api        Start API profile only (expects external DB config in .env)."
+	@echo "  just up-all        Start API + pgAdmin via docker compose profile 'all' (external DB)."
+	@echo "  just up-api        Start API profile only (uses SQLALCHEMY_URI from .env)."
 	@echo "  just down          Stop and remove compose services/containers."
 	@echo "  just logs          Tail API container logs for troubleshooting."
 
