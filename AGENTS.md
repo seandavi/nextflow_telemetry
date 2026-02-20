@@ -55,4 +55,5 @@
 - Keep API handlers in routers thin: parsing/validation only, no embedded SQL.
 - Put telemetry metric queries in `services/` to keep logic testable and reusable.
 - Align queries to production telemetry schema (`utc_time`, `metadata_`, `trace`).
+- Define explicit Pydantic response models for endpoints to keep OpenAPI and TypeScript client types stable.
 - Start with Python-managed SQL; add database views/materialized views only if query latency requires it.

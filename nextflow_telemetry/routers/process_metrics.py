@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from .. import models
 from ..services.process_metrics import ProcessMetricsService
 
 
 def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
     router = APIRouter(prefix="/metrics/processes", tags=["process-metrics"])
 
-    @router.get("/summary")
+    @router.get("/summary", response_model=models.ProcessSummaryResponse)
     async def process_summary(
         window_days: int | None = Query(default=None, ge=1),
         min_samples: int = Query(default=50, ge=1),
@@ -19,7 +20,7 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @router.get("/retries")
+    @router.get("/retries", response_model=models.ProcessRetriesResponse)
     async def process_retries(
         window_days: int | None = Query(default=None, ge=1),
         min_samples: int = Query(default=50, ge=1),
@@ -30,7 +31,7 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @router.get("/resources-by-attempt")
+    @router.get("/resources-by-attempt", response_model=models.ProcessResourcesByAttemptResponse)
     async def process_resources_by_attempt(
         window_days: int | None = Query(default=None, ge=1),
         min_samples: int = Query(default=50, ge=1),
@@ -41,7 +42,7 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @router.get("/failures")
+    @router.get("/failures", response_model=models.ProcessFailuresResponse)
     async def process_failures(
         window_days: int | None = Query(default=None, ge=1),
         min_samples: int = Query(default=50, ge=1),
@@ -52,7 +53,7 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @router.get("/failure-signatures")
+    @router.get("/failure-signatures", response_model=models.ProcessFailureSignaturesResponse)
     async def process_failure_signatures(
         window_days: int | None = Query(default=None, ge=1),
         limit: int = Query(default=100, ge=1, le=1000),

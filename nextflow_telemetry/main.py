@@ -47,7 +47,7 @@ process_metrics_service = ProcessMetricsService(engine=engine)
 app.include_router(create_process_metrics_router(process_metrics_service))
 
 # health check
-@app.get("/health")
+@app.get("/health", response_model=models.HealthResponse, responses={503: {"model": models.HealthErrorResponse}})
 async def healthcheck():
     try:
         async with engine.connect() as conn:
@@ -60,28 +60,28 @@ async def healthcheck():
         )
 
 
-@app.post("/telemetry")
-async def telemetry(body: dict):
+@app.post("/telemetry", response_model=models.Telemetry)
+async def telemetry(body: models.Telemetry):
     # logger.debug(body)
-    try:
-        del (body["metadata"]["workflow"]["start"]["offset"]["availableZoneIds"])
-    except (KeyError, TypeError):
-        pass
-    try:
-        del (body["metadata"]["workflow"]["complete"]["offset"]["availableZoneIds"])
-    except (KeyError, TypeError):
-        pass
-    tel = models.Telemetry(**body)
-    logger.debug(tel)
+    if isinstance(body.metadata, dict):
+        try:
+            del (body.metadata["workflow"]["start"]["offset"]["availableZoneIds"])
+        except (KeyError, TypeError):
+            pass
+        try:
+            del (body.metadata["workflow"]["complete"]["offset"]["availableZoneIds"])
+        except (KeyError, TypeError):
+            pass
+    logger.debug(body)
     async with engine.begin() as conn:
         await conn.execute(
             insert(telemetry_tbl).values(
-                run_id=tel.run_id,
-                run_name=tel.run_name,
-                event=tel.event,
-                utc_time=tel.timestamp,
-                metadata_=tel.metadata,
-                trace=tel.trace,
+                run_id=body.run_id,
+                run_name=body.run_name,
+                event=body.event,
+                utc_time=body.timestamp,
+                metadata_=body.metadata,
+                trace=body.trace,
             )
         )
     return body
