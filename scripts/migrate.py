@@ -34,6 +34,23 @@ def needs_no_transaction(sql: str) -> bool:
     return False
 
 
+def split_sql_statements(sql: str) -> list[str]:
+    cleaned_lines: list[str] = []
+    for line in sql.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("--"):
+            continue
+        cleaned_lines.append(line)
+
+    statements: list[str] = []
+    for part in "\n".join(cleaned_lines).split(";"):
+        stmt = part.strip()
+        if not stmt:
+            continue
+        statements.append(stmt + ";")
+    return statements
+
+
 CREATE_TRACKING_TABLE = """
 create table if not exists schema_migrations (
   version text primary key,
@@ -59,7 +76,8 @@ async def apply_migration(conn: asyncpg.Connection, path: Path) -> None:
     checksum = file_sha256(path)
 
     if needs_no_transaction(sql):
-        await conn.execute(sql)
+        for statement in split_sql_statements(sql):
+            await conn.execute(statement)
         await conn.execute(
             "insert into schema_migrations(version, filename, checksum, applied_at) values($1,$2,$3,$4)",
             version,

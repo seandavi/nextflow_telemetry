@@ -57,3 +57,12 @@
 - Align queries to production telemetry schema (`utc_time`, `metadata_`, `trace`).
 - Define explicit Pydantic response models for endpoints to keep OpenAPI and TypeScript client types stable.
 - Start with Python-managed SQL; add database views/materialized views only if query latency requires it.
+
+## Migration Decisions
+- Use plain SQL migrations under `sql/migrations/` with ordered numeric filenames (`NNN_description.sql`).
+- Track applied migrations in `schema_migrations` (version, filename, checksum, applied_at).
+- Treat applied migration files as immutable; checksum mismatches are migration errors.
+- Use idempotent DDL patterns (`IF NOT EXISTS`) whenever possible.
+- For operations that cannot run inside a transaction (for example `CREATE INDEX CONCURRENTLY`), add `-- migrate: no-transaction` to the migration file header.
+- Run migrations via `just migrate` and inspect state via `just migration-status`.
+- For performance migrations, capture `EXPLAIN (ANALYZE, BUFFERS)` baselines before changes and compare after apply; keep results in `sql/migrations/PLAN.md`.

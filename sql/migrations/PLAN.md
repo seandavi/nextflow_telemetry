@@ -30,3 +30,14 @@ Common issue: parallel sequential scans over `telemetry` dominate cost.
 ## Success Criteria
 - Clear reduction in p95 latency for heavy metrics endpoints.
 - Query plans shift away from full-table seq scans for core paths.
+
+## Results (after `001_metrics_query_indexes.sql`)
+Measured again with the same `EXPLAIN (ANALYZE, BUFFERS)` workload:
+- `summary_cards`: ~5.996s (down from ~11.06s)
+- `summary_top_failures`: ~3.21s (down from ~3.39s)
+- `retries_by_process`: ~3.85s (down from ~5.36s)
+- `resources_by_attempt`: ~2.96s (down from ~15.50s)
+- `failure_signatures`: ~1.02s (down from ~1.10s)
+
+Notable plan shift:
+- Core metrics queries now use `idx_telemetry_pc_utc_time` index scans instead of parallel sequential scans across the full table.
