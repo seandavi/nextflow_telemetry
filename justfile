@@ -75,11 +75,11 @@ ci:
 
 # Show applied/pending SQL migrations.
 migration-status:
-	uv run python scripts/migrate.py status
+	uv run --group dev python scripts/migrate.py status
 
 # Apply pending SQL migrations.
 migrate:
-	uv run python scripts/migrate.py up
+	uv run --group dev python scripts/migrate.py up
 
 # Start full stack (API + DB + admin UI) via compose profiles.
 up-all:

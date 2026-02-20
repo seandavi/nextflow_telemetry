@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import asyncpg
+from sqlglot import parse
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS_DIR = ROOT / "sql" / "migrations"
@@ -35,20 +36,8 @@ def needs_no_transaction(sql: str) -> bool:
 
 
 def split_sql_statements(sql: str) -> list[str]:
-    cleaned_lines: list[str] = []
-    for line in sql.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("--"):
-            continue
-        cleaned_lines.append(line)
-
-    statements: list[str] = []
-    for part in "\n".join(cleaned_lines).split(";"):
-        stmt = part.strip()
-        if not stmt:
-            continue
-        statements.append(stmt + ";")
-    return statements
+    expressions = parse(sql, read="postgres")
+    return [expr.sql(dialect="postgres") + ";" for expr in expressions]
 
 
 CREATE_TRACKING_TABLE = """

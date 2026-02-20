@@ -13,6 +13,7 @@ This repository uses plain SQL files with a lightweight runner (`scripts/migrate
 - `just migrate`
 
 Both commands use `SQLALCHEMY_URI` from environment unless `--dsn` is provided directly to the script.
+The runner uses `sqlglot` for SQL statement parsing and splitting.
 
 ## Tracking table
 Applied migrations are tracked in:
