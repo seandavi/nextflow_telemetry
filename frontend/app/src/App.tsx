@@ -1,29 +1,35 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Layout } from "@/components/layout";
+import { DashboardPage } from "@/pages/dashboard";
+import { RetriesPage } from "@/pages/retries";
+import { ResourcesPage } from "@/pages/resources";
+import { FailuresPage } from "@/pages/failures";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      retry: 1,
+    },
+  },
+});
 
 function App() {
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
-        <div className="container mx-auto flex h-14 items-center px-4">
-          <h1 className="text-lg font-semibold">Nextflow Telemetry</h1>
-        </div>
-      </header>
-      <main className="container mx-auto p-4">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader>
-              <CardTitle>Dashboard</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Frontend scaffold is working. Ready to connect to API endpoints.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    </div>
-  )
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="retries" element={<RetriesPage />} />
+            <Route path="resources" element={<ResourcesPage />} />
+            <Route path="failures" element={<FailuresPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
+  );
 }
 
-export default App
+export default App;
