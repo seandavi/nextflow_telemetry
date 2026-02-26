@@ -26,6 +26,10 @@ help:
 	@echo "  just up-api        Start API profile only (uses SQLALCHEMY_URI from .env)."
 	@echo "  just down          Stop and remove compose services/containers."
 	@echo "  just logs          Tail API container logs for troubleshooting."
+	@echo ""
+	@echo "Database migrations"
+	@echo "  just migration-status   Show applied/pending SQL migrations."
+	@echo "  just migrate            Apply pending SQL migrations."
 
 # Install project + dev dependencies into .venv using uv.
 sync:
@@ -68,6 +72,14 @@ ci:
 	uv sync --group dev --frozen
 	uv run mypy nextflow_telemetry
 	uv run pytest
+
+# Show applied/pending SQL migrations.
+migration-status:
+	uv run --group dev python scripts/migrate.py status
+
+# Apply pending SQL migrations.
+migrate:
+	uv run --group dev python scripts/migrate.py up
 
 # Start full stack (API + DB + admin UI) via compose profiles.
 up-all:
