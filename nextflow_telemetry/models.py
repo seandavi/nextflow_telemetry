@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import Any, Optional
+from typing import Any, List, Optional
 import datetime
+from enum import Enum
 
 
 class NextFlowVersion(BaseModel):
@@ -206,3 +207,104 @@ class ProcessFailureSignaturesResponse(BaseModel):
     generated_at_utc: datetime.datetime
     window_days: Optional[int]
     rows: list[FailureSignatureRow]
+
+
+# --- Samples ---
+
+class SampleCreate(BaseModel):
+    sample_id: str
+    srr_accessions: Optional[List[str]] = None
+    metadata_: Optional[dict[str, Any]] = None
+
+    class Config:
+        fields = {"metadata_": {"alias": "metadata"}}
+
+
+class SampleUpdate(BaseModel):
+    srr_accessions: Optional[List[str]] = None
+    metadata_: Optional[dict[str, Any]] = None
+
+    class Config:
+        fields = {"metadata_": {"alias": "metadata"}}
+
+
+class SampleResponse(BaseModel):
+    id: int
+    sample_id: str
+    srr_accessions: Optional[List[str]] = None
+    metadata_: Optional[dict[str, Any]] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    class Config:
+        fields = {"metadata_": {"alias": "metadata"}}
+
+
+class SampleListResponse(BaseModel):
+    items: List[SampleResponse]
+    total: int
+
+
+# --- Pipelines ---
+
+class PipelineCreate(BaseModel):
+    pipeline_id: str
+    repository: Optional[str] = None
+    branch: Optional[str] = "main"
+    description: Optional[str] = None
+    default_params: Optional[dict[str, Any]] = None
+
+
+class PipelineUpdate(BaseModel):
+    repository: Optional[str] = None
+    branch: Optional[str] = None
+    description: Optional[str] = None
+    default_params: Optional[dict[str, Any]] = None
+
+
+class PipelineResponse(BaseModel):
+    id: int
+    pipeline_id: str
+    repository: Optional[str] = None
+    branch: Optional[str] = None
+    description: Optional[str] = None
+    default_params: Optional[dict[str, Any]] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class PipelineListResponse(BaseModel):
+    items: List[PipelineResponse]
+    total: int
+
+
+# --- Jobs ---
+
+class JobStatus(str, Enum):
+    pending = "pending"
+    running = "running"
+    success = "success"
+    failure = "failure"
+
+
+class JobCreate(BaseModel):
+    sample_id: str
+    pipeline_id: str
+
+
+class JobStatusUpdate(BaseModel):
+    status: JobStatus
+
+
+class JobResponse(BaseModel):
+    id: int
+    sample_id: str
+    pipeline_id: str
+    status: str
+    submitted_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class JobListResponse(BaseModel):
+    items: List[JobResponse]
+    total: int
