@@ -9,7 +9,9 @@ from .log import logger
 from . import models
 from .config import settings
 from .routers.process_metrics import create_process_metrics_router
+from .routers.samples import create_samples_router
 from .services.process_metrics import ProcessMetricsService
+from .services.samples import SamplesService
 
 app = FastAPI()
 
@@ -81,6 +83,9 @@ app.add_middleware(
 
 process_metrics_service = ProcessMetricsService(engine=engine)
 app.include_router(create_process_metrics_router(process_metrics_service))
+
+samples_service = SamplesService(engine=engine)
+app.include_router(create_samples_router(samples_service))
 
 # health check
 @app.get("/health", response_model=models.HealthResponse, responses={503: {"model": models.HealthErrorResponse}})
