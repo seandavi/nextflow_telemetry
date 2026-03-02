@@ -9,8 +9,10 @@ from .log import logger
 from . import models
 from .config import settings
 from .routers.process_metrics import create_process_metrics_router
+from .routers.jobs import create_jobs_router
 from .routers.pipelines import create_pipelines_router
 from .routers.samples import create_samples_router
+from .services.jobs import JobsService
 from .services.pipelines import PipelinesService
 from .services.process_metrics import ProcessMetricsService
 from .services.samples import SamplesService
@@ -91,6 +93,9 @@ app.include_router(create_samples_router(samples_service))
 
 pipelines_service = PipelinesService(engine=engine)
 app.include_router(create_pipelines_router(pipelines_service))
+
+jobs_service = JobsService(engine=engine)
+app.include_router(create_jobs_router(jobs_service))
 
 # health check
 @app.get("/health", response_model=models.HealthResponse, responses={503: {"model": models.HealthErrorResponse}})
