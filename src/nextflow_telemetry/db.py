@@ -70,7 +70,7 @@ workflow_executions_tbl = Table(
     Column("sample_id", String, nullable=False),
     Column("workflow_id", String, nullable=False),
     Column("workflow_version", String, nullable=False),
-    Column("run_name", String, ForeignKey("workflow_runs.run_name"), nullable=False),
+    Column("run_name", String, ForeignKey("workflow_runs.run_name"), nullable=True),
     Column(
         "status",
         String,

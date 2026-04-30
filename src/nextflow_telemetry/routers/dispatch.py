@@ -1,14 +1,21 @@
 """Dispatch router — client-facing endpoints for claiming and reporting jobs."""
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ..db import workflow_executions_tbl, workflow_runs_tbl
+
+if sys.version_info >= (3, 13):
+    from uuid import uuid7 as _uuid7  # type: ignore[attr-defined]
+else:
+    from uuid_extensions import uuid7 as _uuid7
 
 CLAIM_TTL_MINUTES = 5
 
@@ -45,9 +52,7 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
 
         Returns the run_name the client MUST pass as ``-name`` to nextflow run.
         """
-        import uuid
         now = datetime.now(timezone.utc)
-        run_name = str(uuid.uuid7())
 
         async with engine.begin() as conn:
             # Claim pending executions for this workflow/version
@@ -64,10 +69,11 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
             rows = result.mappings().all()
 
             if not rows:
-                raise HTTPException(status_code=204, detail="No pending jobs available")
+                return Response(status_code=204)
 
             execution_ids = [r["id"] for r in rows]
             sample_ids = [r["sample_id"] for r in rows]
+            run_name = str(_uuid7())
 
             # Create the workflow_run record
             await conn.execute(
