@@ -69,6 +69,10 @@ ci:
 	uv run mypy nextflow_telemetry
 	uv run pytest
 
+# Start postgres only (for local dev without full stack).
+up-db:
+	docker compose --profile db up -d
+
 # Start full stack (API + DB + admin UI) via compose profiles.
 up-all:
 	docker compose --profile all up -d

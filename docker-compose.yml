@@ -3,6 +3,29 @@
 #-----------------------------------------------------------------------------------------------
 
 services:
+  nextflow_telemetry_db:
+    image: postgres:16-alpine
+    container_name: nextflow_telemetry_db
+    profiles:
+      - db
+      - api
+      - all
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cmdg_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - nextflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - telemetry_network
+
   nextflow_telemetry_api:
     build: .
     container_name: nextflow_telemetry_api
@@ -51,6 +74,8 @@ services:
       - telemetry_network
 
 volumes:
+  nextflow_db_data:
+    name: nextflow_telemetry_db_data
   nextflow_pgadmin_data:
     name: nextflow_telemetry_pgadmin_data
 

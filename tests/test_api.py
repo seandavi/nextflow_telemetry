@@ -1,18 +1,5 @@
-import importlib
-import sys
-
 import pytest
 from fastapi.testclient import TestClient
-
-
-@pytest.fixture()
-def app_module(monkeypatch):
-    monkeypatch.setenv("TELEMETRY_SKIP_DB_INIT", "1")
-    if "nextflow_telemetry.main" in sys.modules:
-        module = importlib.reload(sys.modules["nextflow_telemetry.main"])
-    else:
-        module = importlib.import_module("nextflow_telemetry.main")
-    return module
 
 
 def test_health_returns_healthy_when_database_is_available(app_module, monkeypatch):
