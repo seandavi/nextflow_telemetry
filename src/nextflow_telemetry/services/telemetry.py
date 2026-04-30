@@ -8,10 +8,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import insert, update
+from sqlalchemy import case, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import dead_letter_tbl, jobs_tbl, telemetry_tbl, workflow_runs_tbl
+from ..db import dead_letter_tbl, jobs_tbl, telemetry_tbl, workflow_runs_tbl, workflows_tbl
 from ..models import Telemetry
 
 
@@ -34,13 +34,11 @@ class TelemetryService:
         """Persist a weblog event and update execution state."""
         now = datetime.now(timezone.utc)
 
-        # Extract sample_id from the trace tag field
         tag: str | None = None
         if isinstance(event.trace, dict):
             tag = event.trace.get("tag")
         sample_id = _parse_tag(tag)
 
-        # Derive workflow identity from metadata params when present
         workflow_id: str | None = None
         workflow_version: str | None = None
         if isinstance(event.metadata, dict):
@@ -97,17 +95,34 @@ class TelemetryService:
                     .values(status="completed", completed_at=now)
                 )
 
-            # 4. Run-level completed: sweep non-completed jobs to failed + DLQ
+            # 4. Run-level completed: close the run and sweep incomplete jobs
             elif event.event == "completed":
                 await conn.execute(
                     update(workflow_runs_tbl)
                     .where(workflow_runs_tbl.c.run_name == event.run_name)
                     .values(status="completed", completed_at=now)
                 )
-                await self._sweep_incomplete_to_failed(conn, event.run_name, now)
+                await self._sweep_incomplete(conn, event.run_name, now)
 
-    async def _sweep_incomplete_to_failed(self, conn, run_name: str, now: datetime) -> None:
-        """Mark all non-completed jobs for this run as failed and enqueue DLQ."""
+    async def _sweep_incomplete(self, conn, run_name: str, now: datetime) -> None:
+        """Sweep non-completed jobs for this run: retry if budget remains, else fail to DLQ.
+
+        Uses a correlated subquery to get max_retries from the workflow
+        definition so the decision is made in a single atomic UPDATE.
+        Jobs where retry_count < max_retries are reset to 'pending' with
+        run_name=NULL so they re-enter the dispatch pool on the next cycle.
+        Jobs that have exhausted retries are marked 'failed' and enqueued to
+        the dead letter table.
+        """
+        # Correlated subquery: max_retries for each job's workflow
+        max_retries_subq = (
+            select(workflows_tbl.c.max_retries)
+            .where(workflows_tbl.c.id == jobs_tbl.c.workflow_pk)
+            .scalar_subquery()
+        )
+
+        has_retries = jobs_tbl.c.retry_count < max_retries_subq
+
         result = await conn.execute(
             update(jobs_tbl)
             .where(
@@ -115,21 +130,31 @@ class TelemetryService:
                 jobs_tbl.c.status.in_(["pending", "running", "claimed"]),
             )
             .values(
-                status="failed",
-                failed_at=now,
-                failure_reason="run completed without MARK_COMPLETE",
                 retry_count=jobs_tbl.c.retry_count + 1,
+                # Re-enqueue if retries remain, otherwise fail permanently
+                status=case((has_retries, "pending"), else_="failed"),
+                # Clear run association so job re-enters the dispatch pool
+                run_name=case((has_retries, None), else_=jobs_tbl.c.run_name),
+                failed_at=case((has_retries, None), else_=now),
+                failure_reason=case(
+                    (has_retries, None),
+                    else_="run completed without MARK_COMPLETE",
+                ),
             )
             .returning(
                 jobs_tbl.c.id,
                 jobs_tbl.c.sample_id,
                 jobs_tbl.c.workflow_id,
                 jobs_tbl.c.workflow_version,
+                jobs_tbl.c.status,
+                jobs_tbl.c.retry_count,
             )
         )
-        failed_rows = result.mappings().all()
+        swept = result.mappings().all()
 
-        if failed_rows:
+        # Only permanently-failed jobs go to the dead letter queue
+        dlq_rows = [r for r in swept if r["status"] == "failed"]
+        if dlq_rows:
             await conn.execute(
                 insert(dead_letter_tbl),
                 [
@@ -142,6 +167,6 @@ class TelemetryService:
                         "reason": "run completed without MARK_COMPLETE",
                         "created_at": now,
                     }
-                    for row in failed_rows
+                    for row in dlq_rows
                 ],
             )
