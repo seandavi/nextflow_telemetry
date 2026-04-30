@@ -65,12 +65,21 @@ class TelemetryService:
                 )
             )
 
-            # 2. Update workflow_runs when we see the run-level started event
+            # 2. Update workflow_runs + associated executions on run-level started
             if event.event == "started":
                 await conn.execute(
                     update(workflow_runs_tbl)
                     .where(workflow_runs_tbl.c.run_name == event.run_name)
                     .values(run_id=event.run_id, status="running", started_at=now)
+                )
+                # Transition any executions still in claimed → running
+                await conn.execute(
+                    update(workflow_executions_tbl)
+                    .where(
+                        workflow_executions_tbl.c.run_name == event.run_name,
+                        workflow_executions_tbl.c.status == "claimed",
+                    )
+                    .values(status="running")
                 )
 
             # 3. Per-sample completion: MARK_COMPLETE process_completed event
@@ -105,7 +114,7 @@ class TelemetryService:
             update(workflow_executions_tbl)
             .where(
                 workflow_executions_tbl.c.run_name == run_name,
-                workflow_executions_tbl.c.status.in_(["pending", "running"]),
+                workflow_executions_tbl.c.status.in_(["pending", "running", "claimed"]),
             )
             .values(
                 status="failed",

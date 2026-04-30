@@ -38,6 +38,9 @@ def upgrade() -> None:
     op.create_index("ix_telemetry_run_name", "telemetry", ["run_name"])
     op.create_index("ix_telemetry_sample_id", "telemetry", ["sample_id"])
     op.create_index("ix_telemetry_workflow_id", "telemetry", ["workflow_id"])
+    op.create_index("ix_telemetry_event", "telemetry", ["event"])
+    op.create_index("ix_telemetry_utc_time", "telemetry", ["utc_time"])
+    op.create_index("ix_telemetry_event_utc_time", "telemetry", ["event", "utc_time"])
 
     # One row per Nextflow run (run_name is client-controlled sortable UUID7)
     op.create_table(

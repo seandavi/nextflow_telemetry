@@ -79,13 +79,24 @@ def submit_local(cmd: list[str], log_file: Path | None = None) -> str:
 
     Non-blocking: the nextflow process runs in the background.
     """
-    stdout = open(log_file, "w") if log_file else subprocess.DEVNULL
-    proc = subprocess.Popen(
-        cmd,
-        stdout=stdout,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
+    if log_file:
+        log_fh = open(log_file, "w")
+        stdout = log_fh
+    else:
+        log_fh = None
+        stdout = subprocess.DEVNULL
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=stdout,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    finally:
+        if log_fh:
+            log_fh.close()
+
     return str(proc.pid)
 
 

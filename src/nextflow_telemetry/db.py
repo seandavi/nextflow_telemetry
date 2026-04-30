@@ -37,6 +37,9 @@ telemetry_tbl = Table(
     Column("workflow_version", String, nullable=True),
     Column("metadata_", JSONB),
     Column("trace", JSONB),
+    Index("ix_telemetry_event", "event"),
+    Index("ix_telemetry_utc_time", "utc_time"),
+    Index("ix_telemetry_event_utc_time", "event", "utc_time"),
 )
 
 # ---------------------------------------------------------------------------
