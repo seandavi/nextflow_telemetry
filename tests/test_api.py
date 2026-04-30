@@ -1,3 +1,6 @@
+"""Unit tests for FastAPI routes with mocked dependencies."""
+from __future__ import annotations
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -40,25 +43,14 @@ def test_health_returns_503_when_database_is_unavailable(app_module, monkeypatch
     assert response.json()["detail"]["status"] == "Unhealthy"
 
 
-def test_telemetry_happy_path_executes_insert(app_module, monkeypatch):
-    captured = {}
+def test_telemetry_happy_path_calls_ingest(app_module, monkeypatch):
+    """POST /telemetry should delegate to TelemetryService.ingest."""
+    ingested = {}
 
-    class FakeTransaction:
-        async def __aenter__(self):
-            return self
+    async def fake_ingest(event):
+        ingested["event"] = event
 
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def execute(self, statement):
-            captured["statement"] = statement
-            return None
-
-    class FakeEngine:
-        def begin(self):
-            return FakeTransaction()
-
-    monkeypatch.setattr(app_module, "engine", FakeEngine())
+    monkeypatch.setattr(app_module.telemetry_service, "ingest", fake_ingest)
 
     payload = {
         "runId": "test123",
@@ -74,6 +66,5 @@ def test_telemetry_happy_path_executes_insert(app_module, monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["runId"] == "test123"
-    statement = captured["statement"]
-    assert statement.compile().params["run_id"] == "test123"
-    assert statement.compile().params["event"] == "test_event"
+    assert ingested["event"].run_id == "test123"
+    assert ingested["event"].event == "test_event"

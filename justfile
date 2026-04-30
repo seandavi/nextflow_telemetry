@@ -52,6 +52,10 @@ sample-post:
 	  -d '{"runId":"test123","runName":"test_run","event":"test_event","utcTime":"2024-01-01T00:00:00","metadata":{"workflow":{}},"trace":{}}' \
 	  http://localhost:8000/telemetry | uv run python -m json.tool
 
+# Run Alembic migrations against the local DB (SQLALCHEMY_URI from env).
+migrate:
+	uv run alembic upgrade head
+
 # Run automated tests.
 test:
 	uv run pytest
