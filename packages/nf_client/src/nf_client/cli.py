@@ -76,7 +76,6 @@ def submit(
         typer.echo(f"Claimed {len(batch.jobs)} jobs — run_name: {run_name}")
 
         cmd = build_nextflow_command(
-            run_name=run_name,
             batch=batch,
             weblog_url=cfg.weblog_url,
         )

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -21,50 +21,62 @@ CLAIM_TTL_MINUTES = 5
 
 
 class DispatchBatchRequest(BaseModel):
-    limit: int = 50
-    # Optional: filter to a specific workflow. If omitted, any pending job qualifies.
-    workflow_id: str | None = None
-    workflow_version: str | None = None
+    """Request body for claiming a batch of pending jobs."""
+    limit: int = Field(default=50, ge=1, le=500, description="Maximum number of jobs to claim in this batch. All claimed jobs will be for the same workflow and version.")
+    workflow_id: str | None = Field(default=None, description="Optional: restrict the claim to a specific workflow. If omitted, the oldest pending jobs across any workflow are returned.")
+    workflow_version: str | None = Field(default=None, description="Optional: restrict the claim to a specific version of `workflow_id`.")
 
 
 class DispatchedJob(BaseModel):
-    sample_id: str
+    """A single job included in a dispatch batch."""
+    sample_id: str = Field(description="The sample identifier to be processed in this run.")
 
 
 class DispatchBatchResponse(BaseModel):
-    run_name: str
-    workflow_id: str
-    workflow_version: str
-    workflow_pk: int
-    repository_url: str
-    revision: str
-    profile: str
-    jobs: list[DispatchedJob]
+    """Response from a successful POST /dispatch/batch.
+
+    Contains everything the client needs to build the `nextflow run` command.
+    All jobs in the batch belong to the same workflow version so a single
+    command can process the full list of sample IDs.
+    """
+    run_name: str = Field(description="Server-assigned run name. Must be passed as `-name` to `nextflow run` so that weblog events can be correlated back to this batch.")
+    workflow_id: str = Field(description="Logical workflow identifier.")
+    workflow_version: str = Field(description="Workflow version being run.")
+    workflow_pk: int = Field(description="Database primary key of the workflow definition, for reference.")
+    repository_url: str = Field(description="Git URL or local path to pass to `nextflow run`.")
+    revision: str = Field(description="Git revision (branch/tag/commit) to check out.")
+    profile: str = Field(description="Nextflow profile to activate via `-profile`.")
+    jobs: list[DispatchedJob] = Field(description="List of jobs in this batch. Pass the sample IDs as `--sample_ids` (comma-separated) to the pipeline.")
 
 
 class SubmittedRequest(BaseModel):
-    run_name: str
-    executor_job_id: str | None = None
-    sample_ids: list[str] = []  # informational; all jobs for this run_name are transitioned
+    """Request body for confirming that a run has been submitted to the executor."""
+    run_name: str = Field(description="The `run_name` returned by POST /dispatch/batch. Must match exactly.")
+    executor_job_id: str | None = Field(default=None, description="Optional: the job ID assigned by the executor (SLURM job ID, local PID, etc.) for cross-referencing.")
+    sample_ids: list[str] = Field(default=[], description="Informational: the sample IDs included in this run. All jobs associated with `run_name` are transitioned regardless of this list.")
 
 
 def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
     router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 
-    @router.post("/batch", response_model=DispatchBatchResponse)
+    @router.post(
+        "/batch",
+        response_model=DispatchBatchResponse,
+        responses={204: {"description": "No pending jobs are available for the requested workflow filter."}},
+        summary="Claim a batch of pending jobs",
+        description=(
+            "Atomically selects and locks a set of `pending` jobs, transitions them to `claimed`, "
+            "and creates a `workflow_run` record. Returns all the information needed to build a "
+            "`nextflow run` command: repository URL, revision, profile, run name, and sample IDs. "
+            "Returns **HTTP 204** (no body) if there are no pending jobs matching the filter. "
+            "Claims that are not confirmed with `POST /dispatch/submitted` within 5 minutes are "
+            "automatically recycled by `POST /dispatch/requeue-expired`."
+        ),
+    )
     async def dispatch_batch(req: DispatchBatchRequest):
-        """Claim a batch of pending jobs.
-
-        Returns the run_name the client MUST pass as ``-name`` to nextflow run,
-        plus workflow execution details (repository, revision, profile).
-        All jobs in a batch belong to the same workflow/version.
-        """
         now = datetime.now(timezone.utc)
 
         async with engine.begin() as conn:
-            # Build job query with workflow join to get execution details.
-            # All claimed jobs in a batch must be for the same workflow_id + version
-            # so the client can build a single nextflow run command.
             q = (
                 select(jobs_tbl, workflows_tbl)
                 .join(workflows_tbl, jobs_tbl.c.workflow_pk == workflows_tbl.c.id)
@@ -78,7 +90,6 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
             if req.workflow_version:
                 q = q.where(jobs_tbl.c.workflow_version == req.workflow_version)
 
-            # Group by workflow to ensure all jobs in a batch share the same target
             result = await conn.execute(
                 q.order_by(jobs_tbl.c.workflow_id, jobs_tbl.c.workflow_version,
                            jobs_tbl.c.created_at)
@@ -90,22 +101,18 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
             if not rows:
                 return Response(status_code=204)
 
-            # Ensure all claimed jobs are for the same workflow (limit query already
-            # orders by workflow, so rows[0] defines the workflow for this batch)
             first_wf_id = rows[0]["workflow_id"]
             first_wf_ver = rows[0]["workflow_version"]
             rows = [r for r in rows if r["workflow_id"] == first_wf_id
                     and r["workflow_version"] == first_wf_ver]
 
             job_ids = [r["id"] for r in rows]
-            # Prefix with "r" so the name satisfies Nextflow's ^[a-z]... constraint
             run_name = "r" + str(_uuid7())
             workflow_pk = rows[0]["workflow_pk"]
             repository_url = rows[0]["repository_url"]
             revision = rows[0]["revision"]
             profile = rows[0]["profile"]
 
-            # Create the workflow_run record
             await conn.execute(
                 workflow_runs_tbl.insert().values(
                     run_name=run_name,
@@ -118,7 +125,6 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
                 )
             )
 
-            # Associate jobs with this run and mark claimed
             await conn.execute(
                 update(jobs_tbl)
                 .where(jobs_tbl.c.id.in_(job_ids))
@@ -136,9 +142,17 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
             jobs=[DispatchedJob(sample_id=r["sample_id"]) for r in rows],
         )
 
-    @router.post("/submitted")
+    @router.post(
+        "/submitted",
+        summary="Confirm a run has been submitted to the executor",
+        description=(
+            "Called immediately after the client successfully submits the Nextflow run to its executor "
+            "(local subprocess, SLURM, etc.). Transitions the `workflow_run` from `claimed` to `submitted` "
+            "and records the optional `executor_job_id` for cross-referencing. "
+            "Returns 404 if the run name is not found or is not in `claimed` state."
+        ),
+    )
     async def report_submitted(req: SubmittedRequest):
-        """Client reports that it successfully submitted the run to the executor."""
         now = datetime.now(timezone.utc)
         async with engine.begin() as conn:
             result = await conn.execute(
@@ -171,12 +185,18 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
 
         return {"run_name": req.run_name, "status": "submitted"}
 
-    @router.post("/requeue-expired")
+    @router.post(
+        "/requeue-expired",
+        summary="Requeue stale claimed runs",
+        description=(
+            "Finds `workflow_run` records that have been in `claimed` state for longer than 5 minutes "
+            "without a `POST /dispatch/submitted` confirmation, marks them `expired`, and resets their "
+            "associated jobs back to `pending` so they re-enter the dispatch pool. "
+            "Intended to be called periodically by a scheduler (cron, daemon loop) to recover from "
+            "client crashes or network failures between claim and submission."
+        ),
+    )
     async def requeue_expired():
-        """Requeue claimed-but-never-submitted jobs whose TTL has expired.
-
-        Intended to be called by a scheduler (cron / background task).
-        """
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=CLAIM_TTL_MINUTES)
         async with engine.begin() as conn:
             result = await conn.execute(
