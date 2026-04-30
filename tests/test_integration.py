@@ -439,7 +439,7 @@ def test_full_lifecycle(integration_client, db_url):
 
     # Register workflow + samples
     wf_resp = client.post("/workflows", json=_wf_payload(
-        workflow_id=wf_id, version=wf_version,
+        workflow_id=wf_id, version=wf_version, max_retries=0,
     ))
     assert wf_resp.status_code == 201
     wf_pk = wf_resp.json()["id"]
@@ -510,3 +510,148 @@ def test_full_lifecycle(integration_client, db_url):
         workflow_runs_tbl.c.run_name == run_name
     )))
     assert run_rows[0]["status"] == "completed"
+
+
+# ---------------------------------------------------------------------------
+# Retry logic
+# ---------------------------------------------------------------------------
+
+def _run_until_completed(client, run_id, run_name, wf_id, wf_version):
+    """Fire started + completed weblog events without any MARK_COMPLETE."""
+    client.post("/telemetry", json=_weblog_payload(
+        run_id=run_id, run_name=run_name, event="started",
+        workflow_id=wf_id, workflow_version=wf_version,
+    ))
+    client.post("/telemetry", json=_weblog_payload(
+        run_id=run_id, run_name=run_name, event="completed",
+        workflow_id=wf_id, workflow_version=wf_version,
+    ))
+
+
+def test_failed_job_requeued_when_retries_remain(integration_client, db_url):
+    """A job with retries left should reset to 'pending' after a failed run."""
+    from nextflow_telemetry.db import jobs_tbl, workflow_runs_tbl
+
+    client, _ = integration_client
+    wf_id = f"wf-retry-{uuid.uuid4().hex[:6]}"
+    wf_version = f"rv-{uuid.uuid4().hex[:6]}"
+    sample_id = f"SRR-retry-{uuid.uuid4().hex[:6]}"
+
+    client.post("/workflows", json=_wf_payload(
+        workflow_id=wf_id, version=wf_version, max_retries=2,
+    ))
+    client.post("/samples", json={"sample_id": sample_id})
+    client.post("/admin/reconcile-jobs")
+
+    # First run — dispatch, submit, start, complete with no MARK_COMPLETE
+    # limit=500: shared DB has many samples from prior tests; ensure our target is included
+    b = client.post("/dispatch/batch", json={"workflow_id": wf_id, "workflow_version": wf_version, "limit": 500})
+    assert b.status_code == 200
+    run_name = b.json()["run_name"]
+    run_id = str(uuid.uuid4())
+
+    client.post("/dispatch/submitted", json={"run_name": run_name, "sample_ids": [sample_id]})
+    _run_until_completed(client, run_id, run_name, wf_id, wf_version)
+
+    job_rows = _run(_query(db_url, select(jobs_tbl).where(
+        jobs_tbl.c.sample_id == sample_id,
+        jobs_tbl.c.workflow_id == wf_id,
+    )))
+    assert len(job_rows) == 1
+    assert job_rows[0]["status"] == "pending", "job should be re-enqueued, not failed"
+    assert job_rows[0]["retry_count"] == 1
+    assert job_rows[0]["run_name"] is None, "run_name cleared so job re-enters dispatch pool"
+
+
+def test_job_fails_permanently_when_retries_exhausted(integration_client, db_url):
+    """A job that exhausts max_retries should end up 'failed' and in the DLQ."""
+    from nextflow_telemetry.db import dead_letter_tbl, jobs_tbl
+
+    client, _ = integration_client
+    wf_id = f"wf-exhaust-{uuid.uuid4().hex[:6]}"
+    wf_version = f"ev-{uuid.uuid4().hex[:6]}"
+    sample_id = f"SRR-exhaust-{uuid.uuid4().hex[:6]}"
+
+    client.post("/workflows", json=_wf_payload(
+        workflow_id=wf_id, version=wf_version, max_retries=1,
+    ))
+    client.post("/samples", json={"sample_id": sample_id})
+    client.post("/admin/reconcile-jobs")
+
+    # Exhaust 1 retry — two failed runs; large limit so our sample is always dispatched
+    for _ in range(2):
+        b = client.post("/dispatch/batch", json={"workflow_id": wf_id, "workflow_version": wf_version, "limit": 500})
+        if b.status_code == 204:
+            break
+        run_name = b.json()["run_name"]
+        run_id = str(uuid.uuid4())
+        client.post("/dispatch/submitted", json={"run_name": run_name, "sample_ids": [sample_id]})
+        _run_until_completed(client, run_id, run_name, wf_id, wf_version)
+
+    job_rows = _run(_query(db_url, select(jobs_tbl).where(
+        jobs_tbl.c.sample_id == sample_id,
+        jobs_tbl.c.workflow_id == wf_id,
+    )))
+    assert job_rows[0]["status"] == "failed"
+    assert job_rows[0]["retry_count"] == 2
+
+    dlq = _run(_query(db_url, select(dead_letter_tbl).where(
+        dead_letter_tbl.c.sample_id == sample_id,
+        dead_letter_tbl.c.workflow_id == wf_id,
+    )))
+    assert len(dlq) == 1
+
+
+def test_retry_then_success(integration_client, db_url):
+    """A job that fails once should complete on the second attempt."""
+    from nextflow_telemetry.db import dead_letter_tbl, jobs_tbl
+
+    client, _ = integration_client
+    wf_id = f"wf-retrysuc-{uuid.uuid4().hex[:6]}"
+    wf_version = f"rs-{uuid.uuid4().hex[:6]}"
+    sample_id = f"SRR-retrysuc-{uuid.uuid4().hex[:6]}"
+
+    client.post("/workflows", json=_wf_payload(
+        workflow_id=wf_id, version=wf_version, max_retries=2,
+    ))
+    client.post("/samples", json={"sample_id": sample_id})
+    client.post("/admin/reconcile-jobs")
+
+    # First attempt: fail without MARK_COMPLETE → re-enqueued
+    b = client.post("/dispatch/batch", json={"workflow_id": wf_id, "workflow_version": wf_version, "limit": 500})
+    run1_name = b.json()["run_name"]
+    run1_id = str(uuid.uuid4())
+    client.post("/dispatch/submitted", json={"run_name": run1_name, "sample_ids": [sample_id]})
+    _run_until_completed(client, run1_id, run1_name, wf_id, wf_version)
+
+    # Second attempt: succeed with MARK_COMPLETE
+    b = client.post("/dispatch/batch", json={"workflow_id": wf_id, "workflow_version": wf_version, "limit": 500})
+    assert b.status_code == 200, "job should be back in pending for retry"
+    run2_name = b.json()["run_name"]
+    run2_id = str(uuid.uuid4())
+    client.post("/dispatch/submitted", json={"run_name": run2_name, "sample_ids": [sample_id]})
+
+    client.post("/telemetry", json=_weblog_payload(
+        run_id=run2_id, run_name=run2_name, event="started",
+        workflow_id=wf_id, workflow_version=wf_version,
+    ))
+    client.post("/telemetry", json=_weblog_payload(
+        run_id=run2_id, run_name=run2_name, event="process_completed",
+        sample_id=sample_id, process_name="MARK_COMPLETE", process_status="COMPLETED",
+    ))
+    client.post("/telemetry", json=_weblog_payload(
+        run_id=run2_id, run_name=run2_name, event="completed",
+        workflow_id=wf_id, workflow_version=wf_version,
+    ))
+
+    job_rows = _run(_query(db_url, select(jobs_tbl).where(
+        jobs_tbl.c.sample_id == sample_id,
+        jobs_tbl.c.workflow_id == wf_id,
+    )))
+    assert job_rows[0]["status"] == "completed"
+    assert job_rows[0]["retry_count"] == 1  # incremented on the first failure
+
+    dlq = _run(_query(db_url, select(dead_letter_tbl).where(
+        dead_letter_tbl.c.sample_id == sample_id,
+    )))
+    assert len(dlq) == 0, "no DLQ entry — job eventually succeeded"

@@ -62,8 +62,8 @@ class Telemetry(BaseModel):
     run_name: Annotated[str, Field(alias="runName")]
     event: str
     timestamp: Annotated[datetime.datetime, Field(alias="utcTime")]
-    metadata: Optional[Any]  # Optional[Metadata]
-    trace: Optional[Any]     # Optional[Trace]
+    metadata: Optional[Any] = None
+    trace: Optional[Any] = None
 
 
 class HealthResponse(BaseModel):

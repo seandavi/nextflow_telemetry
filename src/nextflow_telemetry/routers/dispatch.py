@@ -98,7 +98,8 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
                     and r["workflow_version"] == first_wf_ver]
 
             job_ids = [r["id"] for r in rows]
-            run_name = str(_uuid7())
+            # Prefix with "r" so the name satisfies Nextflow's ^[a-z]... constraint
+            run_name = "r" + str(_uuid7())
             workflow_pk = rows[0]["workflow_pk"]
             repository_url = rows[0]["repository_url"]
             revision = rows[0]["revision"]

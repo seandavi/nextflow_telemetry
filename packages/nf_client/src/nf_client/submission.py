@@ -58,9 +58,11 @@ def build_nextflow_command(
     Returns a list suitable for subprocess.run / subprocess.Popen.
     """
     sample_ids = ",".join(j.sample_id for j in batch.jobs)
-    cmd = [
-        "nextflow", "run", batch.repository_url,
-        "-revision", batch.revision,
+    cmd = ["nextflow", "run", batch.repository_url]
+    # -revision only applies to remote repos; skip for local paths
+    if not batch.repository_url.startswith(("/", ".")):
+        cmd += ["-revision", batch.revision]
+    cmd += [
         "-profile", batch.profile,
         "-name", run_name,
         "-with-weblog", weblog_url,
