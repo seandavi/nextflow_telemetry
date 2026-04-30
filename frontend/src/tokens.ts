@@ -1,0 +1,15 @@
+export const T = {
+  bg:        '#080c14',
+  surface:   '#0f1623',
+  elevated:  '#161f2e',
+  border:    'rgba(255,255,255,0.07)',
+  borderHi:  'rgba(255,255,255,0.13)',
+  text:      '#e2e8f0',
+  muted:     '#6b7a96',
+  accent:    'oklch(0.65 0.16 160)',
+  accentDim: 'oklch(0.65 0.16 160 / 0.15)',
+  green:     'oklch(0.68 0.15 145)',
+  amber:     'oklch(0.78 0.14 75)',
+  red:       'oklch(0.62 0.18 22)',
+  blue:      'oklch(0.68 0.14 230)',
+} as const
