@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class NextFlowVersion(BaseModel):
@@ -55,12 +56,14 @@ class Metadata(BaseModel):
 class Telemetry(BaseModel):
     """Telemetry model"""
 
-    run_id: str = Field(..., alias="runId")
-    run_name: str = Field(..., alias="runName")
+    model_config = ConfigDict(populate_by_name=True)
+
+    run_id: Annotated[str, Field(alias="runId")]
+    run_name: Annotated[str, Field(alias="runName")]
     event: str
-    timestamp: datetime.datetime = Field(..., alias="utcTime")
-    metadata: Optional[Any] # Optional[Metadata]
-    trace: Optional[Any] # Optional[Trace]
+    timestamp: Annotated[datetime.datetime, Field(alias="utcTime")]
+    metadata: Optional[Any]  # Optional[Metadata]
+    trace: Optional[Any]     # Optional[Trace]
 
 
 class HealthResponse(BaseModel):

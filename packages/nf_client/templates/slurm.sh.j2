@@ -1,0 +1,25 @@
+#!/bin/bash
+#SBATCH --job-name=nf_{{ run_name[:8] }}
+#SBATCH --time={{ walltime | default('48:00:00') }}
+#SBATCH --mem={{ memory | default('16G') }}
+#SBATCH --cpus-per-task={{ cpus | default(4) }}
+#SBATCH --output={{ log_dir | default('logs') }}/{{ run_name }}.out
+#SBATCH --error={{ log_dir | default('logs') }}/{{ run_name }}.err
+
+set -euo pipefail
+
+echo "Starting Nextflow run ${run_name} at $(date -u)"
+echo "Samples: {{ sample_ids }}"
+
+nextflow run {{ workflow_repository }} \
+  -revision {{ workflow_revision }} \
+  -profile {{ profile }} \
+  -name {{ run_name }} \
+  -with-weblog {{ weblog_url }} \
+  --sample_ids '{{ sample_ids }}' \
+  --workflow_id {{ workflow_id }} \
+  --workflow_version {{ workflow_version }} \
+  --run_name {{ run_name }} \
+  --outdir {{ outdir | default('results') }}
+
+echo "Nextflow run ${run_name} finished at $(date -u)"

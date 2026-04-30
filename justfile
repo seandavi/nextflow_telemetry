@@ -39,7 +39,7 @@ doctor:
 
 # Run API locally with auto-reload (expects SQLALCHEMY_URI in env).
 run:
-	uv run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000
+	uv run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000 --reload-dir src
 
 # Validate local API + DB connectivity.
 health:
@@ -52,13 +52,17 @@ sample-post:
 	  -d '{"runId":"test123","runName":"test_run","event":"test_event","utcTime":"2024-01-01T00:00:00","metadata":{"workflow":{}},"trace":{}}' \
 	  http://localhost:8000/telemetry | uv run python -m json.tool
 
+# Run Alembic migrations against the local DB (SQLALCHEMY_URI from env).
+migrate:
+	uv run alembic upgrade head
+
 # Run automated tests.
 test:
 	uv run pytest
 
 # Static type checks.
 typecheck:
-	uv run mypy nextflow_telemetry
+	uv run mypy src/nextflow_telemetry
 
 # Fast pre-commit quality gate.
 check: typecheck test
@@ -68,6 +72,10 @@ ci:
 	uv sync --group dev --frozen
 	uv run mypy nextflow_telemetry
 	uv run pytest
+
+# Start postgres only (for local dev without full stack).
+up-db:
+	docker compose --profile db up -d
 
 # Start full stack (API + DB + admin UI) via compose profiles.
 up-all:

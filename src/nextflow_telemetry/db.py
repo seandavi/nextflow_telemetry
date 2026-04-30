@@ -1,0 +1,150 @@
+"""SQLAlchemy table definitions and shared metadata.
+
+Kept separate from main.py so Alembic env.py can import metadata
+without pulling in the full FastAPI application.
+"""
+from __future__ import annotations
+
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+
+metadata = MetaData()
+
+# ---------------------------------------------------------------------------
+# Raw weblog events — append-only, one row per Nextflow event POST
+# ---------------------------------------------------------------------------
+telemetry_tbl = Table(
+    "telemetry",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("run_id", String, nullable=False, index=True),
+    Column("run_name", String, nullable=False, index=True),
+    Column("event", String, nullable=False),
+    Column("utc_time", DateTime(timezone=True)),
+    Column("sample_id", String, nullable=True, index=True),
+    Column("workflow_id", String, nullable=True, index=True),
+    Column("workflow_version", String, nullable=True),
+    Column("metadata_", JSONB),
+    Column("trace", JSONB),
+    Index("ix_telemetry_event", "event"),
+    Index("ix_telemetry_utc_time", "utc_time"),
+    Index("ix_telemetry_event_utc_time", "event", "utc_time"),
+)
+
+# ---------------------------------------------------------------------------
+# Sample catalog — one row per known sample
+# ---------------------------------------------------------------------------
+samples_tbl = Table(
+    "samples",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("sample_id", String, nullable=False, unique=True),
+    Column("metadata_", JSONB, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Index("ix_samples_sample_id", "sample_id"),
+)
+
+# ---------------------------------------------------------------------------
+# Workflow registry — one row per (workflow_id, version) pair
+# revision is intentionally mutable: the composite job key is
+# (workflow_id, version, sample_id), so changing revision does not force
+# reruns. workflow_runs captures the revision actually used.
+# ---------------------------------------------------------------------------
+workflows_tbl = Table(
+    "workflows",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("workflow_id", String, nullable=False),
+    Column("version", String, nullable=False),
+    Column("repository_url", String, nullable=False),
+    Column("revision", String, nullable=False),      # git hash / tag / branch — mutable
+    Column("profile", String, nullable=False, default="standard"),
+    Column("manifest_version", String, nullable=True),
+    Column("max_retries", Integer, nullable=False, default=3),
+    Column("status", String, nullable=False, default="active"),  # active|paused|retired
+    Column("description", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("workflow_id", "version", name="uq_workflow_id_version"),
+    Index("ix_workflows_status", "status"),
+    Index("ix_workflows_workflow_id", "workflow_id"),
+)
+
+# ---------------------------------------------------------------------------
+# Jobs — one row per (sample_id, workflow_id, workflow_version)
+# This is the cross-product of samples × active workflows; reconcile_jobs()
+# fills the gaps. A job tracks the *current* status; workflow_runs holds
+# the per-execution history.
+# ---------------------------------------------------------------------------
+jobs_tbl = Table(
+    "jobs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("sample_id", String, ForeignKey("samples.sample_id"), nullable=False),
+    Column("workflow_pk", Integer, ForeignKey("workflows.id"), nullable=False),
+    Column("workflow_id", String, nullable=False),       # denormalised for query convenience
+    Column("workflow_version", String, nullable=False),  # denormalised
+    Column("run_name", String, ForeignKey("workflow_runs.run_name"), nullable=True),
+    Column("status", String, nullable=False, default="pending"),
+    Column("retry_count", Integer, nullable=False, default=0),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Column("failed_at", DateTime(timezone=True), nullable=True),
+    Column("failure_reason", String, nullable=True),
+    UniqueConstraint("sample_id", "workflow_id", "workflow_version", name="uq_job_composite"),
+    Index("ix_jobs_status", "status"),
+    Index("ix_jobs_sample_id", "sample_id"),
+    Index("ix_jobs_composite", "sample_id", "workflow_id", "workflow_version"),
+)
+
+# ---------------------------------------------------------------------------
+# One row per Nextflow run (identified by run_name, which the client controls)
+# ---------------------------------------------------------------------------
+workflow_runs_tbl = Table(
+    "workflow_runs",
+    metadata,
+    Column("run_name", String, primary_key=True),
+    Column("run_id", String, nullable=True),           # set on 'started' weblog event
+    Column("workflow_id", String, nullable=False),
+    Column("workflow_version", String, nullable=False),
+    Column("workflow_pk", Integer, ForeignKey("workflows.id"), nullable=True),
+    Column("revision", String, nullable=True),         # revision actually used for this run
+    Column("status", String, nullable=False, default="claimed"),
+    Column("executor_job_id", String, nullable=True),  # SLURM job id, local PID, etc.
+    Column("claimed_at", DateTime(timezone=True), nullable=True),
+    Column("submitted_at", DateTime(timezone=True), nullable=True),
+    Column("started_at", DateTime(timezone=True), nullable=True),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Index("ix_workflow_runs_status", "status"),
+    Index("ix_workflow_runs_claimed_at", "claimed_at"),
+)
+
+# ---------------------------------------------------------------------------
+# Dead letter queue — populated when a run completes without MARK_COMPLETE
+# ---------------------------------------------------------------------------
+dead_letter_tbl = Table(
+    "dead_letter",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("job_id", Integer, ForeignKey("jobs.id"), nullable=False),
+    Column("run_name", String, nullable=False),
+    Column("sample_id", String, nullable=False),
+    Column("workflow_id", String, nullable=False),
+    Column("workflow_version", String, nullable=False),
+    Column("reason", String, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("resolved_at", DateTime(timezone=True), nullable=True),
+    Index("ix_dlq_resolved", "resolved_at"),
+)
