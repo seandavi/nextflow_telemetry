@@ -185,9 +185,9 @@ def _wait_for_job_status(
     async def _poll():
         engine = create_async_engine(db_asyncpg_url)
         try:
-            deadline = asyncio.get_event_loop().time() + timeout
+            deadline = asyncio.get_running_loop().time() + timeout
             rows = []
-            while asyncio.get_event_loop().time() < deadline:
+            while asyncio.get_running_loop().time() < deadline:
                 async with engine.connect() as conn:
                     rows = (await conn.execute(
                         select(jobs_tbl).where(
@@ -219,9 +219,9 @@ def _wait_for_run_status(
     async def _poll():
         engine = create_async_engine(db_asyncpg_url)
         try:
-            deadline = asyncio.get_event_loop().time() + timeout
+            deadline = asyncio.get_running_loop().time() + timeout
             rows = []
-            while asyncio.get_event_loop().time() < deadline:
+            while asyncio.get_running_loop().time() < deadline:
                 async with engine.connect() as conn:
                     rows = (await conn.execute(
                         select(workflow_runs_tbl).where(

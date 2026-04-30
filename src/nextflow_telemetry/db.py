@@ -146,5 +146,6 @@ dead_letter_tbl = Table(
     Column("reason", String, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("resolved_at", DateTime(timezone=True), nullable=True),
+    UniqueConstraint("job_id", name="uq_dlq_job_id"),
     Index("ix_dlq_resolved", "resolved_at"),
 )

@@ -127,7 +127,7 @@ class TelemetryService:
             update(jobs_tbl)
             .where(
                 jobs_tbl.c.run_name == run_name,
-                jobs_tbl.c.status.in_(["pending", "running", "claimed"]),
+                jobs_tbl.c.status.in_(["running", "claimed"]),
             )
             .values(
                 retry_count=jobs_tbl.c.retry_count + 1,

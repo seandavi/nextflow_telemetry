@@ -25,32 +25,32 @@ class Trace(BaseModel):
 class Workflow(BaseModel):
     # start: datetime.datetime
     project_dir: str = Field(..., alias="projectDir")
-    complete: Optional[Any]
-    profile: Optional[str]
-    homeDir: Optional[str]
-    workDir: Optional[str]
-    container: Optional[Any]
-    commitId: Optional[str]
-    errorMessage: Optional[str]
-    repository: Optional[str]
-    containerEngine: Optional[str]
-    scriptFile: Optional[str]
-    userName: Optional[str]
-    launchDir: Optional[str]
-    configFiles: Optional[list[str]]
-    sessionId: Optional[str]
-    errorReport: Optional[str]
-    scriptId: Optional[str]
-    revision: Optional[str]
-    commandLine: Optional[str]
-    nextflow: Optional[NextFlowVersion]
+    complete: Optional[Any] = None
+    profile: Optional[str] = None
+    homeDir: Optional[str] = None
+    workDir: Optional[str] = None
+    container: Optional[Any] = None
+    commitId: Optional[str] = None
+    errorMessage: Optional[str] = None
+    repository: Optional[str] = None
+    containerEngine: Optional[str] = None
+    scriptFile: Optional[str] = None
+    userName: Optional[str] = None
+    launchDir: Optional[str] = None
+    configFiles: Optional[list[str]] = None
+    sessionId: Optional[str] = None
+    errorReport: Optional[str] = None
+    scriptId: Optional[str] = None
+    revision: Optional[str] = None
+    commandLine: Optional[str] = None
+    nextflow: Optional[NextFlowVersion] = None
 
 
 class Metadata(BaseModel):
     """Metadata model"""
 
     params: Optional[dict[str, Any]] = None
-    workflow: Optional[Workflow]
+    workflow: Optional[Workflow] = None
 
 
 class Telemetry(BaseModel):

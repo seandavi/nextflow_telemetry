@@ -45,7 +45,7 @@ class DispatchBatchResponse(BaseModel):
 class SubmittedRequest(BaseModel):
     run_name: str
     executor_job_id: str | None = None
-    sample_ids: list[str]
+    sample_ids: list[str] = []  # informational; all jobs for this run_name are transitioned
 
 
 def create_dispatch_router(engine: AsyncEngine) -> APIRouter:

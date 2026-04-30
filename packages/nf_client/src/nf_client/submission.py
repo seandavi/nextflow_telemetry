@@ -21,8 +21,12 @@ from .models import DispatchBatchResponse
 
 
 def generate_run_name() -> str:
-    """Return a time-sortable UUID7 suitable for use as a Nextflow -name value."""
-    return str(_uuid7())
+    """Return a time-sortable UUID7 suitable for use as a Nextflow -name value.
+
+    The "r" prefix satisfies Nextflow's ^[a-z]... run-name constraint, since
+    UUID7 begins with a hex digit.
+    """
+    return "r" + str(_uuid7())
 
 
 def render_submission_script(
@@ -45,18 +49,20 @@ def render_submission_script(
 
 def build_nextflow_command(
     *,
-    run_name: str,
     batch: DispatchBatchResponse,
     weblog_url: str,
     extra_params: dict[str, str] | None = None,
 ) -> list[str]:
     """Build the nextflow run command for a dispatched batch.
 
-    All workflow execution details (repository, revision, profile) come from
-    the server's dispatch response — no local workflow config needed.
+    All workflow execution details (repository, revision, profile, run_name)
+    come from the server's dispatch response — no local workflow config needed.
+    Using batch.run_name directly ensures telemetry correlation is never broken
+    by a caller passing a mismatched name.
 
     Returns a list suitable for subprocess.run / subprocess.Popen.
     """
+    run_name = batch.run_name
     sample_ids = ",".join(j.sample_id for j in batch.jobs)
     cmd = ["nextflow", "run", batch.repository_url]
     # -revision only applies to remote repos; skip for local paths
