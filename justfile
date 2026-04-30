@@ -39,7 +39,7 @@ doctor:
 
 # Run API locally with auto-reload (expects SQLALCHEMY_URI in env).
 run:
-	uv run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000
+	uv run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000 --reload-dir src
 
 # Validate local API + DB connectivity.
 health:
@@ -58,7 +58,7 @@ test:
 
 # Static type checks.
 typecheck:
-	uv run mypy nextflow_telemetry
+	uv run mypy src/nextflow_telemetry
 
 # Fast pre-commit quality gate.
 check: typecheck test
