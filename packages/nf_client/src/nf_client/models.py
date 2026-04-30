@@ -6,12 +6,21 @@ from pydantic import BaseModel
 
 class DispatchedJob(BaseModel):
     sample_id: str
-    workflow_id: str
-    workflow_version: str
 
 
 class DispatchBatchResponse(BaseModel):
+    """Full execution context returned by POST /dispatch/batch.
+
+    The server supplies all workflow details so the client config no longer
+    needs to carry repository / revision / profile per-workflow.
+    """
     run_name: str
+    workflow_id: str
+    workflow_version: str
+    workflow_pk: int
+    repository_url: str
+    revision: str
+    profile: str
     jobs: list[DispatchedJob]
 
 

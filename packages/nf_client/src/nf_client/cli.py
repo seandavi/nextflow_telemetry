@@ -19,7 +19,6 @@ from .client import JobClient
 from .config import ClientConfig
 from .submission import (
     build_nextflow_command,
-    generate_run_name,
     render_submission_script,
     submit_local,
     submit_slurm,
@@ -45,9 +44,12 @@ def fetch(
         if batch is None:
             typer.echo("No pending jobs available.")
             return
-        typer.echo(f"run_name: {batch.run_name}")
+        typer.echo(f"run_name:   {batch.run_name}")
+        typer.echo(f"workflow:   {batch.workflow_id} v{batch.workflow_version}")
+        typer.echo(f"repository: {batch.repository_url} @ {batch.revision}")
+        typer.echo(f"profile:    {batch.profile}")
         for job in batch.jobs:
-            typer.echo(f"  {job.sample_id}  {job.workflow_id}  {job.workflow_version}")
+            typer.echo(f"  {job.sample_id}")
 
     asyncio.run(_run())
 
@@ -76,9 +78,6 @@ def submit(
         cmd = build_nextflow_command(
             run_name=run_name,
             batch=batch,
-            repository=cfg.workflow.repository,
-            revision=cfg.workflow.revision,
-            profile=cfg.workflow.profile,
             weblog_url=cfg.weblog_url,
         )
 
@@ -103,12 +102,12 @@ def submit(
                 **cfg.submission.defaults,
                 "run_name": run_name,
                 "sample_ids": ",".join(sample_ids),
-                "workflow_repository": cfg.workflow.repository,
-                "workflow_revision": cfg.workflow.revision,
-                "profile": cfg.workflow.profile,
+                "workflow_repository": batch.repository_url,
+                "workflow_revision": batch.revision,
+                "profile": batch.profile,
                 "weblog_url": cfg.weblog_url,
-                "workflow_id": cfg.workflow.id,
-                "workflow_version": cfg.workflow.version,
+                "workflow_id": batch.workflow_id,
+                "workflow_version": batch.workflow_version,
             }
             script = render_submission_script(cfg.submission.template_path, context)
 

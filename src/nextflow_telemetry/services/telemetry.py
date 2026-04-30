@@ -1,18 +1,17 @@
 """Telemetry ingest service.
 
-Handles writing raw weblog events and updating workflow_executions /
-workflow_runs state based on the event type.
+Handles writing raw weblog events and updating workflow_runs / jobs state
+based on the event type.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import insert, select, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import insert, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import dead_letter_tbl, telemetry_tbl, workflow_executions_tbl, workflow_runs_tbl
+from ..db import dead_letter_tbl, jobs_tbl, telemetry_tbl, workflow_runs_tbl
 from ..models import Telemetry
 
 
@@ -65,24 +64,23 @@ class TelemetryService:
                 )
             )
 
-            # 2. Update workflow_runs + associated executions on run-level started
+            # 2. Run-level started: transition workflow_run + jobs to running
             if event.event == "started":
                 await conn.execute(
                     update(workflow_runs_tbl)
                     .where(workflow_runs_tbl.c.run_name == event.run_name)
                     .values(run_id=event.run_id, status="running", started_at=now)
                 )
-                # Transition any executions still in claimed → running
                 await conn.execute(
-                    update(workflow_executions_tbl)
+                    update(jobs_tbl)
                     .where(
-                        workflow_executions_tbl.c.run_name == event.run_name,
-                        workflow_executions_tbl.c.status == "claimed",
+                        jobs_tbl.c.run_name == event.run_name,
+                        jobs_tbl.c.status == "claimed",
                     )
                     .values(status="running")
                 )
 
-            # 3. Per-sample completion: MARK_COMPLETE process_completed event
+            # 3. Per-sample completion via MARK_COMPLETE sentinel process
             elif (
                 event.event == "process_completed"
                 and sample_id
@@ -91,15 +89,15 @@ class TelemetryService:
                 and event.trace.get("status") == "COMPLETED"
             ):
                 await conn.execute(
-                    update(workflow_executions_tbl)
+                    update(jobs_tbl)
                     .where(
-                        workflow_executions_tbl.c.run_name == event.run_name,
-                        workflow_executions_tbl.c.sample_id == sample_id,
+                        jobs_tbl.c.run_name == event.run_name,
+                        jobs_tbl.c.sample_id == sample_id,
                     )
                     .values(status="completed", completed_at=now)
                 )
 
-            # 4. Run-level completion: sweep any non-completed samples to failed
+            # 4. Run-level completed: sweep non-completed jobs to failed + DLQ
             elif event.event == "completed":
                 await conn.execute(
                     update(workflow_runs_tbl)
@@ -109,23 +107,24 @@ class TelemetryService:
                 await self._sweep_incomplete_to_failed(conn, event.run_name, now)
 
     async def _sweep_incomplete_to_failed(self, conn, run_name: str, now: datetime) -> None:
-        """Mark all non-completed executions for this run as failed and enqueue DLQ."""
+        """Mark all non-completed jobs for this run as failed and enqueue DLQ."""
         result = await conn.execute(
-            update(workflow_executions_tbl)
+            update(jobs_tbl)
             .where(
-                workflow_executions_tbl.c.run_name == run_name,
-                workflow_executions_tbl.c.status.in_(["pending", "running", "claimed"]),
+                jobs_tbl.c.run_name == run_name,
+                jobs_tbl.c.status.in_(["pending", "running", "claimed"]),
             )
             .values(
                 status="failed",
                 failed_at=now,
                 failure_reason="run completed without MARK_COMPLETE",
+                retry_count=jobs_tbl.c.retry_count + 1,
             )
             .returning(
-                workflow_executions_tbl.c.id,
-                workflow_executions_tbl.c.sample_id,
-                workflow_executions_tbl.c.workflow_id,
-                workflow_executions_tbl.c.workflow_version,
+                jobs_tbl.c.id,
+                jobs_tbl.c.sample_id,
+                jobs_tbl.c.workflow_id,
+                jobs_tbl.c.workflow_version,
             )
         )
         failed_rows = result.mappings().all()
@@ -135,7 +134,7 @@ class TelemetryService:
                 insert(dead_letter_tbl),
                 [
                     {
-                        "execution_id": row["id"],
+                        "job_id": row["id"],
                         "run_name": run_name,
                         "sample_id": row["sample_id"],
                         "workflow_id": row["workflow_id"],

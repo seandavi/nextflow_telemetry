@@ -47,26 +47,26 @@ def build_nextflow_command(
     *,
     run_name: str,
     batch: DispatchBatchResponse,
-    repository: str,
-    revision: str,
-    profile: str,
     weblog_url: str,
     extra_params: dict[str, str] | None = None,
 ) -> list[str]:
     """Build the nextflow run command for a dispatched batch.
 
+    All workflow execution details (repository, revision, profile) come from
+    the server's dispatch response — no local workflow config needed.
+
     Returns a list suitable for subprocess.run / subprocess.Popen.
     """
     sample_ids = ",".join(j.sample_id for j in batch.jobs)
     cmd = [
-        "nextflow", "run", repository,
-        "-revision", revision,
-        "-profile", profile,
+        "nextflow", "run", batch.repository_url,
+        "-revision", batch.revision,
+        "-profile", batch.profile,
         "-name", run_name,
         "-with-weblog", weblog_url,
         "--sample_ids", sample_ids,
-        "--workflow_id", batch.jobs[0].workflow_id,
-        "--workflow_version", batch.jobs[0].workflow_version,
+        "--workflow_id", batch.workflow_id,
+        "--workflow_version", batch.workflow_version,
         "--run_name", run_name,
     ]
     for key, value in (extra_params or {}).items():

@@ -1,22 +1,19 @@
 """Configuration model for nf_client.
 
 A YAML file is the canonical config source, loaded via ClientConfig.from_yaml().
-Environment variables can override individual fields via pydantic-settings.
+
+Workflow details (repository, revision, profile) are no longer specified here —
+they come from the server's dispatch response. The config only describes
+how this client connects to the server and how it submits jobs locally.
 
 Example config file (client-hpc.yaml):
 
     server_url: "http://telemetry.example.com"
     weblog_url: "http://telemetry.example.com/telemetry"
 
-    workflow:
-      id: "curatedMetagenomics"
-      version: "1.0.0"
-      repository: "https://github.com/org/curatedMetagenomicsNextflow"
-      revision: "main"
-      profile: "slurm"
-
     dispatch:
       batch_size: 200
+      # Optional: pin this client to a specific workflow/version queue
       workflow_id: "curatedMetagenomics"
       workflow_version: "1.0.0"
 
@@ -41,16 +38,11 @@ import yaml
 from pydantic import BaseModel, Field
 
 
-class WorkflowConfig(BaseModel):
-    id: str
-    version: str
-    repository: str
-    revision: str = "main"
-    profile: str = "local"
-
-
 class DispatchConfig(BaseModel):
     batch_size: int = Field(default=50, ge=1, le=500)
+    # Optional filters: if set, this client only pulls jobs for this workflow
+    workflow_id: str | None = None
+    workflow_version: str | None = None
 
 
 class SubmissionConfig(BaseModel):
@@ -62,7 +54,6 @@ class SubmissionConfig(BaseModel):
 class ClientConfig(BaseModel):
     server_url: str
     weblog_url: str
-    workflow: WorkflowConfig
     dispatch: DispatchConfig = Field(default_factory=DispatchConfig)
     submission: SubmissionConfig = Field(default_factory=SubmissionConfig)
 

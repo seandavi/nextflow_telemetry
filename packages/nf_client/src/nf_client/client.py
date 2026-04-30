@@ -7,7 +7,6 @@ scheduler state — those decisions belong to the caller.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import httpx
 
@@ -56,14 +55,15 @@ class JobClient:
         """Claim a batch of pending jobs from the server.
 
         Returns None if no jobs are available (server returns 204).
-        The caller decides whether conditions are right before calling this.
+        Workflow details (repository, revision, profile) are in the response.
         """
         batch_size = limit or self._config.dispatch.batch_size
-        payload = {
-            "workflow_id": self._config.workflow.id,
-            "workflow_version": self._config.workflow.version,
-            "limit": batch_size,
-        }
+        payload: dict = {"limit": batch_size}
+        if self._config.dispatch.workflow_id:
+            payload["workflow_id"] = self._config.dispatch.workflow_id
+        if self._config.dispatch.workflow_version:
+            payload["workflow_version"] = self._config.dispatch.workflow_version
+
         response = await self._client.post("/dispatch/batch", json=payload)
         if response.status_code == 204:
             return None
