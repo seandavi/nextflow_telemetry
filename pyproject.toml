@@ -38,3 +38,9 @@ include = ["nextflow_telemetry*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    # Pydantic 2.x emits a spurious warning during importlib.reload in conftest;
+    # model aliases work correctly (verified via direct model_validate calls).
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+    "ignore:The 'alias' attribute.*Field.*has no effect:UserWarning",
+]
