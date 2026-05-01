@@ -29,6 +29,7 @@ cat << 'NFOVERRIDE' > nextflow_alpine_override.config
 process.executor = 'slurm'
 process.clusterOptions = '--partition {{ partition }} --qos={{ qos }} --output={{ log_dir }}/nf-%j.out'
 process.queueSize = 200
+process.time = '24h'
 NFOVERRIDE
 
 cat << 'METATSV' > metadata.tsv
