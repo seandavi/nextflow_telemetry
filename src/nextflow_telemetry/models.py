@@ -233,3 +233,25 @@ class ProcessFailureSignaturesResponse(BaseModel):
     generated_at_utc: datetime.datetime
     window_days: Optional[int]
     rows: list[FailureSignatureRow]
+
+
+# ---------------------------------------------------------------------------
+# Workflow job-summary model
+# ---------------------------------------------------------------------------
+
+class WorkflowJobSummary(BaseModel):
+    """Job status breakdown for a single workflow, including dead-letter count.
+
+    Returned by GET /workflows/{workflow_pk}/job-summary.
+    """
+    workflow_pk: int = Field(description="Database primary key of the workflow.")
+    workflow_id: str = Field(description="Logical workflow name.")
+    version: str = Field(description="Workflow version string.")
+    total: int = Field(description="Total number of jobs for this workflow.")
+    pending: int = Field(description="Jobs waiting to be dispatched.")
+    claimed: int = Field(description="Jobs claimed by a dispatcher but not yet submitted.")
+    running: int = Field(description="Jobs currently executing in Nextflow.")
+    completed: int = Field(description="Jobs that completed successfully.")
+    failed: int = Field(description="Jobs that exhausted retries and are marked failed.")
+    dead_letter: int = Field(description="Jobs that were routed to the dead-letter queue.")
+    completion_pct: float = Field(description="Percentage of jobs completed (0–100). Zero when total is 0.")

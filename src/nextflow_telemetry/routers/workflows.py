@@ -5,8 +5,11 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from ..db import dead_letter_tbl, jobs_tbl, workflows_tbl
+from ..models import WorkflowJobSummary
 from ..services.workflow import WorkflowService
 
 
@@ -147,5 +150,71 @@ def create_workflows_router(engine: AsyncEngine) -> APIRouter:
         if not row:
             raise HTTPException(status_code=404, detail=f"Workflow {workflow_pk} not found")
         return _to_response(row)
+
+    @router.get(
+        "/{workflow_pk}/job-summary",
+        response_model=WorkflowJobSummary,
+        summary="Job status summary for a workflow",
+        description=(
+            "Returns the count of jobs in each status for the specified workflow, "
+            "plus the number of dead-letter entries and overall completion percentage. "
+            "Returns 404 if no workflow with the given primary key exists."
+        ),
+    )
+    async def job_summary(workflow_pk: int):
+        async with engine.connect() as conn:
+            # Resolve workflow metadata; 404 if not found
+            wf_row = await conn.execute(
+                select(
+                    workflows_tbl.c.id,
+                    workflows_tbl.c.workflow_id,
+                    workflows_tbl.c.version,
+                ).where(workflows_tbl.c.id == workflow_pk)
+            )
+            wf = wf_row.mappings().one_or_none()
+            if wf is None:
+                raise HTTPException(status_code=404, detail=f"Workflow {workflow_pk} not found")
+
+            # Count jobs grouped by status
+            status_counts_q = (
+                select(jobs_tbl.c.status, func.count().label("cnt"))
+                .where(jobs_tbl.c.workflow_pk == workflow_pk)
+                .group_by(jobs_tbl.c.status)
+            )
+            status_result = await conn.execute(status_counts_q)
+            counts: dict[str, int] = {r.status: r.cnt for r in status_result}
+
+            # Count dead-letter entries linked to jobs for this workflow
+            dlq_q = (
+                select(func.count().label("cnt"))
+                .select_from(
+                    dead_letter_tbl.join(jobs_tbl, dead_letter_tbl.c.job_id == jobs_tbl.c.id)
+                )
+                .where(jobs_tbl.c.workflow_pk == workflow_pk)
+            )
+            dlq_result = await conn.execute(dlq_q)
+            dlq_count: int = dlq_result.scalar_one()
+
+        pending   = counts.get("pending",   0)
+        claimed   = counts.get("claimed",   0)
+        running   = counts.get("running",   0)
+        completed = counts.get("completed", 0)
+        failed    = counts.get("failed",    0)
+        total     = pending + claimed + running + completed + failed
+        pct       = 100.0 * completed / total if total > 0 else 0.0
+
+        return WorkflowJobSummary(
+            workflow_pk=workflow_pk,
+            workflow_id=wf["workflow_id"],
+            version=wf["version"],
+            total=total,
+            pending=pending,
+            claimed=claimed,
+            running=running,
+            completed=completed,
+            failed=failed,
+            dead_letter=dlq_count,
+            completion_pct=round(pct, 2),
+        )
 
     return router

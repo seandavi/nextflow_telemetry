@@ -219,3 +219,17 @@ export interface ReconcileResult {
 export interface RequeueResult {
   requeued_runs: number
 }
+
+export interface WorkflowJobSummary {
+  workflow_pk: number
+  workflow_id: string
+  version: string
+  total: number
+  pending: number
+  claimed: number
+  running: number
+  completed: number
+  failed: number
+  dead_letter: number
+  completion_pct: number
+}

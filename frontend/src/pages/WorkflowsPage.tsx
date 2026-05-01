@@ -6,7 +6,7 @@ import Btn from '../components/Btn'
 import Badge from '../components/Badge'
 import Input from '../components/Input'
 import PageWrap from '../components/PageWrap'
-import type { WorkflowResponse, WorkflowRegisterRequest } from '../types'
+import type { WorkflowResponse, WorkflowRegisterRequest, WorkflowJobSummary } from '../types'
 
 type WfStatus = 'active' | 'paused' | 'retired'
 
@@ -84,16 +84,57 @@ function WorkflowFormModal({
   )
 }
 
+function JobSummaryBar({ summary }: { summary: WorkflowJobSummary }) {
+  const { total, completed, failed, running, pending, claimed, dead_letter, completion_pct } = summary
+  if (total === 0) {
+    return (
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: T.muted }}>No jobs</span>
+      </div>
+    )
+  }
+  const completedPct = (completed / total) * 100
+  const failedPct    = (failed / total) * 100
+  const runningPct   = (running / total) * 100
+  return (
+    <div style={{ width: 220, flexShrink: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+        <span style={{ fontSize: 11, color: T.muted }}>Jobs</span>
+        <span style={{ fontSize: 11, color: T.text, fontFamily: 'DM Mono, monospace' }}>
+          {fmtNum(completed)}/{fmtNum(total)}
+          <span style={{ color: T.muted }}> · {completion_pct.toFixed(1)}%</span>
+        </span>
+      </div>
+      <div style={{ height: 5, background: T.elevated, borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', height: '100%' }}>
+          <div style={{ width: `${completedPct}%`, background: T.green }} />
+          <div style={{ width: `${failedPct}%`, background: T.red }} />
+          <div style={{ width: `${runningPct}%`, background: T.blue }} />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+        {(pending + claimed) > 0 && (
+          <span style={{ fontSize: 10, color: T.amber }}>{fmtNum(pending + claimed)} pending</span>
+        )}
+        {running > 0 && <span style={{ fontSize: 10, color: T.blue }}>{fmtNum(running)} running</span>}
+        {failed  > 0 && <span style={{ fontSize: 10, color: T.red  }}>{fmtNum(failed)} failed</span>}
+        {dead_letter > 0 && (
+          <span style={{ fontSize: 10, color: T.muted }}>{fmtNum(dead_letter)} DLQ</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function WorkflowCard({
-  wf, onStatusChange, onEdit,
+  wf, summary, onStatusChange, onEdit,
 }: {
   wf: WorkflowResponse
+  summary: WorkflowJobSummary | undefined
   onStatusChange: (id: number, status: WfStatus) => void
   onEdit: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const js = wf.job_stats
-  const completionPct = js && js.total > 0 ? (js.completed / js.total) * 100 : 0
 
   const nextStatuses: Record<WfStatus, WfStatus[]> = {
     active:  ['paused', 'retired'],
@@ -130,28 +171,7 @@ function WorkflowCard({
             </div>
           )}
         </div>
-        {js && js.total > 0 && (
-          <div style={{ width: 200, flexShrink: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-              <span style={{ fontSize: 11, color: T.muted }}>Jobs</span>
-              <span style={{ fontSize: 11, color: T.text, fontFamily: 'DM Mono, monospace' }}>
-                {fmtNum(js.completed)}/{fmtNum(js.total)}
-              </span>
-            </div>
-            <div style={{ height: 5, background: T.elevated, borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{ display: 'flex', height: '100%' }}>
-                <div style={{ width: `${completionPct}%`, background: T.green }} />
-                <div style={{ width: `${(js.failed / js.total) * 100}%`, background: T.red }} />
-                <div style={{ width: `${(js.running / js.total) * 100}%`, background: T.blue }} />
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-              {(js.pending ?? 0) > 0 && <span style={{ fontSize: 10, color: T.amber }}>{fmtNum(js.pending)} pending</span>}
-              {js.running > 0 && <span style={{ fontSize: 10, color: T.blue  }}>{fmtNum(js.running)} running</span>}
-              {js.failed  > 0 && <span style={{ fontSize: 10, color: T.red   }}>{fmtNum(js.failed)} failed</span>}
-            </div>
-          </div>
-        )}
+        {summary && <JobSummaryBar summary={summary} />}
         <span style={{ color: T.muted, fontSize: 14, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</span>
       </div>
 
@@ -195,6 +215,7 @@ function WorkflowCard({
 
 export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<WorkflowResponse[]>([])
+  const [summaries, setSummaries] = useState<Record<number, WorkflowJobSummary>>({})
   const [showForm, setShowForm]   = useState(false)
   const [editWf, setEditWf]       = useState<WorkflowResponse | null>(null)
   const [statusFilter, setStatusFilter] = useState<WfStatus | ''>('')
@@ -204,7 +225,15 @@ export default function WorkflowsPage() {
   workflows.forEach(w => counts[w.status]++)
 
   useEffect(() => {
-    api.workflows.list().then(setWorkflows).catch(console.error)
+    api.workflows.list().then(wfs => {
+      setWorkflows(wfs)
+      // Fetch job summaries for all workflows in parallel
+      wfs.forEach(wf => {
+        api.workflows.jobSummary(wf.id)
+          .then(s => setSummaries(prev => ({ ...prev, [wf.id]: s })))
+          .catch(() => {/* summary unavailable — silently skip */})
+      })
+    }).catch(console.error)
   }, [])
 
   function updateStatus(id: number, status: WfStatus) {
@@ -254,6 +283,7 @@ export default function WorkflowsPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {filtered.map(wf => (
           <WorkflowCard key={wf.id} wf={wf}
+            summary={summaries[wf.id]}
             onStatusChange={updateStatus}
             onEdit={() => { setEditWf(wf); setShowForm(true) }}
           />
