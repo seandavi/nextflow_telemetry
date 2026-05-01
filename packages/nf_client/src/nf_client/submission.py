@@ -17,7 +17,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from .models import DispatchBatchResponse
+from .models import DispatchBatchResponse, DispatchedJob
 
 
 def generate_run_name() -> str:
@@ -27,6 +27,19 @@ def generate_run_name() -> str:
     UUID7 begins with a hex digit.
     """
     return "r" + str(_uuid7())
+
+
+def generate_metadata_tsv(jobs: list[DispatchedJob]) -> str:
+    """Return TSV content with header sample_id\\tNCBI_accession.
+
+    Each row maps a biosample ID to its semicolon-separated SRR accessions
+    sourced from job.metadata['ncbi_accession'].
+    """
+    lines = ["sample_id\tNCBI_accession"]
+    for job in jobs:
+        accession = job.metadata.get("ncbi_accession", "")
+        lines.append(f"{job.sample_id}\t{accession}")
+    return "\n".join(lines)
 
 
 def render_submission_script(

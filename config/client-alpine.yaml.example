@@ -1,0 +1,23 @@
+server_url: "https://REPLACE_WITH_DEPLOYED_URL"
+weblog_url: "https://REPLACE_WITH_DEPLOYED_URL/telemetry"
+
+dispatch:
+  batch_size: 100
+  workflow_id: "cmgd_nextflow"
+  workflow_version: "1.3.0"
+
+submission:
+  mode: slurm
+  template_path: "templates/submit_alpine.sh.j2"
+  max_concurrent_runs: 5
+
+  defaults:
+    mem: "2G"
+    cpus: 1
+    time: "100:00:00"
+    qos: "long"
+    partition: "amilan"
+    log_dir: "/projects/seda0001_amc/cmgd/job_logs"
+    singularity_cache: "/scratch/alpine/seda0001_amc/apptainer_cache"
+    store_dir: "/projects/seda0001_amc/nf_keep/store"
+    google_credentials: "$HOME/curatedmetagenomicdata-232f4a306d1d.json"
