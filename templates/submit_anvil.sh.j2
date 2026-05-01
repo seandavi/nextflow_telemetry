@@ -40,10 +40,9 @@ METATSV
 $NEXTFLOW run {{ workflow_repository }} \
   -name {{ run_name }} \
   -revision {{ workflow_revision }} \
-  -profile {{ profile }} \
+  -profile anvil \
   -c nextflow_anvil_override.config \
   --metadata_tsv metadata.tsv \
-  --store_dir /anvil/scratch/x-seandavi/keep/store \
   -with-weblog {{ weblog_url }}
 
 NF_EXIT=$?
