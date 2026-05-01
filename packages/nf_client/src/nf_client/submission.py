@@ -122,9 +122,15 @@ def submit_local(cmd: list[str], log_file: Path | None = None) -> str:
 
 
 def submit_slurm(script_content: str) -> str:
-    """Submit a rendered sbatch script and return the SLURM job ID."""
+    """Submit a rendered sbatch script and return the SLURM job ID.
+
+    --export=NONE prevents the submitting shell's environment from leaking into
+    the compute node, which would otherwise block SLURM's own module-system
+    initialization (lmod sets up the 'module' function via /etc/profile.d on a
+    clean environment).
+    """
     result = subprocess.run(
-        ["sbatch", "--parsable"],
+        ["sbatch", "--parsable", "--export=NONE"],
         input=script_content,
         text=True,
         capture_output=True,
