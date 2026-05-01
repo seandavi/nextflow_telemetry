@@ -239,6 +239,22 @@ class ProcessFailureSignaturesResponse(BaseModel):
 # Workflow job-summary model
 # ---------------------------------------------------------------------------
 
+class RunningProcessRow(BaseModel):
+    """In-flight task count for a single process."""
+    process: str
+    running: int = Field(description="Tasks with process_started but no process_completed.")
+    queued: int = Field(description="Tasks with process_submitted but not yet process_started.")
+
+
+class RunningProcessesResponse(BaseModel):
+    """Response from GET /metrics/processes/running."""
+    generated_at_utc: datetime.datetime
+    active_nf_runs: int = Field(description="Number of workflow_runs currently in 'running' state.")
+    total_running: int = Field(description="Total tasks actively executing across all runs.")
+    total_queued: int = Field(description="Total tasks submitted to SLURM but not yet started.")
+    by_process: list[RunningProcessRow]
+
+
 class WorkflowJobSummary(BaseModel):
     """Job status breakdown for a single workflow, including dead-letter count.
 

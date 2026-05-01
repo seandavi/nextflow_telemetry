@@ -386,6 +386,70 @@ class ProcessMetricsService:
             "rows": rows,
         }
 
+    async def running(self) -> dict[str, Any]:
+        """Tasks currently in flight across all active Nextflow runs.
+
+        Derives live state from the event stream:
+        - queued:  process_submitted but no process_started yet
+        - running: process_started but no process_completed yet
+        Only considers runs where workflow_runs.status = 'running'.
+        """
+        sql = text(
+            """
+            with active_runs as (
+                select run_name from workflow_runs where status = 'running'
+            ),
+            events as (
+                select
+                    t.run_name,
+                    t.trace->>'task_id' as task_id,
+                    coalesce(t.trace->>'process', '<null>') as process,
+                    t.event
+                from telemetry t
+                join active_runs ar on t.run_name = ar.run_name
+                where t.event in ('process_submitted', 'process_started', 'process_completed')
+                  and t.trace is not null
+            ),
+            task_state as (
+                select
+                    process,
+                    bool_or(event = 'process_submitted')  as is_submitted,
+                    bool_or(event = 'process_started')    as is_started,
+                    bool_or(event = 'process_completed')  as is_completed
+                from events
+                group by run_name, task_id, process
+            )
+            select
+                process,
+                count(*) filter (where is_started and not is_completed)          as running,
+                count(*) filter (where is_submitted and not is_started)           as queued
+            from task_state
+            group by process
+            having count(*) filter (where is_started and not is_completed) > 0
+                or count(*) filter (where is_submitted and not is_started) > 0
+            order by running desc, queued desc
+            """
+        )
+
+        active_runs_sql = text(
+            "select count(*) as n from workflow_runs where status = 'running'"
+        )
+
+        async with self.engine.connect() as conn:
+            rows = [dict(r) for r in (await conn.execute(sql)).mappings().all()]
+            active_nf_runs = (await conn.execute(active_runs_sql)).scalar_one()
+
+        total_running = sum(r["running"] for r in rows)
+        total_queued  = sum(r["queued"]  for r in rows)
+
+        return {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "active_nf_runs": active_nf_runs,
+            "total_running": total_running,
+            "total_queued": total_queued,
+            "by_process": rows,
+        }
+
     async def failure_signatures(self, *, window_days: int | None = None, limit: int = 100) -> dict[str, Any]:
         if limit < 1:
             raise ValueError("limit must be >= 1")

@@ -15,6 +15,19 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
     router = APIRouter(prefix="/metrics/processes", tags=["process-metrics"])
 
     @router.get(
+        "/running",
+        response_model=models.RunningProcessesResponse,
+        summary="Tasks currently in flight",
+        description=(
+            "Returns live counts of tasks that are actively running (process_started but not "
+            "process_completed) or queued in SLURM (process_submitted but not started), "
+            "grouped by process name. Only considers runs currently in 'running' state."
+        ),
+    )
+    async def process_running():
+        return await service.running()
+
+    @router.get(
         "/summary",
         response_model=models.ProcessSummaryResponse,
         summary="Process execution summary",
