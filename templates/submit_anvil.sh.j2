@@ -29,6 +29,7 @@ process.executor = 'slurm'
 process.clusterOptions = '--account {{ account }} --partition {{ partition }} --output={{ log_dir }}/nf-%j.out'
 process.queueSize = 200
 process.time = '24h'
+singularity.runOptions = "-B $HOME/.ncbi"
 NFOVERRIDE
 
 mkdir -p /anvil/scratch/x-seandavi/keep/store
