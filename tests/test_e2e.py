@@ -344,6 +344,200 @@ def test_e2e_happy_path(live_server: LiveServer, db_asyncpg_url, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# E2E: ArtachoA_2021 cohort — 20 real samples, 2 batches of 10
+# ---------------------------------------------------------------------------
+
+# First 20 sample_ids from ArtachoA_2021_sample.tsv — hardcoded for test stability.
+ARTACHO_SAMPLE_IDS = [
+    "s_126", "s_005E", "s_416B", "s_462", "s_460",
+    "s_411", "s_378", "s_317", "s_5",   "s_356",
+    "s_360", "s_299", "s_222", "s_211", "s_342",
+    "s_367B", "s_90", "s_473", "s_489", "s_283",
+]
+
+ARTACHO_NCBI = {
+    "s_126":  "SRR13436222", "s_005E": "SRR13436240", "s_416B": "SRR13436241",
+    "s_462":  "SRR13436253", "s_460":  "SRR13436254", "s_411":  "SRR13436262",
+    "s_378":  "SRR13436268", "s_317":  "SRR13436278", "s_5":    "SRR13436328",
+    "s_356":  "SRR13436270", "s_360":  "SRR13436274", "s_299":  "SRR13436279",
+    "s_222":  "SRR13436283", "s_211":  "SRR13436304", "s_342":  "SRR13436271",
+    "s_367B": "SRR13436243", "s_90":   "SRR13436244", "s_473":  "SRR13436251",
+    "s_489":  "SRR13436248", "s_283":  "SRR13436281",
+}
+
+
+def _query_telemetry_for_run(db_asyncpg_url: str, run_name: str) -> list[dict]:
+    """Return all telemetry rows for a given run_name."""
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from nextflow_telemetry.db import telemetry_tbl
+
+    async def _fetch():
+        engine = create_async_engine(db_asyncpg_url)
+        try:
+            async with engine.connect() as conn:
+                rows = (await conn.execute(
+                    select(telemetry_tbl).where(telemetry_tbl.c.run_name == run_name)
+                )).mappings().all()
+            return [dict(r) for r in rows]
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(_fetch())
+
+
+def _query_dead_letter(db_asyncpg_url: str, sample_ids: list[str], wf_id: str) -> list[dict]:
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from nextflow_telemetry.db import dead_letter_tbl
+
+    async def _fetch():
+        engine = create_async_engine(db_asyncpg_url)
+        try:
+            async with engine.connect() as conn:
+                rows = (await conn.execute(
+                    select(dead_letter_tbl).where(
+                        dead_letter_tbl.c.sample_id.in_(sample_ids),
+                        dead_letter_tbl.c.workflow_id == wf_id,
+                    )
+                )).mappings().all()
+            return [dict(r) for r in rows]
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(_fetch())
+
+
+def _dispatch_and_submit(client: httpx.Client, wf_id: str, wf_version: str, limit: int) -> tuple[str, list[str]]:
+    """Claim a batch and immediately report submitted. Returns (run_name, sample_ids)."""
+    batch = client.post("/dispatch/batch", json={
+        "workflow_id": wf_id, "workflow_version": wf_version, "limit": limit,
+    })
+    assert batch.status_code == 200, f"Expected 200, got {batch.status_code}: {batch.text}"
+    data = batch.json()
+    run_name = data["run_name"]
+    sample_ids = [j["sample_id"] for j in data["jobs"]]
+    client.post("/dispatch/submitted", json={"run_name": run_name, "sample_ids": sample_ids})
+    return run_name, sample_ids
+
+
+def test_artacho_cohort_full_loop(live_server: LiveServer, db_asyncpg_url: str, tmp_path: Path):
+    """Full loop with 20 ArtachoA_2021 samples: 2 batches of 10, DB sanity checks.
+
+    Verifies:
+    - All 20 jobs reach 'completed'
+    - Both workflow_runs reach 'completed'
+    - Telemetry rows have workflow_id/workflow_version populated (from catalog lookup)
+    - Telemetry has sample_id set on MARK_COMPLETE events
+    - Dead letter queue is empty
+    """
+    wf_id = "nf_testing"
+    wf_version = "0.1.0"
+    weblog_url = f"{live_server}/telemetry"
+    batch_size = 10
+
+    with _api(live_server) as client:
+        # Register workflow pointing at local nf_testing pipeline
+        _register_workflow(client, wf_id, wf_version, max_retries=0)
+
+        # Register all 20 samples with real metadata
+        for sid in ARTACHO_SAMPLE_IDS:
+            resp = client.post("/samples", json={
+                "sample_id": sid,
+                "metadata": {
+                    "ncbi_accession": ARTACHO_NCBI[sid],
+                    "cohort": "ArtachoA_2021",
+                },
+            })
+            assert resp.status_code == 201, f"Failed to register {sid}: {resp.text}"
+
+        recon = client.post("/admin/reconcile-jobs")
+        recon.raise_for_status()
+        assert recon.json()["jobs_created"] == len(ARTACHO_SAMPLE_IDS), (
+            f"Expected {len(ARTACHO_SAMPLE_IDS)} jobs created, got {recon.json()}"
+        )
+
+        # Batch 1
+        run1_name, batch1_ids = _dispatch_and_submit(client, wf_id, wf_version, batch_size)
+
+    result1 = _run_nextflow(
+        run_name=run1_name,
+        sample_ids=batch1_ids,
+        wf_id=wf_id,
+        wf_version=wf_version,
+        weblog_url=weblog_url,
+        work_dir=tmp_path / "run1",
+    )
+    assert result1.returncode == 0, (
+        f"Batch 1 nextflow failed\nstdout: {result1.stdout[-3000:]}"
+    )
+
+    run1_row = _wait_for_run_status(db_asyncpg_url, run_name=run1_name, expected_status="completed", timeout=30)
+    assert run1_row.get("status") == "completed", f"run1 status: {run1_row.get('status')}"
+
+    with _api(live_server) as client:
+        # Batch 2
+        run2_name, batch2_ids = _dispatch_and_submit(client, wf_id, wf_version, batch_size)
+
+    assert len(batch1_ids) + len(batch2_ids) == len(ARTACHO_SAMPLE_IDS), (
+        f"Batches don't cover all samples: {len(batch1_ids)} + {len(batch2_ids)}"
+    )
+
+    result2 = _run_nextflow(
+        run_name=run2_name,
+        sample_ids=batch2_ids,
+        wf_id=wf_id,
+        wf_version=wf_version,
+        weblog_url=weblog_url,
+        work_dir=tmp_path / "run2",
+    )
+    assert result2.returncode == 0, (
+        f"Batch 2 nextflow failed\nstdout: {result2.stdout[-3000:]}"
+    )
+
+    run2_row = _wait_for_run_status(db_asyncpg_url, run_name=run2_name, expected_status="completed", timeout=30)
+    assert run2_row.get("status") == "completed", f"run2 status: {run2_row.get('status')}"
+
+    # --- DB sanity checks ---
+
+    # 1. All 20 jobs completed
+    job_rows = _query_jobs(db_asyncpg_url, ARTACHO_SAMPLE_IDS, wf_id)
+    failed = [sid for sid in ARTACHO_SAMPLE_IDS if job_rows.get(sid, {}).get("status") != "completed"]
+    assert not failed, (
+        f"{len(failed)} jobs not completed: {failed}\n"
+        f"server logs:\n{live_server.get_logs()}"
+    )
+
+    # 2. Telemetry rows have workflow_id/version populated (run_name lookup fix)
+    for run_name in (run1_name, run2_name):
+        telem_rows = _query_telemetry_for_run(db_asyncpg_url, run_name)
+        assert telem_rows, f"No telemetry rows for {run_name}"
+        null_wf = [r for r in telem_rows if r["workflow_id"] is None]
+        assert not null_wf, (
+            f"{len(null_wf)}/{len(telem_rows)} telemetry rows have NULL workflow_id for {run_name}"
+        )
+
+    # 3. MARK_COMPLETE events have sample_id populated
+    for run_name in (run1_name, run2_name):
+        telem_rows = _query_telemetry_for_run(db_asyncpg_url, run_name)
+        mark_complete = [
+            r for r in telem_rows
+            if r.get("event") == "process_completed"
+            and isinstance(r.get("trace"), dict)
+            and str(r["trace"].get("process", "")).endswith("MARK_COMPLETE")
+        ]
+        assert mark_complete, f"No MARK_COMPLETE telemetry events found for {run_name}"
+        null_sample = [r for r in mark_complete if r["sample_id"] is None]
+        assert not null_sample, (
+            f"{len(null_sample)} MARK_COMPLETE events have NULL sample_id for {run_name}"
+        )
+
+    # 4. Dead letter queue is empty
+    dlq = _query_dead_letter(db_asyncpg_url, ARTACHO_SAMPLE_IDS, wf_id)
+    assert not dlq, f"Unexpected DLQ entries: {dlq}"
+
+
+# ---------------------------------------------------------------------------
 # E2E: failure + retry — inject a process failure, then succeed on retry
 # ---------------------------------------------------------------------------
 

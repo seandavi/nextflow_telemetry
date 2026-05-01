@@ -55,11 +55,11 @@ class ProcessMetricsService:
               count(distinct process) as distinct_processes,
               count(*) filter (where status = 'COMPLETED') as success_rows,
               count(*) filter (where status in ('FAILED', 'ABORTED')) as failure_rows,
-              round(100.0 * count(*) filter (where status in ('FAILED', 'ABORTED'))::numeric / nullif(count(*), 0), 2) as failure_pct,
+              coalesce(round(100.0 * count(*) filter (where status in ('FAILED', 'ABORTED'))::numeric / nullif(count(*), 0), 2), 0) as failure_pct,
               count(*) filter (where attempt > 1) as retried_rows,
-              round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2) as retry_pct,
-              round(100.0 * count(*) filter (where attempt > 1 and status = 'COMPLETED')::numeric /
-                    nullif(count(*) filter (where attempt > 1), 0), 2) as retry_success_pct,
+              coalesce(round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2), 0) as retry_pct,
+              coalesce(round(100.0 * count(*) filter (where attempt > 1 and status = 'COMPLETED')::numeric /
+                    nullif(count(*) filter (where attempt > 1), 0), 2), 0) as retry_success_pct,
               max(utc_time) as latest_process_completed_utc
             from x
             """

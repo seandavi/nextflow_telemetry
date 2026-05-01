@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { T } from '../tokens'
-import { MOCK_WORKFLOWS, MOCK_SAMPLE_TOTAL } from '../lib/mock-data'
+import { api } from '../lib/api'
 import Btn from '../components/Btn'
 import Badge from '../components/Badge'
 import Input from '../components/Input'
@@ -9,34 +9,29 @@ import KPICard from '../components/KPICard'
 import SectionHeader from '../components/SectionHeader'
 import Panel from '../components/Panel'
 import PageWrap from '../components/PageWrap'
-import type { DispatchBatchResponse, ReconcileResult, RequeueResult } from '../types'
+import type { DispatchBatchResponse, ReconcileResult, RequeueResult, WorkflowResponse } from '../types'
 
 function DispatchBatchPanel() {
-  const [wfId,    setWfId]    = useState('')
-  const [limit,   setLimit]   = useState('50')
-  const [result,  setResult]  = useState<DispatchBatchResponse | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [wfId,      setWfId]      = useState('')
+  const [limit,     setLimit]     = useState('50')
+  const [result,    setResult]    = useState<DispatchBatchResponse | null>(null)
+  const [loading,   setLoading]   = useState(false)
+  const [workflows, setWorkflows] = useState<WorkflowResponse[]>([])
 
-  const activeWfs = MOCK_WORKFLOWS.filter(w => w.status === 'active')
+  useEffect(() => {
+    api.workflows.list().then(wfs => setWorkflows(wfs.filter(w => w.status === 'active'))).catch(console.error)
+  }, [])
+
   const wfOptions = [
     { value: '', label: 'Any active workflow' },
-    ...activeWfs.map(w => ({ value: w.workflow_id, label: `${w.workflow_id}  v${w.version}` })),
+    ...workflows.map(w => ({ value: w.workflow_id, label: `${w.workflow_id}  v${w.version}` })),
   ]
 
   function claim() {
     setLoading(true)
-    setTimeout(() => {
-      const chosen = activeWfs.find(w => w.workflow_id === wfId) ?? activeWfs[0]!
-      const n = Math.min(Math.max(1, +limit), 500)
-      setResult({
-        run_name: `nf-run-${Date.now().toString(36)}`,
-        workflow_id: chosen.workflow_id, workflow_version: chosen.version,
-        workflow_pk: chosen.id, repository_url: chosen.repository_url,
-        revision: chosen.revision, profile: chosen.profile,
-        jobs: Array.from({ length: n }, (_, i) => ({ sample_id: `SRR${(10000000 + i * 137).toString()}` })),
-      })
-      setLoading(false)
-    }, 600)
+    api.dispatch.batch(wfId || undefined, Math.min(Math.max(1, +limit), 500))
+      .then(r => { setResult(r); setLoading(false) })
+      .catch(e => { console.error(e); setLoading(false) })
   }
 
   return (
@@ -110,7 +105,9 @@ function SubmittedPanel() {
 
   function confirm() {
     setLoading(true)
-    setTimeout(() => { setDone(true); setLoading(false) }, 500)
+    api.dispatch.submitted({ run_name: runName, executor_job_id: jobId || undefined })
+      .then(() => { setDone(true); setLoading(false) })
+      .catch(e => { console.error(e); setLoading(false) })
   }
 
   return (
@@ -145,13 +142,9 @@ function RequeuePanel() {
 
   function run() {
     setLoading(true)
-    setTimeout(() => {
-      setResult({
-        requeued:       Math.floor(Math.random() * 12),
-        expired_marked: Math.floor(Math.random() * 12),
-      })
-      setLoading(false)
-    }, 700)
+    api.dispatch.requeueExpired()
+      .then(r => { setResult(r); setLoading(false) })
+      .catch(e => { console.error(e); setLoading(false) })
   }
 
   return (
@@ -168,8 +161,7 @@ function RequeuePanel() {
         <div><Btn onClick={run} disabled={loading}>{loading ? 'Scanning…' : 'Run Requeue'}</Btn></div>
         {result && (
           <div style={{ display: 'flex', gap: 12 }}>
-            <KPICard label="Runs expired"  value={result.expired_marked} accent={T.amber} />
-            <KPICard label="Jobs requeued" value={result.requeued}       accent={T.green} />
+            <KPICard label="Runs requeued" value={result.requeued_runs} accent={T.green} />
           </div>
         )}
       </div>
@@ -183,39 +175,16 @@ function ReconcilePanel() {
 
   function run() {
     setLoading(true)
-    setTimeout(() => {
-      setResult({
-        inserted:         Math.floor(Math.random() * 2400 + 100),
-        skipped_existing: Math.floor(Math.random() * 400  +  50),
-      })
-      setLoading(false)
-    }, 900)
+    api.admin.reconcile()
+      .then(r => { setResult(r); setLoading(false) })
+      .catch(e => { console.error(e); setLoading(false) })
   }
-
-  const activeWfs = MOCK_WORKFLOWS.filter(w => w.status === 'active')
 
   return (
     <Panel>
       <SectionHeader title="POST /admin/reconcile-jobs"
         sub="Materialise pending jobs for every (sample × active workflow) pair missing one — idempotent" />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 520 }}>
-        <div style={{ background: T.elevated, borderRadius: 6, padding: '12px 14px' }}>
-          <div style={{ fontSize: 11, color: T.muted, fontWeight: 600,
-            textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Scope</div>
-          <div style={{ fontSize: 13, color: T.text, marginBottom: 8 }}>
-            <span style={{ fontFamily: 'DM Mono, monospace', color: T.accent }}>
-              {MOCK_SAMPLE_TOTAL.toLocaleString()}
-            </span>{' '}samples ×{' '}
-            <span style={{ fontFamily: 'DM Mono, monospace', color: T.accent }}>
-              {activeWfs.length}
-            </span>{' '}active workflow{activeWfs.length !== 1 ? 's' : ''}
-          </div>
-          {activeWfs.map(w => (
-            <div key={w.id} style={{ fontSize: 12, color: T.muted, fontFamily: 'DM Mono, monospace', padding: '2px 0' }}>
-              · {w.workflow_id} v{w.version}
-            </div>
-          ))}
-        </div>
         <div style={{ fontSize: 13, color: T.muted }}>
           Uses{' '}
           <code style={{ fontFamily: 'DM Mono, monospace', color: T.accent }}>ON CONFLICT DO NOTHING</code>
@@ -224,10 +193,8 @@ function ReconcilePanel() {
         <div><Btn onClick={run} disabled={loading}>{loading ? 'Reconciling…' : 'Run Reconcile'}</Btn></div>
         {result && (
           <div style={{ display: 'flex', gap: 12 }}>
-            <KPICard label="Jobs inserted" value={result.inserted.toLocaleString()}
-              sub="New pending jobs created" accent={T.green} />
-            <KPICard label="Already exist" value={result.skipped_existing.toLocaleString()}
-              sub="Skipped (idempotent)"    accent={T.muted} />
+            <KPICard label="Jobs created" value={result.jobs_created.toLocaleString()}
+              sub="New pending jobs" accent={T.green} />
           </div>
         )}
       </div>

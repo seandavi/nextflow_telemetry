@@ -213,11 +213,9 @@ export interface SubmittedRequest {
 }
 
 export interface ReconcileResult {
-  inserted: number
-  skipped_existing: number
+  jobs_created: number
 }
 
 export interface RequeueResult {
-  requeued: number
-  expired_marked: number
+  requeued_runs: number
 }

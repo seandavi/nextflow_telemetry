@@ -15,7 +15,7 @@ interface Props<Row> {
   emptyMsg?: string
 }
 
-export default function DataTable<Row extends Record<string, unknown>>({
+export default function DataTable<Row extends object>({
   columns, rows, emptyMsg = 'No data',
 }: Props<Row>) {
   return (
@@ -54,8 +54,8 @@ export default function DataTable<Row extends Record<string, unknown>>({
                   fontFamily: c.mono ? 'DM Mono, monospace' : 'inherit',
                 }}>
                   {c.render
-                    ? c.render(row[c.key as string], row)
-                    : (row[c.key as string] as ReactNode)}
+                    ? c.render((row as Record<string, unknown>)[c.key as string], row)
+                    : ((row as Record<string, unknown>)[c.key as string] as ReactNode)}
                 </td>
               ))}
             </tr>

@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { T } from '../tokens'
 import { fmtNum, fmtDate, fmtAgo } from '../lib/format'
-import { MOCK_WORKFLOWS } from '../lib/mock-data'
+import { api } from '../lib/api'
 import Btn from '../components/Btn'
 import Badge from '../components/Badge'
 import Input from '../components/Input'
@@ -194,7 +194,7 @@ function WorkflowCard({
 }
 
 export default function WorkflowsPage() {
-  const [workflows, setWorkflows] = useState(MOCK_WORKFLOWS)
+  const [workflows, setWorkflows] = useState<WorkflowResponse[]>([])
   const [showForm, setShowForm]   = useState(false)
   const [editWf, setEditWf]       = useState<WorkflowResponse | null>(null)
   const [statusFilter, setStatusFilter] = useState<WfStatus | ''>('')
@@ -203,27 +203,26 @@ export default function WorkflowsPage() {
   const counts = { active: 0, paused: 0, retired: 0 }
   workflows.forEach(w => counts[w.status]++)
 
+  useEffect(() => {
+    api.workflows.list().then(setWorkflows).catch(console.error)
+  }, [])
+
   function updateStatus(id: number, status: WfStatus) {
-    setWorkflows(ws => ws.map(w =>
-      w.id === id ? { ...w, status, updated_at: new Date().toISOString() } : w
-    ))
+    api.workflows.setStatus(id, status)
+      .then(updated => setWorkflows(ws => ws.map(w => w.id === id ? updated : w)))
+      .catch(console.error)
   }
 
   function handleSave(data: WorkflowRegisterRequest) {
-    if (editWf) {
-      setWorkflows(ws => ws.map(w =>
-        w.id === editWf.id ? { ...w, ...data, updated_at: new Date().toISOString() } : w
-      ))
-    } else {
-      setWorkflows(ws => [...ws, {
-        id: Date.now(), status: 'active' as WfStatus,
-        manifest_version: null,
-        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-        job_stats: { total: 0, pending: 0, running: 0, completed: 0, failed: 0 },
-        ...data,
-      }])
-    }
-    setShowForm(false)
+    api.workflows.create(data)
+      .then(created => {
+        setWorkflows(ws => editWf
+          ? ws.map(w => w.id === editWf.id ? created : w)
+          : [...ws, created]
+        )
+        setShowForm(false)
+      })
+      .catch(console.error)
   }
 
   return (

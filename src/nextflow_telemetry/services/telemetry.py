@@ -39,14 +39,18 @@ class TelemetryService:
             tag = event.trace.get("tag")
         sample_id = _parse_tag(tag)
 
-        workflow_id: str | None = None
-        workflow_version: str | None = None
-        if isinstance(event.metadata, dict):
-            params = event.metadata.get("params") or {}
-            workflow_id = params.get("workflow_id")
-            workflow_version = params.get("workflow_version")
-
         async with self.engine.begin() as conn:
+            # Resolve workflow_id/version from the catalog via run_name — more
+            # robust than reading from metadata.params, which requires the pipeline
+            # to pass those values explicitly.
+            run_row = await conn.execute(
+                select(workflow_runs_tbl.c.workflow_id, workflow_runs_tbl.c.workflow_version)
+                .where(workflow_runs_tbl.c.run_name == event.run_name)
+            )
+            _run = run_row.mappings().first()
+            workflow_id: str | None = _run["workflow_id"] if _run else None
+            workflow_version: str | None = _run["workflow_version"] if _run else None
+
             # 1. Append raw event
             await conn.execute(
                 insert(telemetry_tbl).values(

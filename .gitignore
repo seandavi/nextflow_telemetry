@@ -166,6 +166,9 @@ cython_debug/
 # End of https://www.toptal.com/developers/gitignore/api/python
 
 
+# local client config (contains server URL, may contain credentials)
+client-local.yaml
+
 # nextflow
 
 work/

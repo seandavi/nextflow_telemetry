@@ -1,10 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { T } from '../tokens'
 import { fmtNum, fmtDate, fmtAgo } from '../lib/format'
-import {
-  MOCK_SAMPLE_TOTAL, MOCK_SAMPLE_COHORTS, MOCK_WORKFLOWS,
-  genSamplePage,
-} from '../lib/mock-data'
+import { api } from '../lib/api'
 import Btn from '../components/Btn'
 import Badge from '../components/Badge'
 import Input from '../components/Input'
@@ -27,7 +24,7 @@ function SampleFormModal({
   const [source,    setSource]    = useState('')
   const valid = sampleId.trim().length > 0
 
-  const activeWfs = MOCK_WORKFLOWS.filter(w => w.status === 'active')
+  const activeWfs: { workflow_id: string; version: string }[] = []
 
   return (
     <div style={{
@@ -51,7 +48,7 @@ function SampleFormModal({
             Will create pending jobs for {activeWfs.length} active workflow{activeWfs.length !== 1 ? 's' : ''}:
           </div>
           {activeWfs.map(w => (
-            <div key={w.id} style={{ fontSize: 12, color: T.text, fontFamily: 'DM Mono, monospace', padding: '2px 0' }}>
+            <div key={w.workflow_id} style={{ fontSize: 12, color: T.text, fontFamily: 'DM Mono, monospace', padding: '2px 0' }}>
               · {w.workflow_id} v{w.version}
             </div>
           ))}
@@ -71,21 +68,33 @@ function SampleFormModal({
 }
 
 export default function SamplesPage() {
-  const [page,       setPage]       = useState(0)
-  const [search,     setSearch]     = useState('')
-  const [cohort,     setCohort]     = useState('')
-  const [rows,       setRows]       = useState<SampleResponse[]>([])
-  const [showForm,   setShowForm]   = useState(false)
-  const [addedCount, setAddedCount] = useState(0)
-
-  const totalInCatalog = MOCK_SAMPLE_TOTAL + addedCount
-  const cohortSize     = Math.floor(MOCK_SAMPLE_TOTAL / MOCK_SAMPLE_COHORTS.length)
-  const filteredTotal  = cohort ? cohortSize : totalInCatalog
-  const totalPages     = Math.ceil(filteredTotal / PAGE_SIZE)
+  const [page,     setPage]     = useState(0)
+  const [search,   setSearch]   = useState('')
+  const [cohort,   setCohort]   = useState('')
+  const [allRows,  setAllRows]  = useState<SampleResponse[]>([])
+  const [showForm, setShowForm] = useState(false)
 
   useEffect(() => {
-    setRows(genSamplePage(page, PAGE_SIZE, search, cohort))
-  }, [page, search, cohort])
+    api.samples.list(0, 1000).then(setAllRows).catch(console.error)
+  }, [])
+
+  const cohorts = useMemo(() => {
+    const seen = new Set<string>()
+    for (const r of allRows) {
+      const c = (r.metadata as Record<string, string> | null)?.['cohort']
+      if (c) seen.add(c)
+    }
+    return [...seen].sort()
+  }, [allRows])
+
+  const filtered = useMemo(() => allRows.filter(r => {
+    if (cohort && (r.metadata as Record<string, string> | null)?.['cohort'] !== cohort) return false
+    if (search && !r.sample_id.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  }), [allRows, cohort, search])
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const rows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const handleSearch = useCallback((v: string) => {
     setSearch(v)
@@ -104,7 +113,7 @@ export default function SamplesPage() {
           <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>Sample Catalog</div>
           <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
             <span style={{ color: T.text, fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>
-              {totalInCatalog.toLocaleString()}
+              {allRows.length.toLocaleString()}
             </span>{' '}total samples registered
           </div>
         </div>
@@ -112,19 +121,24 @@ export default function SamplesPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
-        {MOCK_SAMPLE_COHORTS.map(c => (
-          <button key={c} onClick={() => handleCohort(c)} style={{
-            background: cohort === c ? T.accentDim : T.surface,
-            border: `1px solid ${cohort === c ? T.accent : T.border}`,
-            borderRadius: 6, padding: '10px 14px', cursor: 'pointer',
-            textAlign: 'left', transition: 'all 0.15s',
-          }}>
-            <div style={{ fontSize: 11, color: cohort === c ? T.accent : T.muted,
-              fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{c}</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginTop: 4,
-              fontFamily: 'DM Mono, monospace' }}>{fmtNum(cohortSize)}</div>
-          </button>
-        ))}
+        {cohorts.map(c => {
+          const cohortCount = allRows.filter(r =>
+            (r.metadata as Record<string, string> | null)?.['cohort'] === c
+          ).length
+          return (
+            <button key={c} onClick={() => handleCohort(c)} style={{
+              background: cohort === c ? T.accentDim : T.surface,
+              border: `1px solid ${cohort === c ? T.accent : T.border}`,
+              borderRadius: 6, padding: '10px 14px', cursor: 'pointer',
+              textAlign: 'left', transition: 'all 0.15s',
+            }}>
+              <div style={{ fontSize: 11, color: cohort === c ? T.accent : T.muted,
+                fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{c}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginTop: 4,
+                fontFamily: 'DM Mono, monospace' }}>{fmtNum(cohortCount)}</div>
+            </button>
+          )
+        })}
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -165,10 +179,10 @@ export default function SamplesPage() {
           <span style={{ fontSize: 12, color: T.muted }}>
             Showing{' '}
             <span style={{ color: T.text, fontFamily: 'DM Mono, monospace' }}>
-              {(page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, filteredTotal).toLocaleString()}
+              {filtered.length === 0 ? 0 : (page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, filtered.length).toLocaleString()}
             </span>{' '}of{' '}
             <span style={{ color: T.text, fontFamily: 'DM Mono, monospace' }}>
-              {filteredTotal.toLocaleString()}
+              {filtered.length.toLocaleString()}
             </span>
           </span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -186,7 +200,18 @@ export default function SamplesPage() {
       {showForm && (
         <SampleFormModal
           onClose={() => setShowForm(false)}
-          onSave={() => { setAddedCount(n => n + 1); setShowForm(false) }}
+          onSave={({ sampleId, cohort: c, phenotype, source }) => {
+            const metadata: Record<string, string> = { cohort: c }
+            if (phenotype) metadata['phenotype'] = phenotype
+            if (source)    metadata['source']    = source
+            api.samples.create({ sample_id: sampleId, metadata })
+              .then(created => {
+                setAllRows(rs => [...rs, created])
+                api.admin.reconcile().catch(console.error)
+                setShowForm(false)
+              })
+              .catch(console.error)
+          }}
         />
       )}
     </PageWrap>

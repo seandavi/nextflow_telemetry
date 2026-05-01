@@ -21,6 +21,10 @@ help:
 	@echo "  just check         Run typecheck then tests (good pre-commit baseline)."
 	@echo "  just ci            CI-equivalent local gate: sync dev deps, typecheck, tests."
 	@echo ""
+	@echo "Data and dispatch"
+	@echo "  just seed          Register samples + workflow from ArtachoA_2021_sample.tsv."
+	@echo "  just daemon        Run nf-client daemon: claim+run batches until no pending jobs."
+	@echo ""
 	@echo "Container workflows"
 	@echo "  just up-all        Start API + pgAdmin via docker compose profile 'all' (external DB)."
 	@echo "  just up-api        Start API profile only (uses SQLALCHEMY_URI from .env)."
@@ -92,3 +96,11 @@ down:
 # Tail API service logs.
 logs:
 	docker compose logs -f nextflow_telemetry_api
+
+# Seed samples + workflow from the ArtachoA_2021 TSV and reconcile jobs.
+seed:
+	uv run python scripts/seed_from_tsv.py
+
+# Run nf-client daemon: claim and run batches of 10 until no pending jobs remain.
+daemon:
+	uv run nf-client daemon --config client-local.yaml --batch-size 10

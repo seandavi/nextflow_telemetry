@@ -7,10 +7,13 @@ Looping, resource-awareness, and scheduling are left to the operator
 Usage:
     nf-client submit --config client-hpc.yaml [--dry-run]
     nf-client fetch  --config client-hpc.yaml
+    nf-client daemon --config client-local.yaml [--batch-size 10]
 """
 from __future__ import annotations
 
 import asyncio
+import subprocess
+import time
 from pathlib import Path
 
 import typer
@@ -127,3 +130,59 @@ def submit(
         typer.echo(f"Reported submitted to server: {run_name}")
 
     asyncio.run(_run())
+
+
+@app.command()
+def daemon(
+    config: Path = config_option,
+    batch_size: int = typer.Option(10, "--batch-size", "-n", help="Samples per batch", min=1, max=500),
+    poll_interval: float = typer.Option(5.0, "--poll-interval", help="Seconds to wait between polls when queue is empty"),
+) -> None:
+    """Claim and run batches continuously until no pending jobs remain.
+
+    Runs nextflow synchronously (blocks until complete) before claiming the
+    next batch. With --batch-size 10 and 69 samples this yields 7 runs.
+    """
+
+    async def _fetch(cfg: ClientConfig, limit: int) -> object:
+        async with JobClient(cfg) as client:
+            return await client.fetch_next_batch(limit=limit)
+
+    async def _report(cfg: ClientConfig, run_name: str, sample_ids: list[str], pid: str | None) -> None:
+        async with JobClient(cfg) as client:
+            await client.report_submitted(run_name=run_name, sample_ids=sample_ids, executor_job_id=pid)
+
+    cfg = ClientConfig.from_yaml(config)
+    run_number = 0
+
+    typer.echo(f"Daemon started — batch_size={batch_size}")
+
+    while True:
+        batch = asyncio.run(_fetch(cfg, batch_size))
+
+        if batch is None:
+            typer.echo("No pending jobs — daemon complete.")
+            break
+
+        run_number += 1
+        sample_ids = [j.sample_id for j in batch.jobs]
+        typer.echo(
+            f"\n[run {run_number}] {batch.run_name}  "
+            f"workflow={batch.workflow_id} v{batch.workflow_version}  "
+            f"samples={len(sample_ids)}"
+        )
+
+        cmd = build_nextflow_command(batch=batch, weblog_url=cfg.weblog_url)
+
+        # Run synchronously so we know when nextflow finishes before claiming more.
+        result = subprocess.run(cmd, capture_output=False)
+        exit_code = result.returncode
+        typer.echo(f"[run {run_number}] nextflow exited with code {exit_code}")
+
+        # Report submitted (best-effort — server will requeue via TTL if this fails)
+        try:
+            asyncio.run(_report(cfg, batch.run_name, sample_ids, None))
+        except Exception as e:
+            typer.echo(f"  WARN: failed to report submitted: {e}", err=True)
+
+    typer.echo(f"\nDaemon finished after {run_number} run(s).")
