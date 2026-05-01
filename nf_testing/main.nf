@@ -33,7 +33,8 @@ params.fail_at          = ""                   // inject failure at named proces
 // The run name is set externally via -name (client-generated UUID7).
 // We expose it as a param so it appears in weblog metadata.params for
 // server-side correlation.
-params.run_name         = workflow.runName
+params.run_name            = workflow.runName
+params.stochastic_fail_pct = 30              // % chance STOCHASTIC_STEP fails (0–100)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -122,6 +123,31 @@ process PROFILE_TAXA {
         """
 }
 
+/*
+ * Stochastic failure process — fails with configurable probability on each attempt.
+ * Set --stochastic_fail_pct 0 to disable, 100 to always fail.
+ * Retries are handled by Nextflow (see nextflow.config withName:STOCHASTIC_STEP).
+ */
+process STOCHASTIC_STEP {
+    tag "${tag(sample_id)}"
+
+    input:
+    tuple val(sample_id), path(profile)
+
+    output:
+    tuple val(sample_id), path(profile)
+
+    script:
+    """
+    roll=\$(( RANDOM % 100 ))
+    if [ "\$roll" -lt "${params.stochastic_fail_pct}" ]; then
+        echo "STOCHASTIC_STEP: rolled \$roll (threshold ${params.stochastic_fail_pct}) — failing" >&2
+        exit 42
+    fi
+    echo "STOCHASTIC_STEP: rolled \$roll — passing through for ${sample_id}"
+    """
+}
+
 process AGGREGATE_RESULTS {
     tag "${tag(sample_id)}"
 
@@ -189,7 +215,8 @@ workflow {
 
     reads_ch   = FETCH_READS(samples_ch)
     qc_ch      = QC_READS(reads_ch)
-    profile_ch = PROFILE_TAXA(qc_ch)
-    summary_ch = AGGREGATE_RESULTS(profile_ch)
+    profile_ch    = PROFILE_TAXA(qc_ch)
+    stochastic_ch = STOCHASTIC_STEP(profile_ch)
+    summary_ch    = AGGREGATE_RESULTS(stochastic_ch)
     MARK_COMPLETE(summary_ch)
 }
