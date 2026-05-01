@@ -183,11 +183,11 @@ class ProcessMetricsService:
             select
               count(*) as process_completed_rows,
               count(*) filter (where attempt > 1) as retried_rows,
-              round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2) as retried_pct,
+              coalesce(round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2), 0) as retried_pct,
               count(*) filter (where attempt > 1 and status = 'COMPLETED') as retry_success_rows,
               count(*) filter (where attempt > 1 and status in ('FAILED', 'ABORTED')) as retry_failure_rows,
-              round(100.0 * count(*) filter (where attempt > 1 and status = 'COMPLETED')::numeric /
-                    nullif(count(*) filter (where attempt > 1), 0), 2) as retry_success_pct
+              coalesce(round(100.0 * count(*) filter (where attempt > 1 and status = 'COMPLETED')::numeric /
+                    nullif(count(*) filter (where attempt > 1), 0), 2), 0) as retry_success_pct
             from x
             """
         )

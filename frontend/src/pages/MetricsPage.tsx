@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { T } from '../tokens'
 import { fmtNum, fmtPct } from '../lib/format'
-import { MOCK_FAILURES, MOCK_RETRIES, MOCK_RESOURCES, MOCK_SIGNATURES } from '../lib/mock-data'
+import { api } from '../lib/api'
 import KPICard from '../components/KPICard'
 import SectionHeader from '../components/SectionHeader'
 import DataTable from '../components/DataTable'
@@ -10,36 +10,52 @@ import Panel from '../components/Panel'
 import PageWrap from '../components/PageWrap'
 import Btn from '../components/Btn'
 import Select from '../components/Select'
-import type { ProcessFailuresRow, RetryByAttemptRow, RetryByProcessRow, ResourceByAttemptRow } from '../types'
+import type {
+  ProcessFailuresResponse,
+  ProcessRetriesResponse,
+  ProcessResourcesByAttemptResponse,
+  ProcessFailureSignaturesResponse,
+  ProcessFailuresRow,
+  RetryByAttemptRow,
+  RetryByProcessRow,
+  ResourceByAttemptRow,
+} from '../types'
 
-function FailuresTab() {
+function FailuresTab({ data }: { data: ProcessFailuresResponse }) {
   return (
     <Panel>
       <SectionHeader title="Failure Rate by Process" sub="Ranked by total failures · min 50 samples" />
-      <DataTable<ProcessFailuresRow>
-        columns={[
-          { key: 'process',         label: 'Process',      mono: true },
-          { key: 'total_completed', label: 'Total',        align: 'right', mono: true, render: v => fmtNum(v as number) },
-          { key: 'success',         label: 'Success',      align: 'right', mono: true,
-            render: v => <span style={{ color: T.green }}>{fmtNum(v as number)}</span> },
-          { key: 'failed',          label: 'Failed',       align: 'right', mono: true,
-            render: v => <span style={{ color: T.red }}>{fmtNum(v as number)}</span> },
-          { key: 'failure_pct',     label: 'Failure Rate',
-            render: v => {
-              const pct = v as number
-              return <MiniBar pct={pct} color={pct > 6 ? T.red : pct > 3 ? T.amber : T.green} />
-            }},
-          { key: 'modal_failure_exit_code', label: 'Modal Exit', align: 'right', mono: true,
-            render: v => <span style={{ color: T.muted, fontSize: 12 }}>exit {v as string}</span> },
-        ]}
-        rows={MOCK_FAILURES.rows}
-      />
+      {data.rows.length === 0
+        ? <div style={{ color: T.muted, fontSize: 13 }}>No failures recorded.</div>
+        : (
+          <DataTable<ProcessFailuresRow>
+            columns={[
+              { key: 'process',         label: 'Process',      mono: true },
+              { key: 'total_completed', label: 'Total',        align: 'right', mono: true, render: v => fmtNum(v as number) },
+              { key: 'success',         label: 'Success',      align: 'right', mono: true,
+                render: v => <span style={{ color: T.green }}>{fmtNum(v as number)}</span> },
+              { key: 'failed',          label: 'Failed',       align: 'right', mono: true,
+                render: v => <span style={{ color: T.red }}>{fmtNum(v as number)}</span> },
+              { key: 'failure_pct',     label: 'Failure Rate',
+                render: v => {
+                  const pct = v as number
+                  return <MiniBar pct={pct} color={pct > 6 ? T.red : pct > 3 ? T.amber : T.green} />
+                }},
+              { key: 'modal_failure_exit_code', label: 'Modal Exit', align: 'right', mono: true,
+                render: v => v != null
+                  ? <span style={{ color: T.muted, fontSize: 12 }}>exit {v as string}</span>
+                  : <span style={{ color: T.border }}>—</span> },
+            ]}
+            rows={data.rows}
+          />
+        )
+      }
     </Panel>
   )
 }
 
-function RetriesTab() {
-  const { summary, by_attempt, by_process } = MOCK_RETRIES
+function RetriesTab({ data }: { data: ProcessRetriesResponse }) {
+  const { summary, by_attempt, by_process } = data
   return (
     <>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px,1fr))', gap: 12 }}>
@@ -66,29 +82,34 @@ function RetriesTab() {
         </Panel>
         <Panel>
           <SectionHeader title="By Process" sub="Retry breakdown per process name" />
-          <DataTable<RetryByProcessRow>
-            columns={[
-              { key: 'process',         label: 'Process',    mono: true },
-              { key: 'retried',         label: 'Retried',    align: 'right', mono: true, render: v => fmtNum(v as number) },
-              { key: 'retried_pct',     label: 'Retry Rate', render: v => <MiniBar pct={v as number} color={T.amber} /> },
-              { key: 'retried_success', label: 'Recovered',  align: 'right', mono: true,
-                render: v => <span style={{ color: T.green }}>{fmtNum(v as number)}</span> },
-              { key: 'retried_failed',  label: 'Exhausted',  align: 'right', mono: true,
-                render: v => <span style={{ color: T.red }}>{fmtNum(v as number)}</span> },
-              { key: 'max_attempt',     label: 'Max Att.',   align: 'center', mono: true },
-            ]}
-            rows={by_process}
-          />
+          {by_process.length === 0
+            ? <div style={{ color: T.muted, fontSize: 13 }}>No retries recorded.</div>
+            : (
+              <DataTable<RetryByProcessRow>
+                columns={[
+                  { key: 'process',         label: 'Process',    mono: true },
+                  { key: 'retried',         label: 'Retried',    align: 'right', mono: true, render: v => fmtNum(v as number) },
+                  { key: 'retried_pct',     label: 'Retry Rate', render: v => <MiniBar pct={v as number} color={T.amber} /> },
+                  { key: 'retried_success', label: 'Recovered',  align: 'right', mono: true,
+                    render: v => <span style={{ color: T.green }}>{fmtNum(v as number)}</span> },
+                  { key: 'retried_failed',  label: 'Exhausted',  align: 'right', mono: true,
+                    render: v => <span style={{ color: T.red }}>{fmtNum(v as number)}</span> },
+                  { key: 'max_attempt',     label: 'Max Att.',   align: 'center', mono: true },
+                ]}
+                rows={by_process}
+              />
+            )
+          }
         </Panel>
       </div>
     </>
   )
 }
 
-function ResourcesTab() {
+function ResourcesTab({ data }: { data: ProcessResourcesByAttemptResponse }) {
   const [filterProcess, setFilterProcess] = useState('')
-  const processes = [...new Set(MOCK_RESOURCES.rows.map(r => r.process))]
-  const rows = MOCK_RESOURCES.rows.filter(r => !filterProcess || r.process === filterProcess)
+  const processes = [...new Set(data.rows.map(r => r.process))]
+  const rows = data.rows.filter(r => !filterProcess || r.process === filterProcess)
 
   return (
     <>
@@ -103,51 +124,65 @@ function ResourcesTab() {
       <Panel>
         <SectionHeader title="CPU & Memory by Process + Attempt"
           sub="Average and P95 utilisation as % of requested resources" />
-        <DataTable<ResourceByAttemptRow>
-          columns={[
-            { key: 'process',                label: 'Process',       mono: true },
-            { key: 'attempt',                label: 'Att',           align: 'center', mono: true },
-            { key: 'rows',                   label: 'Samples',       align: 'right', mono: true, render: v => fmtNum(v as number) },
-            { key: 'avg_requested_cpus',     label: 'Req CPU',       align: 'right', mono: true },
-            { key: 'avg_requested_memory_gb', label: 'Req Mem (GB)', align: 'right', mono: true,
-              render: v => (v as number | null)?.toFixed(0) ?? '—' },
-            { key: 'avg_pct_cpu',            label: 'CPU avg',
-              render: v => {
-                const n = v as number | null
-                return n != null
-                  ? <MiniBar pct={n} color={n > 90 ? T.red : n > 70 ? T.amber : T.accent} height={5} />
-                  : <span style={{color:T.muted}}>—</span>
-              }},
-            { key: 'p95_pct_cpu',            label: 'CPU p95',       align: 'right', mono: true,
-              render: v => {
-                const n = v as number | null
-                return n != null ? <span style={{ color: n > 100 ? T.red : T.muted }}>{n.toFixed(0)}%</span> : '—'
-              }},
-            { key: 'avg_pct_mem',            label: 'Mem avg',
-              render: v => {
-                const n = v as number | null
-                return n != null
-                  ? <MiniBar pct={n} color={n > 90 ? T.red : n > 70 ? T.amber : T.blue} height={5} />
-                  : <span style={{color:T.muted}}>—</span>
-              }},
-            { key: 'avg_peak_rss_gb',        label: 'RSS avg (GB)', align: 'right', mono: true,
-              render: v => (v as number | null)?.toFixed(1) ?? '—' },
-            { key: 'avg_read_gb',            label: 'Read (GB)',    align: 'right', mono: true,
-              render: v => (v as number | null)?.toFixed(1) ?? '—' },
-            { key: 'avg_write_gb',           label: 'Write (GB)',   align: 'right', mono: true,
-              render: v => (v as number | null)?.toFixed(1) ?? '—' },
-          ]}
-          rows={rows}
-        />
+        {rows.length === 0
+          ? <div style={{ color: T.muted, fontSize: 13 }}>No resource data recorded.</div>
+          : (
+            <DataTable<ResourceByAttemptRow>
+              columns={[
+                { key: 'process',                label: 'Process',       mono: true },
+                { key: 'attempt',                label: 'Att',           align: 'center', mono: true },
+                { key: 'rows',                   label: 'Samples',       align: 'right', mono: true, render: v => fmtNum(v as number) },
+                { key: 'avg_requested_cpus',     label: 'Req CPU',       align: 'right', mono: true },
+                { key: 'avg_requested_memory_gb', label: 'Req Mem (GB)', align: 'right', mono: true,
+                  render: v => (v as number | null)?.toFixed(0) ?? '—' },
+                { key: 'avg_pct_cpu',            label: 'CPU avg',
+                  render: v => {
+                    const n = v as number | null
+                    return n != null
+                      ? <MiniBar pct={n} color={n > 90 ? T.red : n > 70 ? T.amber : T.accent} height={5} />
+                      : <span style={{color:T.muted}}>—</span>
+                  }},
+                { key: 'p95_pct_cpu',            label: 'CPU p95',       align: 'right', mono: true,
+                  render: v => {
+                    const n = v as number | null
+                    return n != null ? <span style={{ color: n > 100 ? T.red : T.muted }}>{n.toFixed(0)}%</span> : '—'
+                  }},
+                { key: 'avg_pct_mem',            label: 'Mem avg',
+                  render: v => {
+                    const n = v as number | null
+                    return n != null
+                      ? <MiniBar pct={n} color={n > 90 ? T.red : n > 70 ? T.amber : T.blue} height={5} />
+                      : <span style={{color:T.muted}}>—</span>
+                  }},
+                { key: 'avg_peak_rss_gb',        label: 'RSS avg (GB)', align: 'right', mono: true,
+                  render: v => (v as number | null)?.toFixed(1) ?? '—' },
+                { key: 'avg_read_gb',            label: 'Read (GB)',    align: 'right', mono: true,
+                  render: v => (v as number | null)?.toFixed(1) ?? '—' },
+                { key: 'avg_write_gb',           label: 'Write (GB)',   align: 'right', mono: true,
+                  render: v => (v as number | null)?.toFixed(1) ?? '—' },
+              ]}
+              rows={rows}
+            />
+          )
+        }
       </Panel>
     </>
   )
 }
 
-function SignaturesTab() {
-  const rows = MOCK_SIGNATURES.rows
-  const max  = Math.max(...rows.map(r => r.failures))
+function SignaturesTab({ data }: { data: ProcessFailureSignaturesResponse }) {
+  const { rows } = data
+  if (rows.length === 0) {
+    return (
+      <Panel>
+        <SectionHeader title="Failure Signatures"
+          sub="(process × exit_code) frequency — darker cells = more failures" />
+        <div style={{ color: T.muted, fontSize: 13 }}>No failure signatures recorded.</div>
+      </Panel>
+    )
+  }
 
+  const max = Math.max(...rows.map(r => r.failures))
   type ProcessMap = Record<string, Record<string, number>>
   const byProcess = rows.reduce<ProcessMap>((acc, r) => {
     if (!acc[r.process]) acc[r.process] = {}
@@ -229,6 +264,20 @@ const TABS: Array<{ id: Tab; label: string }> = [
 
 export default function MetricsPage() {
   const [tab, setTab] = useState<Tab>('failures')
+  const [failures,   setFailures]   = useState<ProcessFailuresResponse | null>(null)
+  const [retries,    setRetries]    = useState<ProcessRetriesResponse | null>(null)
+  const [resources,  setResources]  = useState<ProcessResourcesByAttemptResponse | null>(null)
+  const [signatures, setSignatures] = useState<ProcessFailureSignaturesResponse | null>(null)
+
+  useEffect(() => {
+    api.metrics.failures().then(setFailures).catch(console.error)
+    api.metrics.retries().then(setRetries).catch(console.error)
+    api.metrics.resources().then(setResources).catch(console.error)
+    api.metrics.signatures().then(setSignatures).catch(console.error)
+  }, [])
+
+  const loading = !failures || !retries || !resources || !signatures
+
   return (
     <PageWrap>
       <div>
@@ -248,10 +297,17 @@ export default function MetricsPage() {
           }}>{t.label}</button>
         ))}
       </div>
-      {tab === 'failures'   && <FailuresTab />}
-      {tab === 'retries'    && <RetriesTab />}
-      {tab === 'resources'  && <ResourcesTab />}
-      {tab === 'signatures' && <SignaturesTab />}
+      {loading
+        ? <div style={{ color: T.muted, fontSize: 14, padding: '32px 0' }}>Loading…</div>
+        : (
+          <>
+            {tab === 'failures'   && <FailuresTab   data={failures}   />}
+            {tab === 'retries'    && <RetriesTab    data={retries}    />}
+            {tab === 'resources'  && <ResourcesTab  data={resources}  />}
+            {tab === 'signatures' && <SignaturesTab  data={signatures} />}
+          </>
+        )
+      }
     </PageWrap>
   )
 }
