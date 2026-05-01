@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import datetime
 
-from fastapi import APIRouter
-from sqlalchemy import update
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import dead_letter_tbl, jobs_tbl
-from ..services.reconcile import ReconcileService
+from ..db import dead_letter_tbl, jobs_tbl, workflow_runs_tbl
+from ..services.reconcile import ReconcileService, sweep_run_incomplete
 
 
 def create_admin_router(engine: AsyncEngine) -> APIRouter:
@@ -32,6 +32,116 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
         return {"jobs_created": created}
 
     @router.post(
+        "/reset-running",
+        summary="Reset stuck running jobs to pending",
+        description=(
+            "Resets all jobs in 'running' or 'failed' state back to 'pending' for a given "
+            "workflow, and clears their run_name and retry_count. Use after infrastructure "
+            "failures where Nextflow crashed without sending a completion weblog event and you "
+            "want to give the samples a clean slate regardless of retry budget."
+        ),
+    )
+    async def reset_running(workflow_pk: int):
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                update(jobs_tbl)
+                .where(
+                    jobs_tbl.c.workflow_pk == workflow_pk,
+                    jobs_tbl.c.status.in_(["running", "failed"]),
+                )
+                .values(
+                    status="pending",
+                    run_name=None,
+                    retry_count=0,
+                    failed_at=None,
+                    failure_reason=None,
+                )
+            )
+        return {"reset": result.rowcount}
+
+    @router.post(
+        "/close-run",
+        summary="Close a workflow run and sweep incomplete jobs",
+        description=(
+            "Marks a workflow run as `completed` (if not already in a terminal state) and "
+            "sweeps any jobs still in `running` or `claimed` state: jobs within their retry "
+            "budget are reset to `pending`; exhausted jobs are failed to the dead-letter queue. "
+            "Idempotent — safe to call even if the run already received a Nextflow `completed` "
+            "weblog event. Called unconditionally from the SLURM submit script after Nextflow "
+            "exits so that crashes and hard kills are always cleaned up."
+        ),
+    )
+    async def close_run(run_name: str):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        async with engine.begin() as conn:
+            # Check the run exists and get its current status
+            row = (await conn.execute(
+                select(workflow_runs_tbl.c.status)
+                .where(workflow_runs_tbl.c.run_name == run_name)
+            )).first()
+
+            if not row:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No workflow run with name '{run_name}'",
+                )
+
+            already_closed = row[0] in ("completed", "failed", "expired")
+
+            if not already_closed:
+                await conn.execute(
+                    update(workflow_runs_tbl)
+                    .where(workflow_runs_tbl.c.run_name == run_name)
+                    .values(status="completed", completed_at=now)
+                )
+
+            swept = await sweep_run_incomplete(conn, run_name, now)
+
+        return {
+            "run_name": run_name,
+            "already_closed": already_closed,
+            "swept": swept,
+        }
+
+    @router.post(
+        "/expire-stale-runs",
+        summary="Close workflow runs stuck in a non-terminal state",
+        description=(
+            "Finds workflow runs that have been in `running` or `submitted` state for longer "
+            "than `older_than_hours` hours and closes them, sweeping any associated jobs "
+            "through the retry/dead-letter logic. Use this to recover from batches of runs "
+            "that crashed without sending a Nextflow `completed` event before the SLURM "
+            "close-run hook was in place."
+        ),
+    )
+    async def expire_stale_runs(older_than_hours: float = 2.0):
+        cutoff = (
+            datetime.datetime.now(datetime.timezone.utc)
+            - datetime.timedelta(hours=older_than_hours)
+        )
+        now = datetime.datetime.now(datetime.timezone.utc)
+        total_swept = 0
+
+        async with engine.begin() as conn:
+            stale = (await conn.execute(
+                select(workflow_runs_tbl.c.run_name)
+                .where(
+                    workflow_runs_tbl.c.status.in_(["running", "submitted"]),
+                    workflow_runs_tbl.c.claimed_at < cutoff,
+                )
+            )).scalars().all()
+
+            for run_name in stale:
+                await conn.execute(
+                    update(workflow_runs_tbl)
+                    .where(workflow_runs_tbl.c.run_name == run_name)
+                    .values(status="completed", completed_at=now)
+                )
+                total_swept += await sweep_run_incomplete(conn, run_name, now)
+
+        return {"stale_runs_closed": len(stale), "jobs_swept": total_swept}
+
+    @router.post(
         "/requeue-dead-letter",
         summary="Requeue dead-letter jobs",
         description=(
@@ -44,7 +154,6 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
     async def requeue_dead_letter():
         now = datetime.datetime.now(datetime.timezone.utc)
         async with engine.begin() as conn:
-            # Find unresolved dead_letter job_ids
             from sqlalchemy import select
             rows = (await conn.execute(
                 select(dead_letter_tbl.c.id, dead_letter_tbl.c.job_id)
@@ -57,14 +166,12 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
             job_ids = [r.job_id for r in rows]
             dlq_ids = [r.id for r in rows]
 
-            # Reset jobs to pending
             await conn.execute(
                 update(jobs_tbl)
                 .where(jobs_tbl.c.id.in_(job_ids))
                 .values(status="pending", retry_count=0, run_name=None,
                         failed_at=None, failure_reason=None)
             )
-            # Mark dead_letter rows resolved
             await conn.execute(
                 update(dead_letter_tbl)
                 .where(dead_letter_tbl.c.id.in_(dlq_ids))
