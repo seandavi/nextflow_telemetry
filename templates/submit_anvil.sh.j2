@@ -29,8 +29,6 @@ process.executor = 'slurm'
 process.clusterOptions = '--account {{ account }} --partition {{ partition }} --output={{ log_dir }}/nf-%j.out'
 process.queueSize = 200
 process.time = '24h'
-// Override Alpine profile's store_dir to Anvil path
-params.store_dir = '/anvil/scratch/x-seandavi/keep/store'
 NFOVERRIDE
 
 mkdir -p /anvil/scratch/x-seandavi/keep/store
@@ -45,6 +43,7 @@ $NEXTFLOW run {{ workflow_repository }} \
   -profile {{ profile }} \
   -c nextflow_anvil_override.config \
   --metadata_tsv metadata.tsv \
+  --store_dir /anvil/scratch/x-seandavi/keep/store \
   -with-weblog {{ weblog_url }}
 
 NF_EXIT=$?
