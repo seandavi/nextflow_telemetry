@@ -9,9 +9,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-if sys.version_info >= (3, 13):
-    from uuid import uuid7 as _uuid7  # type: ignore[attr-defined]
-else:
+try:
+    from uuid import uuid7 as _uuid7  # type: ignore[attr-defined]  # Python 3.14+
+except ImportError:
     from uuid_extensions import uuid7 as _uuid7
 from typing import Any
 
