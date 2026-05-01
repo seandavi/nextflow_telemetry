@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { T } from '../tokens'
+import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { fmtNum, fmtDate, fmtAgo } from '../lib/format'
 import { api } from '../lib/api'
 import Btn from '../components/Btn'
@@ -67,16 +68,17 @@ function SampleFormModal({
   )
 }
 
-export default function SamplesPage() {
+export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
   const [page,     setPage]     = useState(0)
   const [search,   setSearch]   = useState('')
   const [cohort,   setCohort]   = useState('')
   const [allRows,  setAllRows]  = useState<SampleResponse[]>([])
   const [showForm, setShowForm] = useState(false)
+  const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
   useEffect(() => {
     api.samples.list(0, 1000).then(setAllRows).catch(console.error)
-  }, [])
+  }, [tick])
 
   const cohorts = useMemo(() => {
     const seen = new Set<string>()
@@ -117,7 +119,11 @@ export default function SamplesPage() {
             </span>{' '}total samples registered
           </div>
         </div>
-        <Btn onClick={() => setShowForm(true)}>+ Register Sample</Btn>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {lastUpdated && <span style={{ fontSize: 11, color: T.muted }}>{fmtUpdated(lastUpdated)}</span>}
+          <button onClick={refresh} style={{ background: T.elevated, border: `1px solid ${T.border}`, color: T.muted, fontSize: 11, cursor: 'pointer', borderRadius: 4, padding: '3px 8px' }}>↻</button>
+          <Btn onClick={() => setShowForm(true)}>+ Register Sample</Btn>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { T } from '../tokens'
 import { fmtNum, fmtPct } from '../lib/format'
 import { api } from '../lib/api'
@@ -262,28 +263,35 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'signatures', label: 'Signatures' },
 ]
 
-export default function MetricsPage() {
+export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
   const [tab, setTab] = useState<Tab>('failures')
   const [failures,   setFailures]   = useState<ProcessFailuresResponse | null>(null)
   const [retries,    setRetries]    = useState<ProcessRetriesResponse | null>(null)
   const [resources,  setResources]  = useState<ProcessResourcesByAttemptResponse | null>(null)
   const [signatures, setSignatures] = useState<ProcessFailureSignaturesResponse | null>(null)
+  const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
   useEffect(() => {
     api.metrics.failures().then(setFailures).catch(console.error)
     api.metrics.retries().then(setRetries).catch(console.error)
     api.metrics.resources().then(setResources).catch(console.error)
     api.metrics.signatures().then(setSignatures).catch(console.error)
-  }, [])
+  }, [tick])
 
   const loading = !failures || !retries || !resources || !signatures
 
   return (
     <PageWrap>
-      <div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>Process Metrics</div>
-        <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
-          Task-level telemetry across all Nextflow runs · last 30 days
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>Process Metrics</div>
+          <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
+            Task-level telemetry across all Nextflow runs · last 30 days
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+          {lastUpdated && <span style={{ fontSize: 11, color: T.muted }}>{fmtUpdated(lastUpdated)}</span>}
+          <button onClick={refresh} style={{ background: T.elevated, border: `1px solid ${T.border}`, color: T.muted, fontSize: 11, cursor: 'pointer', borderRadius: 4, padding: '3px 8px' }}>↻</button>
         </div>
       </div>
       <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${T.border}` }}>

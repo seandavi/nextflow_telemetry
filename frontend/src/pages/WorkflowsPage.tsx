@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { T } from '../tokens'
 import { fmtNum, fmtDate, fmtAgo } from '../lib/format'
 import { api } from '../lib/api'
@@ -213,12 +214,13 @@ function WorkflowCard({
   )
 }
 
-export default function WorkflowsPage() {
+export default function WorkflowsPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
   const [workflows, setWorkflows] = useState<WorkflowResponse[]>([])
   const [summaries, setSummaries] = useState<Record<number, WorkflowJobSummary>>({})
   const [showForm, setShowForm]   = useState(false)
   const [editWf, setEditWf]       = useState<WorkflowResponse | null>(null)
   const [statusFilter, setStatusFilter] = useState<WfStatus | ''>('')
+  const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
   const filtered = statusFilter ? workflows.filter(w => w.status === statusFilter) : workflows
   const counts = { active: 0, paused: 0, retired: 0 }
@@ -234,7 +236,7 @@ export default function WorkflowsPage() {
           .catch(() => {/* summary unavailable — silently skip */})
       })
     }).catch(console.error)
-  }, [])
+  }, [tick])
 
   function updateStatus(id: number, status: WfStatus) {
     api.workflows.setStatus(id, status)
@@ -263,7 +265,11 @@ export default function WorkflowsPage() {
             {workflows.length} registered · {counts.active} active · {counts.paused} paused · {counts.retired} retired
           </div>
         </div>
-        <Btn onClick={() => { setEditWf(null); setShowForm(true) }}>+ Register Workflow</Btn>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {lastUpdated && <span style={{ fontSize: 11, color: T.muted }}>{fmtUpdated(lastUpdated)}</span>}
+          <button onClick={refresh} style={{ background: T.elevated, border: `1px solid ${T.border}`, color: T.muted, fontSize: 11, cursor: 'pointer', borderRadius: 4, padding: '3px 8px' }}>↻</button>
+          <Btn onClick={() => { setEditWf(null); setShowForm(true) }}>+ Register Workflow</Btn>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8 }}>

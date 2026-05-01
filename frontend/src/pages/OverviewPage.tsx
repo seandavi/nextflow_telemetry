@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { T } from '../tokens'
+import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { fmtNum, fmtPct } from '../lib/format'
 import { api } from '../lib/api'
 import KPICard from '../components/KPICard'
@@ -35,12 +36,13 @@ function ExitCodeChart({ rows }: { rows: TopFailureExitCodeRow[] }) {
   )
 }
 
-export default function OverviewPage() {
+export default function OverviewPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
   const [summary, setSummary] = useState<ProcessSummaryResponse | null>(null)
+  const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
   useEffect(() => {
     api.metrics.summary(30).then(setSummary).catch(console.error)
-  }, [])
+  }, [tick])
 
   if (!summary) {
     return (
@@ -62,7 +64,14 @@ export default function OverviewPage() {
     <PageWrap>
       <div>
         <SectionHeader title="Process Execution"
-          sub={`Last ${summary.window_days ?? 30} days · ${fmtNum(c.process_completed_rows)} task completions`} />
+          sub={`Last ${summary.window_days ?? 30} days · ${fmtNum(c.process_completed_rows)} task completions`}
+          actions={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {lastUpdated && <span style={{ fontSize: 11, color: T.muted }}>{fmtUpdated(lastUpdated)}</span>}
+              <button onClick={refresh} style={{ background: T.elevated, border: `1px solid ${T.border}`, color: T.muted, fontSize: 11, cursor: 'pointer', borderRadius: 4, padding: '3px 8px' }}>↻</button>
+            </div>
+          }
+        />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 12 }}>
           <KPICard label="Task Runs"     value={fmtNum(c.process_completed_rows)} sub={`${fmtNum(c.distinct_runs)} NF runs`}     accent={T.accent} />
           <KPICard label="Success"       value={fmtNum(c.success_rows)}           sub={fmtPct(100 - c.failure_pct)}              accent={T.green} />
