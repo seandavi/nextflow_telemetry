@@ -22,6 +22,7 @@ mkdir -p tempdir
 export TMPDIR=$WORKDIR/tempdir
 export NXF_TEMP=$WORKDIR/tempdir
 export NXF_SINGULARITY_CACHEDIR={{ singularity_cache }}
+export NXF_ASSETS={{ nxf_assets }}
 
 # Override config: enable SLURM executor for per-sample tasks, write output to log_dir
 cat << 'NFOVERRIDE' > nextflow_alpine_override.config
