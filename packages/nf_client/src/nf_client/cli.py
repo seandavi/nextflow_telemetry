@@ -174,15 +174,18 @@ def daemon(
 
         cmd = build_nextflow_command(batch=batch, weblog_url=cfg.weblog_url)
 
-        # Run synchronously so we know when nextflow finishes before claiming more.
-        result = subprocess.run(cmd, capture_output=False)
-        exit_code = result.returncode
-        typer.echo(f"[run {run_number}] nextflow exited with code {exit_code}")
-
-        # Report submitted (best-effort — server will requeue via TTL if this fails)
+        # Report submitted before blocking on nextflow — transitions claimed→submitted
+        # while the run is still in claimed state. If we called this after subprocess.run,
+        # the synchronous nextflow execution would have already sent the weblog completed
+        # event, moving the run to completed before we report submitted.
         try:
             asyncio.run(_report(cfg, batch.run_name, sample_ids, None))
         except Exception as e:
             typer.echo(f"  WARN: failed to report submitted: {e}", err=True)
+
+        # Run synchronously so we know when nextflow finishes before claiming more.
+        result = subprocess.run(cmd, capture_output=False)
+        exit_code = result.returncode
+        typer.echo(f"[run {run_number}] nextflow exited with code {exit_code}")
 
     typer.echo(f"\nDaemon finished after {run_number} run(s).")
