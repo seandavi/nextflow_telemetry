@@ -22,7 +22,7 @@ mkdir -p tempdir
 export TMPDIR=$WORKDIR/tempdir
 export NXF_TEMP=$WORKDIR/tempdir
 export NXF_SINGULARITY_CACHEDIR={{ singularity_cache }}
-export NXF_ASSETS={{ nxf_assets }}
+export NXF_HOME={{ nxf_home }}
 
 # Override config: enable SLURM executor for per-sample tasks, write output to log_dir
 cat << 'NFOVERRIDE' > nextflow_alpine_override.config
@@ -45,5 +45,6 @@ nextflow run {{ workflow_repository }} \
 
 NF_EXIT=$?
 echo "Nextflow exited with code $NF_EXIT"
+cp .nextflow.log {{ log_dir }}/nextflow-${SLURM_JOB_ID}.log 2>/dev/null || true
 rm -rf $WORKDIR
 exit $NF_EXIT
