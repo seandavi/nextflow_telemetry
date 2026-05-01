@@ -29,7 +29,11 @@ process.executor = 'slurm'
 process.clusterOptions = '--account {{ account }} --partition {{ partition }} --output={{ log_dir }}/nf-%j.out'
 process.queueSize = 200
 process.time = '24h'
+// Override Alpine profile's store_dir to Anvil path
+params.store_dir = '/anvil/scratch/x-seandavi/keep/store'
 NFOVERRIDE
+
+mkdir -p /anvil/scratch/x-seandavi/keep/store
 
 cat << 'METATSV' > metadata.tsv
 {{ metadata_tsv_content }}
