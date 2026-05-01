@@ -1,0 +1,24 @@
+server_url: "https://REPLACE_WITH_DEPLOYED_URL"
+weblog_url: "https://REPLACE_WITH_DEPLOYED_URL/telemetry"
+
+dispatch:
+  batch_size: 10
+  workflow_id: "cmgd_nextflow"
+  workflow_version: "1.4.0"
+
+submission:
+  mode: slurm
+  template_path: "templates/submit_anvil.sh.j2"
+  max_concurrent_runs: 3
+
+  defaults:
+    mem: "64G"
+    cpus: 16
+    time: "24:00:00"
+    account: "bio240036"
+    partition: "shared"
+    log_dir: "/anvil/scratch/x-seandavi/cmgd_logs"
+    singularity_cache: "/anvil/scratch/x-seandavi/singularity_cache"
+    nxf_home: "/anvil/scratch/x-seandavi/nxf_home"
+    nextflow_bin: "/anvil/scratch/x-seandavi/bin/nextflow"
+    google_credentials: "/home/x-seandavi/curatedmetagenomicdata-232f4a306d1d.json"

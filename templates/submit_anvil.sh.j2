@@ -1,0 +1,50 @@
+#!/bin/bash
+#SBATCH --mem={{ mem }}
+#SBATCH --cpus-per-task={{ cpus }}
+#SBATCH --time={{ time }}
+#SBATCH --account={{ account }}
+#SBATCH --partition={{ partition }}
+#SBATCH --job-name={{ run_name }}
+#SBATCH --output={{ log_dir }}/slurm-%j.out
+
+export GOOGLE_APPLICATION_CREDENTIALS={{ google_credentials }}
+
+module load openjdk/11.0.8_10
+
+NEXTFLOW={{ nextflow_bin }}
+WORKDIR=/anvil/scratch/x-seandavi/cmgd_data/$SLURM_JOB_ID
+mkdir -p $WORKDIR
+mkdir -p {{ log_dir }}
+cd $WORKDIR
+
+mkdir -p tempdir
+export TMPDIR=$WORKDIR/tempdir
+export NXF_TEMP=$WORKDIR/tempdir
+export NXF_SINGULARITY_CACHEDIR={{ singularity_cache }}
+export NXF_HOME={{ nxf_home }}
+
+# Override: SLURM executor for per-sample tasks + log path
+cat << 'NFOVERRIDE' > nextflow_anvil_override.config
+process.executor = 'slurm'
+process.clusterOptions = '--account {{ account }} --partition {{ partition }} --output={{ log_dir }}/nf-%j.out'
+process.queueSize = 200
+process.time = '24h'
+NFOVERRIDE
+
+cat << 'METATSV' > metadata.tsv
+{{ metadata_tsv_content }}
+METATSV
+
+$NEXTFLOW run {{ workflow_repository }} \
+  -name {{ run_name }} \
+  -revision {{ workflow_revision }} \
+  -profile {{ profile }} \
+  -c nextflow_anvil_override.config \
+  --metadata_tsv metadata.tsv \
+  -with-weblog {{ weblog_url }}
+
+NF_EXIT=$?
+echo "Nextflow exited with code $NF_EXIT"
+cp .nextflow.log {{ log_dir }}/nextflow-${SLURM_JOB_ID}.log 2>/dev/null || true
+rm -rf $WORKDIR
+exit $NF_EXIT
