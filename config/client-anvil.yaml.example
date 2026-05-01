@@ -10,12 +10,13 @@ submission:
   mode: slurm
   template_path: "templates/submit_anvil.sh.j2"
   max_concurrent_runs: 3
+  slurm_export_none: false
 
   defaults:
     mem: "64G"
     cpus: 16
     time: "24:00:00"
-    account: "bio240036"
+    account: "tra220018"
     partition: "shared"
     log_dir: "/anvil/scratch/x-seandavi/cmgd_logs"
     singularity_cache: "/anvil/scratch/x-seandavi/singularity_cache"

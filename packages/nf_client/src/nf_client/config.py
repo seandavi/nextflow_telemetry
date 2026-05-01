@@ -49,6 +49,7 @@ class SubmissionConfig(BaseModel):
     mode: Literal["local", "slurm", "pbs", "lsf"] = "local"
     template_path: Path | None = None
     max_concurrent_runs: int | None = None
+    slurm_export_none: bool = True
     defaults: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -126,7 +126,7 @@ def submit(
             script = render_submission_script(cfg.submission.template_path, context)
 
             if mode == "slurm":
-                executor_job_id = submit_slurm(script)
+                executor_job_id = submit_slurm(script, export_none=cfg.submission.slurm_export_none)
             elif mode == "pbs":
                 executor_job_id = submit_pbs(script)
 
@@ -233,7 +233,7 @@ def daemon(
             script = render_submission_script(cfg.submission.template_path, context)
 
             if mode == "slurm":
-                executor_job_id = submit_slurm(script)
+                executor_job_id = submit_slurm(script, export_none=cfg.submission.slurm_export_none)
             elif mode == "pbs":
                 executor_job_id = submit_pbs(script)
 

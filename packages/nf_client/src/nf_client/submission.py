@@ -121,16 +121,21 @@ def submit_local(cmd: list[str], log_file: Path | None = None) -> str:
     return str(proc.pid)
 
 
-def submit_slurm(script_content: str) -> str:
+def submit_slurm(script_content: str, *, export_none: bool = True) -> str:
     """Submit a rendered sbatch script and return the SLURM job ID.
 
-    --export=NONE prevents the submitting shell's environment from leaking into
-    the compute node, which would otherwise block SLURM's own module-system
-    initialization (lmod sets up the 'module' function via /etc/profile.d on a
-    clean environment).
+    export_none=True (default) adds --export=NONE, which prevents the
+    submitting shell's environment from leaking into the compute node.
+    Required on systems (e.g. Alpine) where SLURM's lmod prologue initialises
+    the 'module' function via /etc/profile.d on a clean environment.
+    Set export_none=False on systems (e.g. Anvil) where this is unnecessary
+    or causes problems.
     """
+    cmd = ["sbatch", "--parsable"]
+    if export_none:
+        cmd.append("--export=NONE")
     result = subprocess.run(
-        ["sbatch", "--parsable", "--export=NONE"],
+        cmd,
         input=script_content,
         text=True,
         capture_output=True,
