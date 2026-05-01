@@ -14,10 +14,9 @@ submission:
   defaults:
     mem: "2G"
     cpus: 1
-    time: "100:00:00"
-    qos: "long"
-    partition: "amilan"
+    time: "24:00:00"
+    qos: "normal"
+    partition: "amc,amilan"
     log_dir: "/projects/seda0001_amc/cmgd/job_logs"
     singularity_cache: "/scratch/alpine/seda0001_amc/apptainer_cache"
-    store_dir: "/projects/seda0001_amc/nf_keep/store"
     google_credentials: "$HOME/curatedmetagenomicdata-232f4a306d1d.json"

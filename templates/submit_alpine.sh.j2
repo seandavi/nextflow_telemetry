@@ -15,15 +15,20 @@ module load nextflow
 
 WORKDIR=/scratch/alpine/$USER/nf_worker/$SLURM_JOB_ID
 mkdir -p $WORKDIR
+mkdir -p {{ log_dir }}
 cd $WORKDIR
 
 mkdir -p tempdir
 export TMPDIR=$WORKDIR/tempdir
 export NXF_TEMP=$WORKDIR/tempdir
 export NXF_SINGULARITY_CACHEDIR={{ singularity_cache }}
-{% if store_dir is defined and store_dir %}
-export NXF_HOME={{ store_dir }}
-{% endif %}
+
+# Override config: enable SLURM executor for per-sample tasks, write output to log_dir
+cat << 'NFOVERRIDE' > nextflow_alpine_override.config
+process.executor = 'slurm'
+process.clusterOptions = '--partition {{ partition }} --qos={{ qos }} --output={{ log_dir }}/nf-%j.out'
+process.queueSize = 200
+NFOVERRIDE
 
 cat << 'METATSV' > metadata.tsv
 {{ metadata_tsv_content }}
@@ -33,6 +38,7 @@ nextflow run {{ workflow_repository }} \
   -name {{ run_name }} \
   -revision {{ workflow_revision }} \
   -profile {{ profile }} \
+  -c nextflow_alpine_override.config \
   --metadata_tsv metadata.tsv \
   -with-weblog {{ weblog_url }}
 
