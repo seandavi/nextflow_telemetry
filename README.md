@@ -184,3 +184,116 @@ For full Alpine SLURM deployment details see [docs/hpc-deployment.md](docs/hpc-d
 `nf_testing/main.nf` is a stub metagenomics pipeline (no real tools required) that
 exercises the full telemetry contract. `v0.2.0` includes a `STOCHASTIC_STEP` that fails
 with configurable probability (default 30%) to generate realistic retry telemetry.
+
+---
+
+## Production Deployment
+
+The production stack runs on Google Cloud:
+
+| Component | Service |
+|-----------|---------|
+| API | Cloud Run |
+| Frontend | Firebase Hosting |
+| Database | Cloud SQL (PostgreSQL) |
+
+### Prerequisites
+
+- `gcloud` CLI authenticated to the target project
+- `firebase` CLI (`npm install -g firebase-tools`)
+- Docker (for local image builds)
+- [just](https://github.com/casey/just)
+
+### GCP setup (one-time)
+
+1. Enable APIs: Cloud Run, Artifact Registry, Cloud Build, Secret Manager.
+2. Create an Artifact Registry Docker repository named `nextflow-telemetry`.
+3. Create a service account for the Cloud Run service and grant it:
+   - `roles/secretmanager.secretAccessor`
+   - `roles/cloudsql.client` (if using Cloud SQL IAM auth later)
+4. Store the Cloud SQL connection string in Secret Manager:
+   ```bash
+   echo -n "postgresql://user:pass@HOST:5432/dbname" | \
+     gcloud secrets create nextflow-telemetry-db-uri --data-file=-
+   ```
+5. Update the placeholder values in `deploy/cloudrun.yaml` and `deploy/.firebaserc`:
+   - `YOUR_GCP_PROJECT` → your GCP project ID
+   - `YOUR_REGION` → e.g. `us-central1`
+   - `YOUR_FIREBASE_PROJECT` → your Firebase project ID
+   - Service account name in `cloudrun.yaml`
+
+### Database migration
+
+Run Alembic against Cloud SQL before the first deploy and after any schema change:
+
+```bash
+SQLALCHEMY_URI=postgresql://user:pass@HOST:5432/dbname just migrate-prod
+```
+
+Cloud SQL uses a public IP, so this can be run directly from a machine with network
+access to the instance (no Cloud SQL Proxy required).
+
+### Deploying the API
+
+```bash
+export GCP_PROJECT=your-project
+export REGION=us-central1
+
+just build-api       # build image and push to Artifact Registry
+just deploy-api      # update the Cloud Run service
+```
+
+The `deploy/cloudrun.yaml` service definition pulls `SQLALCHEMY_URI` from Secret Manager
+and sets `CORS_ORIGINS` to the frontend's domain (see DNS section below).
+
+### Deploying the frontend
+
+```bash
+just deploy-frontend   # vite build + firebase deploy
+```
+
+Firebase Hosting serves the React SPA with a global CDN, automatic HTTPS, and a catch-all
+rewrite to `index.html` for client-side routing. Static assets under `/assets/` are cached
+with immutable headers; `index.html` itself is not cached so new deploys take effect
+immediately.
+
+### DNS
+
+The system uses two stable public hostnames. Both should be custom domains rather than
+the default Cloud Run / Firebase subdomains, so that HPC-submitted jobs always reach the
+right endpoint regardless of future infrastructure moves.
+
+| Hostname | Points to | Purpose |
+|----------|-----------|---------|
+| `api.yourdomain.com` | Cloud Run (custom domain mapping) | All API traffic, including Nextflow weblog POSTs from HPC |
+| `telemetry.yourdomain.com` | Firebase Hosting (custom domain) | React dashboard |
+
+**To add a custom domain to Cloud Run:**
+```bash
+gcloud run domain-mappings create \
+  --service nextflow-telemetry-api \
+  --domain api.yourdomain.com \
+  --region $REGION
+```
+Cloud Run will issue a managed TLS certificate automatically. Add the CNAME shown in the
+output to your DNS provider.
+
+**To add a custom domain to Firebase Hosting:** run `firebase hosting:channel:deploy` or
+use the Firebase console; Firebase provisions the cert and provides the DNS records.
+
+> **Important — weblog URL stability:** the weblog URL (`-with-weblog <url>`) is baked
+> into SLURM scripts at submission time. Changing the API hostname mid-batch will silently
+> drop telemetry for all in-flight jobs. Always keep the old hostname resolving (or
+> redirect it) until all running Nextflow jobs have finished before cutting DNS over.
+
+### CORS
+
+The API reads allowed origins from the `CORS_ORIGINS` environment variable
+(comma-separated). Set this in `deploy/cloudrun.yaml` to the frontend's domain:
+
+```
+CORS_ORIGINS=https://telemetry.yourdomain.com
+```
+
+Nextflow weblog POSTs are server-to-server and are not subject to CORS, so the HPC
+endpoint does not need to be in the allowlist.
