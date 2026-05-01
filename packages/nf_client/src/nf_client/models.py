@@ -1,11 +1,14 @@
 """Pydantic models for the dispatch protocol."""
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
 class DispatchedJob(BaseModel):
     sample_id: str
+    metadata: dict[str, Any] = {}
 
 
 class DispatchBatchResponse(BaseModel):

@@ -13,6 +13,7 @@ dependencies = [
     "jinja2>=3.1.0,<4.0.0",
     "pyyaml>=6.0.0,<7.0.0",
     "typer>=0.12.0,<0.13.0",
+    "click>=8.0.0,<8.2.0",
     "uuid7>=0.1.0",   # installs as uuid_extensions; provides uuid7() on Python < 3.13
 ]
 

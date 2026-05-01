@@ -22,6 +22,7 @@ from .client import JobClient
 from .config import ClientConfig
 from .submission import (
     build_nextflow_command,
+    generate_metadata_tsv,
     render_submission_script,
     submit_local,
     submit_slurm,
@@ -29,6 +30,16 @@ from .submission import (
 )
 
 app = typer.Typer(help="nf-client: claim and submit Nextflow telemetry jobs")
+
+
+def _count_active_slurm_jobs() -> int:
+    """Count running/pending SLURM jobs for the current user."""
+    result = subprocess.run(
+        ["squeue", "--me", "--noheader", "--format=%j"],
+        capture_output=True,
+        text=True,
+    )
+    return len([line for line in result.stdout.splitlines() if line.strip()])
 
 config_option = typer.Option(..., "--config", "-c", help="Path to client YAML config")
 dry_run_option = typer.Option(False, "--dry-run", help="Print what would be submitted without executing")
@@ -110,6 +121,7 @@ def submit(
                 "weblog_url": cfg.weblog_url,
                 "workflow_id": batch.workflow_id,
                 "workflow_version": batch.workflow_version,
+                "metadata_tsv_content": generate_metadata_tsv(batch.jobs),
             }
             script = render_submission_script(cfg.submission.template_path, context)
 
@@ -135,30 +147,46 @@ def submit(
 @app.command()
 def daemon(
     config: Path = config_option,
-    batch_size: int = typer.Option(10, "--batch-size", "-n", help="Samples per batch", min=1, max=500),
-    poll_interval: float = typer.Option(5.0, "--poll-interval", help="Seconds to wait between polls when queue is empty"),
+    batch_size: int = typer.Option(0, "--batch-size", "-n", help="Samples per batch (0 = use config value)", min=0, max=500),
+    poll_interval: float = typer.Option(5.0, "--poll-interval", help="Seconds to wait between polls when queue is empty or at concurrency limit"),
 ) -> None:
-    """Claim and run batches continuously until no pending jobs remain.
+    """Claim and submit batches continuously until no pending jobs remain.
 
-    Runs nextflow synchronously (blocks until complete) before claiming the
-    next batch. With --batch-size 10 and 69 samples this yields 7 runs.
+    In local mode: runs nextflow synchronously before claiming the next batch.
+    In slurm mode: submits via sbatch (non-blocking) and immediately claims the
+    next batch, subject to max_concurrent_runs from the config.
     """
 
     async def _fetch(cfg: ClientConfig, limit: int) -> object:
         async with JobClient(cfg) as client:
             return await client.fetch_next_batch(limit=limit)
 
-    async def _report(cfg: ClientConfig, run_name: str, sample_ids: list[str], pid: str | None) -> None:
+    async def _report(cfg: ClientConfig, run_name: str, sample_ids: list[str], job_id: str | None) -> None:
         async with JobClient(cfg) as client:
-            await client.report_submitted(run_name=run_name, sample_ids=sample_ids, executor_job_id=pid)
+            await client.report_submitted(run_name=run_name, sample_ids=sample_ids, executor_job_id=job_id)
 
     cfg = ClientConfig.from_yaml(config)
+    effective_batch_size = batch_size if batch_size > 0 else cfg.dispatch.batch_size
+    mode = cfg.submission.mode
+    max_concurrent = cfg.submission.max_concurrent_runs
     run_number = 0
 
-    typer.echo(f"Daemon started — batch_size={batch_size}")
+    typer.echo(
+        f"Daemon started — mode={mode} batch_size={effective_batch_size}"
+        + (f" max_concurrent_runs={max_concurrent}" if max_concurrent else "")
+    )
 
     while True:
-        batch = asyncio.run(_fetch(cfg, batch_size))
+        # For SLURM mode, check concurrency before fetching so we don't grab
+        # jobs and then stall while holding a claim.
+        if mode == "slurm" and max_concurrent is not None:
+            active = _count_active_slurm_jobs()
+            if active >= max_concurrent:
+                typer.echo(f"  {active} SLURM jobs active (limit {max_concurrent}) — waiting {poll_interval}s")
+                time.sleep(poll_interval)
+                continue
+
+        batch = asyncio.run(_fetch(cfg, effective_batch_size))
 
         if batch is None:
             typer.echo("No pending jobs — daemon complete.")
@@ -172,20 +200,48 @@ def daemon(
             f"samples={len(sample_ids)}"
         )
 
-        cmd = build_nextflow_command(batch=batch, weblog_url=cfg.weblog_url)
+        executor_job_id: str | None = None
 
-        # Report submitted before blocking on nextflow — transitions claimed→submitted
-        # while the run is still in claimed state. If we called this after subprocess.run,
-        # the synchronous nextflow execution would have already sent the weblog completed
-        # event, moving the run to completed before we report submitted.
-        try:
-            asyncio.run(_report(cfg, batch.run_name, sample_ids, None))
-        except Exception as e:
-            typer.echo(f"  WARN: failed to report submitted: {e}", err=True)
+        if mode == "local":
+            cmd = build_nextflow_command(batch=batch, weblog_url=cfg.weblog_url)
+            # Report submitted before blocking on nextflow — transitions claimed→submitted
+            # before the weblog completed event arrives.
+            try:
+                asyncio.run(_report(cfg, batch.run_name, sample_ids, None))
+            except Exception as e:
+                typer.echo(f"  WARN: failed to report submitted: {e}", err=True)
+            result = subprocess.run(cmd, capture_output=False)
+            typer.echo(f"[run {run_number}] nextflow exited with code {result.returncode}")
 
-        # Run synchronously so we know when nextflow finishes before claiming more.
-        result = subprocess.run(cmd, capture_output=False)
-        exit_code = result.returncode
-        typer.echo(f"[run {run_number}] nextflow exited with code {exit_code}")
+        elif mode in ("slurm", "pbs", "lsf"):
+            if not cfg.submission.template_path:
+                typer.echo(f"ERROR: submission.template_path required for mode={mode}", err=True)
+                raise typer.Exit(1)
+
+            context = {
+                **cfg.submission.defaults,
+                "run_name": batch.run_name,
+                "sample_ids": ",".join(sample_ids),
+                "workflow_repository": batch.repository_url,
+                "workflow_revision": batch.revision,
+                "profile": batch.profile,
+                "weblog_url": cfg.weblog_url,
+                "workflow_id": batch.workflow_id,
+                "workflow_version": batch.workflow_version,
+                "metadata_tsv_content": generate_metadata_tsv(batch.jobs),
+            }
+            script = render_submission_script(cfg.submission.template_path, context)
+
+            if mode == "slurm":
+                executor_job_id = submit_slurm(script)
+            elif mode == "pbs":
+                executor_job_id = submit_pbs(script)
+
+            typer.echo(f"  Submitted {mode.upper()} job {executor_job_id}")
+
+            try:
+                asyncio.run(_report(cfg, batch.run_name, sample_ids, executor_job_id))
+            except Exception as e:
+                typer.echo(f"  WARN: failed to report submitted: {e}", err=True)
 
     typer.echo(f"\nDaemon finished after {run_number} run(s).")

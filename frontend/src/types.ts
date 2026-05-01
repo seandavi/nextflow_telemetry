@@ -183,6 +183,20 @@ export interface ProcessFailureSignaturesResponse {
   rows: FailureSignatureRow[]
 }
 
+export interface RunningProcessRow {
+  process: string
+  running: number
+  queued: number
+}
+
+export interface RunningProcessesResponse {
+  generated_at_utc: string
+  active_nf_runs: number
+  total_running: number
+  total_queued: number
+  by_process: RunningProcessRow[]
+}
+
 export interface DispatchedJob {
   sample_id: string
 }

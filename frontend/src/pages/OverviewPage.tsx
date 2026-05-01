@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { T } from '../tokens'
+import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { fmtNum, fmtPct } from '../lib/format'
 import { api } from '../lib/api'
 import KPICard from '../components/KPICard'
@@ -9,7 +10,7 @@ import MiniBar from '../components/MiniBar'
 import DonutChart from '../components/DonutChart'
 import Panel from '../components/Panel'
 import PageWrap from '../components/PageWrap'
-import type { ProcessSummaryResponse, TopFailureRow, TopRetryRow, TopFailureExitCodeRow } from '../types'
+import type { ProcessSummaryResponse, RunningProcessesResponse, RunningProcessRow, TopFailureRow, TopRetryRow, TopFailureExitCodeRow } from '../types'
 
 function ExitCodeChart({ rows }: { rows: TopFailureExitCodeRow[] }) {
   const exitLabels: Record<string, string> = {
@@ -35,14 +36,53 @@ function ExitCodeChart({ rows }: { rows: TopFailureExitCodeRow[] }) {
   )
 }
 
-export default function OverviewPage() {
-  const [summary, setSummary] = useState<ProcessSummaryResponse | null>(null)
+function RunningPanel({ data }: { data: RunningProcessesResponse }) {
+  const { active_nf_runs, total_running, total_queued, by_process } = data
+  const hasActivity = total_running > 0 || total_queued > 0
+
+  return (
+    <Panel>
+      <SectionHeader
+        title="In Flight"
+        sub={`${active_nf_runs} active Nextflow run${active_nf_runs !== 1 ? 's' : ''}`}
+      />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+        <KPICard label="Active NF Runs" value={active_nf_runs}          sub="workflow_runs running" accent={T.blue} />
+        <KPICard label="Running Tasks"  value={fmtNum(total_running)}   sub="started, not completed" accent={T.green} />
+        <KPICard label="Queued Tasks"   value={fmtNum(total_queued)}    sub="submitted, not started" accent={T.amber} />
+      </div>
+      {hasActivity
+        ? (
+          <DataTable<RunningProcessRow>
+            columns={[
+              { key: 'process', label: 'Process', mono: true },
+              { key: 'running', label: 'Running', align: 'right', mono: true,
+                render: v => <span style={{ color: T.green, fontWeight: 600 }}>{fmtNum(v as number)}</span> },
+              { key: 'queued',  label: 'Queued',  align: 'right', mono: true,
+                render: v => (v as number) > 0
+                  ? <span style={{ color: T.amber }}>{fmtNum(v as number)}</span>
+                  : <span style={{ color: T.border }}>—</span> },
+            ]}
+            rows={by_process}
+          />
+        )
+        : <div style={{ fontSize: 13, color: T.muted }}>No tasks currently in flight.</div>
+      }
+    </Panel>
+  )
+}
+
+export default function OverviewPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
+  const [summary, setSummary]   = useState<ProcessSummaryResponse | null>(null)
+  const [running, setRunning]   = useState<RunningProcessesResponse | null>(null)
+  const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
   useEffect(() => {
     api.metrics.summary(30).then(setSummary).catch(console.error)
-  }, [])
+    api.metrics.running().then(setRunning).catch(console.error)
+  }, [tick])
 
-  if (!summary) {
+  if (!summary || !running) {
     return (
       <PageWrap>
         <div style={{ color: T.muted, fontSize: 14, padding: '32px 0' }}>Loading…</div>
@@ -62,7 +102,14 @@ export default function OverviewPage() {
     <PageWrap>
       <div>
         <SectionHeader title="Process Execution"
-          sub={`Last ${summary.window_days ?? 30} days · ${fmtNum(c.process_completed_rows)} task completions`} />
+          sub={`Last ${summary.window_days ?? 30} days · ${fmtNum(c.process_completed_rows)} task completions`}
+          actions={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {lastUpdated && <span style={{ fontSize: 11, color: T.muted }}>{fmtUpdated(lastUpdated)}</span>}
+              <button onClick={refresh} style={{ background: T.elevated, border: `1px solid ${T.border}`, color: T.muted, fontSize: 11, cursor: 'pointer', borderRadius: 4, padding: '3px 8px' }}>↻</button>
+            </div>
+          }
+        />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 12 }}>
           <KPICard label="Task Runs"     value={fmtNum(c.process_completed_rows)} sub={`${fmtNum(c.distinct_runs)} NF runs`}     accent={T.accent} />
           <KPICard label="Success"       value={fmtNum(c.success_rows)}           sub={fmtPct(100 - c.failure_pct)}              accent={T.green} />
@@ -72,6 +119,8 @@ export default function OverviewPage() {
           <KPICard label="Processes"     value={c.distinct_processes}             sub="Distinct names"                           accent={T.blue} />
         </div>
       </div>
+
+      <RunningPanel data={running} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
         <Panel>

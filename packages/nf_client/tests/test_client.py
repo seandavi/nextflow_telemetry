@@ -17,13 +17,25 @@ from nf_client.submission import generate_run_name, render_submission_script
 MINIMAL_CONFIG = {
     "server_url": "http://test.local",
     "weblog_url": "http://test.local/telemetry",
-    "workflow": {
-        "id": "curatedMetagenomics",
-        "version": "1.0.0",
-        "repository": "https://github.com/org/pipeline",
-        "revision": "main",
-        "profile": "test",
+    "dispatch": {
+        "batch_size": 50,
+        "workflow_id": "curatedMetagenomics",
+        "workflow_version": "1.0.0",
     },
+}
+
+FULL_BATCH_RESPONSE = {
+    "run_name": "test-run-001",
+    "workflow_id": "curatedMetagenomics",
+    "workflow_version": "1.0.0",
+    "workflow_pk": 1,
+    "repository_url": "https://github.com/org/pipeline",
+    "revision": "main",
+    "profile": "test",
+    "jobs": [
+        {"sample_id": "SRR001", "metadata": {"ncbi_accession": "SRR001"}},
+        {"sample_id": "SRR002", "metadata": {"ncbi_accession": "SRR002"}},
+    ],
 }
 
 
@@ -38,7 +50,7 @@ def config() -> ClientConfig:
 
 def test_config_from_dict(config: ClientConfig):
     assert config.server_url == "http://test.local"
-    assert config.workflow.id == "curatedMetagenomics"
+    assert config.dispatch.workflow_id == "curatedMetagenomics"
     assert config.dispatch.batch_size == 50
 
 
@@ -48,7 +60,7 @@ def test_config_from_yaml(tmp_path: Path, config: ClientConfig):
     cfg_file.write_text(yaml.safe_dump(MINIMAL_CONFIG))
     loaded = ClientConfig.from_yaml(cfg_file)
     assert loaded.server_url == config.server_url
-    assert loaded.workflow.version == config.workflow.version
+    assert loaded.dispatch.workflow_version == config.dispatch.workflow_version
 
 
 # ---------------------------------------------------------------------------
@@ -59,16 +71,7 @@ def test_config_from_yaml(tmp_path: Path, config: ClientConfig):
 async def test_fetch_next_batch_returns_batch(config: ClientConfig):
     with respx.mock(base_url="http://test.local") as mock:
         mock.post("/dispatch/batch").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "run_name": "test-run-001",
-                    "jobs": [
-                        {"sample_id": "SRR001", "workflow_id": "curatedMetagenomics", "workflow_version": "1.0.0"},
-                        {"sample_id": "SRR002", "workflow_id": "curatedMetagenomics", "workflow_version": "1.0.0"},
-                    ],
-                },
-            )
+            return_value=httpx.Response(200, json=FULL_BATCH_RESPONSE)
         )
         async with JobClient(config) as client:
             batch = await client.fetch_next_batch()
@@ -77,6 +80,7 @@ async def test_fetch_next_batch_returns_batch(config: ClientConfig):
     assert batch.run_name == "test-run-001"
     assert len(batch.jobs) == 2
     assert batch.jobs[0].sample_id == "SRR001"
+    assert batch.jobs[0].metadata == {"ncbi_accession": "SRR001"}
 
 
 @pytest.mark.asyncio
@@ -127,7 +131,8 @@ async def test_client_requires_context_manager(config: ClientConfig):
 def test_generate_run_name_is_valid_uuid(config: ClientConfig):
     import uuid
     name = generate_run_name()
-    parsed = uuid.UUID(name)
+    assert name.startswith("r")
+    parsed = uuid.UUID(name[1:])  # strip the "r" prefix before parsing
     assert parsed.version == 7
 
 

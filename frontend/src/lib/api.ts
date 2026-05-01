@@ -8,6 +8,7 @@ import type {
   ProcessRetriesResponse,
   ProcessResourcesByAttemptResponse,
   ProcessFailureSignaturesResponse,
+  RunningProcessesResponse,
   DispatchBatchResponse,
   ReconcileResult,
   RequeueResult,
@@ -54,6 +55,7 @@ export const api = {
   },
 
   metrics: {
+    running:    () => get<RunningProcessesResponse>('/metrics/processes/running'),
     summary:    (days?: number) => get<ProcessSummaryResponse>(`/metrics/processes/summary${days ? `?window_days=${days}` : ''}`),
     failures:   (days?: number) => get<ProcessFailuresResponse>(`/metrics/processes/failures${days ? `?window_days=${days}` : ''}`),
     retries:    (days?: number) => get<ProcessRetriesResponse>(`/metrics/processes/retries${days ? `?window_days=${days}` : ''}`),

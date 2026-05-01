@@ -6,11 +6,13 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
+from typing import Any
+
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import jobs_tbl, workflow_runs_tbl, workflows_tbl
+from ..db import jobs_tbl, samples_tbl, workflow_runs_tbl, workflows_tbl
 
 if sys.version_info >= (3, 13):
     from uuid import uuid7 as _uuid7  # type: ignore[attr-defined]
@@ -30,6 +32,7 @@ class DispatchBatchRequest(BaseModel):
 class DispatchedJob(BaseModel):
     """A single job included in a dispatch batch."""
     sample_id: str = Field(description="The sample identifier to be processed in this run.")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Sample metadata (e.g. ncbi_accession). Sourced from the samples table.")
 
 
 class DispatchBatchResponse(BaseModel):
@@ -131,6 +134,18 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
                 .values(run_name=run_name, status="claimed")
             )
 
+            # Fetch sample metadata in a separate query to avoid JOIN conflicts
+            # with the FOR UPDATE SKIP LOCKED above.
+            sample_ids = [r["sample_id"] for r in rows]
+            meta_result = await conn.execute(
+                select(samples_tbl.c.sample_id, samples_tbl.c.metadata_)
+                .where(samples_tbl.c.sample_id.in_(sample_ids))
+            )
+            metadata_map: dict[str, Any] = {
+                r["sample_id"]: r["metadata_"] or {}
+                for r in meta_result.mappings().all()
+            }
+
         return DispatchBatchResponse(
             run_name=run_name,
             workflow_id=first_wf_id,
@@ -139,7 +154,13 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
             repository_url=repository_url,
             revision=revision,
             profile=profile,
-            jobs=[DispatchedJob(sample_id=r["sample_id"]) for r in rows],
+            jobs=[
+                DispatchedJob(
+                    sample_id=r["sample_id"],
+                    metadata=metadata_map.get(r["sample_id"], {}),
+                )
+                for r in rows
+            ],
         )
 
     @router.post(

@@ -9,15 +9,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-if sys.version_info >= (3, 13):
-    from uuid import uuid7 as _uuid7  # type: ignore[attr-defined]
-else:
+try:
+    from uuid import uuid7 as _uuid7  # type: ignore[attr-defined]  # Python 3.14+
+except ImportError:
     from uuid_extensions import uuid7 as _uuid7
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from .models import DispatchBatchResponse
+from .models import DispatchBatchResponse, DispatchedJob
 
 
 def generate_run_name() -> str:
@@ -27,6 +27,19 @@ def generate_run_name() -> str:
     UUID7 begins with a hex digit.
     """
     return "r" + str(_uuid7())
+
+
+def generate_metadata_tsv(jobs: list[DispatchedJob]) -> str:
+    """Return TSV content with header sample_id\\tNCBI_accession.
+
+    Each row maps a biosample ID to its semicolon-separated SRR accessions
+    sourced from job.metadata['ncbi_accession'].
+    """
+    lines = ["sample_id\tNCBI_accession"]
+    for job in jobs:
+        accession = job.metadata.get("ncbi_accession", "")
+        lines.append(f"{job.sample_id}\t{accession}")
+    return "\n".join(lines)
 
 
 def render_submission_script(
@@ -109,9 +122,15 @@ def submit_local(cmd: list[str], log_file: Path | None = None) -> str:
 
 
 def submit_slurm(script_content: str) -> str:
-    """Submit a rendered sbatch script and return the SLURM job ID."""
+    """Submit a rendered sbatch script and return the SLURM job ID.
+
+    --export=NONE prevents the submitting shell's environment from leaking into
+    the compute node, which would otherwise block SLURM's own module-system
+    initialization (lmod sets up the 'module' function via /etc/profile.d on a
+    clean environment).
+    """
     result = subprocess.run(
-        ["sbatch", "--parsable"],
+        ["sbatch", "--parsable", "--export=NONE"],
         input=script_content,
         text=True,
         capture_output=True,

@@ -32,7 +32,19 @@ function HealthDot() {
   )
 }
 
-function Sidebar({ active, onNav }: { active: NavId; onNav: (id: NavId) => void }) {
+const POLL_OPTIONS = [
+  { label: '10s',  value: 10_000  },
+  { label: '30s',  value: 30_000  },
+  { label: '1 min', value: 60_000 },
+  { label: '2 min', value: 120_000 },
+]
+
+function Sidebar({ active, onNav, pollInterval, onPollInterval }: {
+  active: NavId
+  onNav: (id: NavId) => void
+  pollInterval: number
+  onPollInterval: (ms: number) => void
+}) {
   return (
     <aside style={{
       width: 220, flexShrink: 0,
@@ -89,9 +101,24 @@ function Sidebar({ active, onNav }: { active: NavId; onNav: (id: NavId) => void 
 
       <div style={{
         padding: '14px 16px', borderTop: '1px solid rgba(255,255,255,0.06)',
-        display: 'flex', flexDirection: 'column', gap: 8,
+        display: 'flex', flexDirection: 'column', gap: 10,
       }}>
         <HealthDot />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 10, color: 'rgba(107,122,150,0.7)' }}>Auto-refresh</span>
+          <select
+            value={pollInterval}
+            onChange={e => onPollInterval(Number(e.target.value))}
+            style={{
+              background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)',
+              color: T.text, fontSize: 11, borderRadius: 4, padding: '2px 4px', cursor: 'pointer',
+            }}
+          >
+            {POLL_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
         <div style={{ fontSize: 10, color: 'rgba(107,122,150,0.5)', fontFamily: 'DM Mono, monospace' }}>v0.1.0</div>
       </div>
     </aside>
@@ -100,18 +127,19 @@ function Sidebar({ active, onNav }: { active: NavId; onNav: (id: NavId) => void 
 
 export default function App() {
   const [page, setPage] = useState<NavId>('overview')
+  const [pollInterval, setPollInterval] = useState(30_000)
 
   const pageMap: Record<NavId, React.ReactElement> = {
-    overview:  <OverviewPage />,
-    metrics:   <MetricsPage />,
-    workflows: <WorkflowsPage />,
-    samples:   <SamplesPage />,
+    overview:  <OverviewPage  pollInterval={pollInterval} />,
+    metrics:   <MetricsPage   pollInterval={pollInterval} />,
+    workflows: <WorkflowsPage pollInterval={pollInterval} />,
+    samples:   <SamplesPage   pollInterval={pollInterval} />,
     dispatch:  <DispatchPage />,
   }
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar active={page} onNav={setPage} />
+      <Sidebar active={page} onNav={setPage} pollInterval={pollInterval} onPollInterval={setPollInterval} />
       <main style={{ flex: 1, overflowY: 'auto', background: '#080c14' }}>
         {pageMap[page]}
       </main>
