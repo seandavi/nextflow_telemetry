@@ -1,0 +1,40 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: nextflow-telemetry-api
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "4"
+    spec:
+      serviceAccountName: nextflow-telemetry-api@YOUR_GCP_PROJECT.iam.gserviceaccount.com
+      containers:
+        - image: YOUR_REGION-docker.pkg.dev/YOUR_GCP_PROJECT/nextflow-telemetry/api:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: SQLALCHEMY_URI
+              valueFrom:
+                secretKeyRef:
+                  name: nextflow-telemetry-db-uri
+                  key: latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 30

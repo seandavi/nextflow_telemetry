@@ -41,8 +41,10 @@ engine = create_async_engine(settings.SQLALCHEMY_URI)
 
 app.add_middleware(
     CORSMiddleware,
-    # Security exception: wildcard CORS is currently required by deployment constraints.
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 process_metrics_service = ProcessMetricsService(engine=engine)

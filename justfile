@@ -104,3 +104,32 @@ seed:
 # Run nf-client daemon: claim and run batches of 10 until no pending jobs remain.
 daemon:
 	uv run nf-client daemon --config client-local.yaml --batch-size 10
+
+# ── Cloud deployment ──────────────────────────────────────────────────────────
+# Set GCP_PROJECT and REGION env vars (or export them) before using these.
+
+GCP_PROJECT := env_var_or_default("GCP_PROJECT", "YOUR_GCP_PROJECT")
+REGION      := env_var_or_default("REGION", "us-central1")
+AR_REPO     := "nextflow-telemetry"
+IMAGE       := REGION + "-docker.pkg.dev/" + GCP_PROJECT + "/" + AR_REPO + "/api"
+
+# Build and push the API image to Artifact Registry.
+build-api:
+	docker build --tag {{IMAGE}}:latest .
+	docker push {{IMAGE}}:latest
+
+# Deploy the Cloud Run service from deploy/cloudrun.yaml (run build-api first).
+deploy-api:
+	gcloud run services replace deploy/cloudrun.yaml \
+	  --region {{REGION}} \
+	  --project {{GCP_PROJECT}}
+
+# Build frontend and deploy to Firebase Hosting.
+deploy-frontend:
+	cd frontend && npm run build
+	cd deploy && firebase deploy --only hosting
+
+# Run Alembic migrations against a target DB.
+# Usage: SQLALCHEMY_URI=postgresql://... just migrate-prod
+migrate-prod:
+	uv run alembic upgrade head

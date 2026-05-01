@@ -16,10 +16,12 @@ def _normalize_sqlalchemy_uri(uri: str) -> str:
 class Settings:
     SQLALCHEMY_URI: str
     SKIP_DB_INIT: bool
+    CORS_ORIGINS: list[str]
 
 settings = Settings(
     SQLALCHEMY_URI=_normalize_sqlalchemy_uri(
         os.environ.get("SQLALCHEMY_URI", "postgresql://postgres:postgres@localhost:5432/cmdg_dev")
     ),
     SKIP_DB_INIT=_as_bool(os.environ.get("TELEMETRY_SKIP_DB_INIT", "0")),
+    CORS_ORIGINS=os.environ.get("CORS_ORIGINS", "*").split(","),
 )

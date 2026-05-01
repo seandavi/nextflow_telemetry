@@ -1,0 +1,41 @@
+# Cloud Build — build and push the API image to Artifact Registry.
+#
+# Triggered on push to main. Does NOT deploy to Cloud Run automatically;
+# use `just deploy-api` for that (or wire a separate trigger after review).
+#
+# Required substitutions (set in Cloud Build trigger or passed via --substitutions):
+#   _REGION      e.g. us-central1
+#   _REPO        Artifact Registry repo name, e.g. nextflow-telemetry
+#   _GCP_PROJECT GCP project ID
+
+substitutions:
+  _REGION: us-central1
+  _REPO: nextflow-telemetry
+  _GCP_PROJECT: YOUR_GCP_PROJECT
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - --tag
+      - $_REGION-docker.pkg.dev/$_GCP_PROJECT/$_REPO/api:$SHORT_SHA
+      - --tag
+      - $_REGION-docker.pkg.dev/$_GCP_PROJECT/$_REPO/api:latest
+      - --cache-from
+      - $_REGION-docker.pkg.dev/$_GCP_PROJECT/$_REPO/api:latest
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args:
+      - push
+      - --all-tags
+      - $_REGION-docker.pkg.dev/$_GCP_PROJECT/$_REPO/api
+
+images:
+  - $_REGION-docker.pkg.dev/$_GCP_PROJECT/$_REPO/api:$SHORT_SHA
+  - $_REGION-docker.pkg.dev/$_GCP_PROJECT/$_REPO/api:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
