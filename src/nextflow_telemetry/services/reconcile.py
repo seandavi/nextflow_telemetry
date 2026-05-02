@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import case, insert, select, text, update
+from sqlalchemy import case, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 
@@ -72,19 +72,22 @@ async def sweep_run_incomplete(conn: AsyncConnection, run_name: str, now: dateti
     dlq_rows = [r for r in swept if r["status"] == "failed"]
     if dlq_rows:
         await conn.execute(
-            insert(dead_letter_tbl),
-            [
-                {
-                    "job_id": row["id"],
-                    "run_name": run_name,
-                    "sample_id": row["sample_id"],
-                    "workflow_id": row["workflow_id"],
-                    "workflow_version": row["workflow_version"],
-                    "reason": "run completed without MARK_COMPLETE",
-                    "created_at": now,
-                }
-                for row in dlq_rows
-            ],
+            pg_insert(dead_letter_tbl)
+            .values(
+                [
+                    {
+                        "job_id": row["id"],
+                        "run_name": run_name,
+                        "sample_id": row["sample_id"],
+                        "workflow_id": row["workflow_id"],
+                        "workflow_version": row["workflow_version"],
+                        "reason": "run completed without MARK_COMPLETE",
+                        "created_at": now,
+                    }
+                    for row in dlq_rows
+                ]
+            )
+            .on_conflict_do_nothing(constraint="uq_dlq_job_id")
         )
 
     return len(swept)
