@@ -13,9 +13,9 @@ submission:
   slurm_export_none: false
 
   defaults:
-    mem: "64G"
-    cpus: 16
-    time: "24:00:00"
+    mem: "4G"
+    cpus: 2
+    time: "96:00:00"
     account: "tra220018"
     partition: "shared"
     log_dir: "/anvil/scratch/x-seandavi/cmgd_logs"
