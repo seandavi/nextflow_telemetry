@@ -14,8 +14,9 @@ class DispatchedJob(BaseModel):
 class DispatchBatchResponse(BaseModel):
     """Full execution context returned by POST /dispatch/batch.
 
-    The server supplies all workflow details so the client config no longer
-    needs to carry repository / revision / profile per-workflow.
+    The server supplies workflow identity and repository details. The Nextflow
+    profile is not included — it is execution-environment-specific and lives
+    in the client config (ClientConfig.profile).
     """
     run_name: str
     workflow_id: str
@@ -23,7 +24,6 @@ class DispatchBatchResponse(BaseModel):
     workflow_pk: int
     repository_url: str
     revision: str
-    profile: str
     jobs: list[DispatchedJob]
 
 

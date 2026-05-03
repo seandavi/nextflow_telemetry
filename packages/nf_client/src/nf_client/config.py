@@ -2,14 +2,16 @@
 
 A YAML file is the canonical config source, loaded via ClientConfig.from_yaml().
 
-Workflow details (repository, revision, profile) are no longer specified here —
-they come from the server's dispatch response. The config only describes
-how this client connects to the server and how it submits jobs locally.
+Workflow details (repository, revision) come from the server's dispatch response.
+The profile is execution-environment-specific and lives here in the client config
+so the same workflow definition can run on different HPC systems (e.g. anvil vs alpine).
 
 Example config file (client-hpc.yaml):
 
     server_url: "http://telemetry.example.com"
     weblog_url: "http://telemetry.example.com/telemetry"
+
+    profile: "anvil"         # Nextflow profile passed as -profile to nextflow run
 
     dispatch:
       batch_size: 200
@@ -56,6 +58,7 @@ class SubmissionConfig(BaseModel):
 class ClientConfig(BaseModel):
     server_url: str
     weblog_url: str
+    profile: str = Field(default="standard", description="Nextflow profile passed as -profile to nextflow run. HPC-specific (e.g. 'anvil', 'alpine').")
     dispatch: DispatchConfig = Field(default_factory=DispatchConfig)
     submission: SubmissionConfig = Field(default_factory=SubmissionConfig)
 

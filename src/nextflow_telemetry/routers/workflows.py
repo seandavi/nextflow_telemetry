@@ -19,7 +19,6 @@ class WorkflowRegisterRequest(BaseModel):
     version: str = Field(description="Semantic or arbitrary version string, e.g. '1.0.0'. Bumping this forces all samples to be reprocessed under the new version.")
     repository_url: str = Field(description="Git repository URL or absolute local path to the `main.nf` file. Passed directly to `nextflow run`.")
     revision: str = Field(description="Git branch, tag, or commit hash to check out. Mutable: updating it does not create a new version or force reruns.")
-    profile: str = Field(default="standard", description="Nextflow profile to activate, e.g. 'test', 'slurm', 'docker'. Passed as `-profile` to `nextflow run`.")
     manifest_version: str | None = Field(default=None, description="Optional version string from the pipeline's `nextflow.config` manifest block, for display purposes.")
     max_retries: int = Field(default=3, ge=0, le=10, description="Maximum number of times a failed job will be re-enqueued before being sent to the dead-letter queue.")
     description: str | None = Field(default=None, description="Free-text description of what this workflow does, shown in listings.")
@@ -42,7 +41,6 @@ class WorkflowResponse(BaseModel):
     version: str = Field(description="Version string. Together with `workflow_id` this is the unique identifier for a workflow.")
     repository_url: str = Field(description="Git URL or local path passed to `nextflow run`.")
     revision: str = Field(description="Current git revision (branch/tag/commit). Mutable without forcing reruns.")
-    profile: str = Field(description="Nextflow profile activated for every run of this workflow.")
     manifest_version: str | None = Field(description="Pipeline manifest version, if recorded.")
     max_retries: int = Field(description="How many times a failed job will be retried before dead-lettering.")
     status: str = Field(description="Lifecycle status: `active`, `paused`, or `retired`.")
@@ -66,7 +64,7 @@ def create_workflows_router(engine: AsyncEngine) -> APIRouter:
         summary="Register or update a workflow",
         description=(
             "Adds a workflow to the registry keyed on `(workflow_id, version)`, or updates its "
-            "mutable fields (`repository_url`, `revision`, `profile`, `max_retries`, `description`) "
+            "mutable fields (`repository_url`, `revision`, `max_retries`, `description`) "
             "if it already exists. "
             "Only `active` workflows are eligible for job dispatch. "
             "To force all samples to be reprocessed, register a new entry with a bumped `version`."
@@ -78,7 +76,6 @@ def create_workflows_router(engine: AsyncEngine) -> APIRouter:
             version=req.version,
             repository_url=req.repository_url,
             revision=req.revision,
-            profile=req.profile,
             manifest_version=req.manifest_version,
             max_retries=req.max_retries,
             description=req.description,

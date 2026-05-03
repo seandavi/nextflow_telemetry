@@ -61,7 +61,7 @@ def fetch(
         typer.echo(f"run_name:   {batch.run_name}")
         typer.echo(f"workflow:   {batch.workflow_id} v{batch.workflow_version}")
         typer.echo(f"repository: {batch.repository_url} @ {batch.revision}")
-        typer.echo(f"profile:    {batch.profile}")
+        typer.echo(f"profile:    {cfg.profile}")
         for job in batch.jobs:
             typer.echo(f"  {job.sample_id}")
 
@@ -91,6 +91,7 @@ def submit(
 
         cmd = build_nextflow_command(
             batch=batch,
+            profile=cfg.profile,
             weblog_url=cfg.weblog_url,
         )
 
@@ -117,7 +118,7 @@ def submit(
                 "sample_ids": ",".join(sample_ids),
                 "workflow_repository": batch.repository_url,
                 "workflow_revision": batch.revision,
-                "profile": batch.profile,
+                "profile": cfg.profile,
                 "server_url": cfg.server_url,
                 "weblog_url": cfg.weblog_url,
                 "workflow_id": batch.workflow_id,
@@ -204,7 +205,7 @@ def daemon(
         executor_job_id: str | None = None
 
         if mode == "local":
-            cmd = build_nextflow_command(batch=batch, weblog_url=cfg.weblog_url)
+            cmd = build_nextflow_command(batch=batch, profile=cfg.profile, weblog_url=cfg.weblog_url)
             # Report submitted before blocking on nextflow — transitions claimed→submitted
             # before the weblog completed event arrives.
             try:
@@ -225,7 +226,7 @@ def daemon(
                 "sample_ids": ",".join(sample_ids),
                 "workflow_repository": batch.repository_url,
                 "workflow_revision": batch.revision,
-                "profile": batch.profile,
+                "profile": cfg.profile,
                 "server_url": cfg.server_url,
                 "weblog_url": cfg.weblog_url,
                 "workflow_id": batch.workflow_id,

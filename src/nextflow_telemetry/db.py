@@ -70,7 +70,6 @@ workflows_tbl = Table(
     Column("version", String, nullable=False),
     Column("repository_url", String, nullable=False),
     Column("revision", String, nullable=False),      # git hash / tag / branch — mutable
-    Column("profile", String, nullable=False, default="standard"),
     Column("manifest_version", String, nullable=True),
     Column("max_retries", Integer, nullable=False, default=3),
     Column("status", String, nullable=False, default="active"),  # active|paused|retired

@@ -48,7 +48,6 @@ class DispatchBatchResponse(BaseModel):
     workflow_pk: int = Field(description="Database primary key of the workflow definition, for reference.")
     repository_url: str = Field(description="Git URL or local path to pass to `nextflow run`.")
     revision: str = Field(description="Git revision (branch/tag/commit) to check out.")
-    profile: str = Field(description="Nextflow profile to activate via `-profile`.")
     jobs: list[DispatchedJob] = Field(description="List of jobs in this batch. Pass the sample IDs as `--sample_ids` (comma-separated) to the pipeline.")
 
 
@@ -114,7 +113,6 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
             workflow_pk = rows[0]["workflow_pk"]
             repository_url = rows[0]["repository_url"]
             revision = rows[0]["revision"]
-            profile = rows[0]["profile"]
 
             await conn.execute(
                 workflow_runs_tbl.insert().values(
@@ -153,7 +151,6 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
             workflow_pk=workflow_pk,
             repository_url=repository_url,
             revision=revision,
-            profile=profile,
             jobs=[
                 DispatchedJob(
                     sample_id=r["sample_id"],

@@ -63,15 +63,15 @@ def render_submission_script(
 def build_nextflow_command(
     *,
     batch: DispatchBatchResponse,
+    profile: str,
     weblog_url: str,
     extra_params: dict[str, str] | None = None,
 ) -> list[str]:
     """Build the nextflow run command for a dispatched batch.
 
-    All workflow execution details (repository, revision, profile, run_name)
-    come from the server's dispatch response — no local workflow config needed.
-    Using batch.run_name directly ensures telemetry correlation is never broken
-    by a caller passing a mismatched name.
+    Workflow identity and repository details come from the server's dispatch
+    response. ``profile`` is execution-environment-specific and must be
+    supplied by the caller from ClientConfig.profile.
 
     Returns a list suitable for subprocess.run / subprocess.Popen.
     """
@@ -82,7 +82,7 @@ def build_nextflow_command(
     if not batch.repository_url.startswith(("/", ".")):
         cmd += ["-revision", batch.revision]
     cmd += [
-        "-profile", batch.profile,
+        "-profile", profile,
         "-name", run_name,
         "-with-weblog", weblog_url,
         "--sample_ids", sample_ids,

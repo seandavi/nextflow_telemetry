@@ -24,7 +24,6 @@ class WorkflowService:
         version: str,
         repository_url: str,
         revision: str,
-        profile: str = "standard",
         manifest_version: str | None = None,
         max_retries: int = 3,
         description: str | None = None,
@@ -39,7 +38,6 @@ class WorkflowService:
                     version=version,
                     repository_url=repository_url,
                     revision=revision,
-                    profile=profile,
                     manifest_version=manifest_version,
                     max_retries=max_retries,
                     status="active",
@@ -52,7 +50,6 @@ class WorkflowService:
                     set_={
                         "repository_url": repository_url,
                         "revision": revision,
-                        "profile": profile,
                         "manifest_version": manifest_version,
                         "max_retries": max_retries,
                         "description": description,
