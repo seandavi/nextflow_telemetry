@@ -129,6 +129,39 @@ class FakeProcessMetricsService:
             ],
         }
 
+    async def tasks(self, *, limit=50, offset=0, **kwargs):
+        return {
+            "generated_at_utc": "2026-01-01T00:00:00Z",
+            "total": 1,
+            "limit": limit,
+            "offset": offset,
+            "rows": [
+                {
+                    "telemetry_id": 42,
+                    "run_name": "happy-goldfish",
+                    "run_id": "abc-123",
+                    "sample_id": "SRR001",
+                    "workflow_id": "cmgd",
+                    "workflow_version": "1.0.0",
+                    "utc_time": "2026-01-01T00:00:00Z",
+                    "process": "kneaddata",
+                    "name": "kneaddata (SRR001)",
+                    "status": "COMPLETED",
+                    "attempt": 1,
+                    "exit_code": "0",
+                    "error_action": None,
+                    "realtime_ms": 60000.0,
+                    "requested_cpus": 8.0,
+                    "requested_memory_gb": 32.0,
+                    "pct_cpu": 350.0,
+                    "pct_mem": 12.5,
+                    "peak_rss_gb": 4.0,
+                    "read_gb": 1.2,
+                    "write_gb": 0.8,
+                }
+            ],
+        }
+
 
 def _client() -> TestClient:
     app = FastAPI()
@@ -179,3 +212,19 @@ def test_failure_signatures_endpoint_returns_rows():
 
     assert response.status_code == 200
     assert response.json()["rows"][0]["exit_code"] == "1"
+
+
+def test_tasks_endpoint_returns_paginated_rows():
+    with _client() as client:
+        response = client.get("/metrics/processes/tasks", params={"limit": 50, "offset": 0})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["limit"] == 50
+    assert body["offset"] == 0
+    row = body["rows"][0]
+    assert row["process"] == "kneaddata"
+    assert row["status"] == "COMPLETED"
+    assert row["attempt"] == 1
+    assert row["peak_rss_gb"] == 4.0
