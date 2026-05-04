@@ -4,11 +4,17 @@ from fastapi.testclient import TestClient
 from nextflow_telemetry.routers.process_metrics import create_process_metrics_router
 
 
+_FILTER_KWARGS = {
+    "window_days": None, "window_hours": None, "since": None, "until": None,
+    "workflow_id": None, "workflow_version": None, "run_name": None, "sample_id": None,
+}
+
+
 class FakeProcessMetricsService:
-    async def summary(self, *, window_days=None, min_samples=50, limit=10):
+    async def summary(self, *, min_samples=5, limit=10, **kwargs):
         return {
             "generated_at_utc": "2026-01-01T00:00:00Z",
-            "window_days": window_days,
+            "window_days": kwargs.get("window_days"),
             "cards": {
                 "process_completed_rows": 123,
                 "distinct_runs": 4,
@@ -38,10 +44,10 @@ class FakeProcessMetricsService:
             "top_failure_exit_codes": [{"exit_code": "1", "failures": 10}],
         }
 
-    async def retries(self, *, window_days=None, min_samples=50, limit=50):
+    async def retries(self, *, min_samples=5, limit=50, **kwargs):
         return {
             "generated_at_utc": "2026-01-01T00:00:00Z",
-            "window_days": window_days,
+            "window_days": kwargs.get("window_days"),
             "summary": {
                 "process_completed_rows": 10,
                 "retried_rows": 2,
@@ -64,10 +70,10 @@ class FakeProcessMetricsService:
             ],
         }
 
-    async def resources_by_attempt(self, *, window_days=None, min_samples=50, limit=100):
+    async def resources_by_attempt(self, *, min_samples=5, limit=100, **kwargs):
         return {
             "generated_at_utc": "2026-01-01T00:00:00Z",
-            "window_days": window_days,
+            "window_days": kwargs.get("window_days"),
             "rows": [
                 {
                     "process": "kneaddata",
@@ -90,10 +96,10 @@ class FakeProcessMetricsService:
             ],
         }
 
-    async def failures(self, *, window_days=None, min_samples=50, limit=50):
+    async def failures(self, *, min_samples=5, limit=50, **kwargs):
         return {
             "generated_at_utc": "2026-01-01T00:00:00Z",
-            "window_days": window_days,
+            "window_days": kwargs.get("window_days"),
             "rows": [
                 {
                     "process": "kneaddata",
@@ -106,11 +112,20 @@ class FakeProcessMetricsService:
             ],
         }
 
-    async def failure_signatures(self, *, window_days=None, limit=100):
+    async def failure_signatures(self, *, limit=100, **kwargs):
         return {
             "generated_at_utc": "2026-01-01T00:00:00Z",
-            "window_days": window_days,
+            "window_days": kwargs.get("window_days"),
             "rows": [{"process": "kneaddata", "exit_code": "1", "failures": 2}],
+        }
+
+    async def timeline(self, *, bucket="hour", **kwargs):
+        return {
+            "generated_at_utc": "2026-01-01T00:00:00Z",
+            "bucket": bucket,
+            "rows": [
+                {"bucket_start": "2026-01-01T00:00:00Z", "total": 10, "success": 8, "failed": 2, "failure_pct": 20.0}
+            ],
         }
 
 

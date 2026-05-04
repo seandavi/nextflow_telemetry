@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -12,27 +13,91 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 class ProcessMetricsService:
     engine: AsyncEngine
 
-    @staticmethod
-    def _normalize_window_days(window_days: int | None) -> int | None:
-        if window_days is None:
-            return None
-        if window_days < 1:
-            raise ValueError("window_days must be >= 1")
-        return window_days
+    def _filter_clause(
+        self,
+        *,
+        window_days: int | None = None,
+        window_hours: int | None = None,
+        since: dt.datetime | None = None,
+        until: dt.datetime | None = None,
+        workflow_id: str | None = None,
+        workflow_version: str | None = None,
+        run_name: str | None = None,
+        sample_id: str | None = None,
+        table_alias: str = "t",
+    ) -> tuple[str, dict[str, Any]]:
+        """Build a composable WHERE fragment and bind-params dict for telemetry queries."""
+        clauses: list[str] = []
+        params: dict[str, Any] = {}
+        a = table_alias
 
-    def _window_clause(self, window_days: int | None) -> tuple[str, dict[str, Any]]:
-        normalized = self._normalize_window_days(window_days)
-        if normalized is None:
-            return "", {}
-        return " and t.utc_time >= now() - make_interval(days => :window_days)", {"window_days": normalized}
+        if window_days is not None and window_hours is not None:
+            raise ValueError("Provide only one of window_days or window_hours, not both.")
 
-    async def summary(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 10) -> dict[str, Any]:
+        if window_days is not None:
+            if window_days < 1:
+                raise ValueError("window_days must be >= 1")
+            clauses.append(f"{a}.utc_time >= now() - make_interval(days => :window_days)")
+            params["window_days"] = window_days
+
+        if window_hours is not None:
+            if window_hours < 1:
+                raise ValueError("window_hours must be >= 1")
+            clauses.append(f"{a}.utc_time >= now() - make_interval(hours => :window_hours)")
+            params["window_hours"] = window_hours
+
+        if since is not None:
+            clauses.append(f"{a}.utc_time >= :since")
+            params["since"] = since
+
+        if until is not None:
+            clauses.append(f"{a}.utc_time <= :until")
+            params["until"] = until
+
+        if workflow_id is not None:
+            clauses.append(f"{a}.workflow_id = :workflow_id")
+            params["workflow_id"] = workflow_id
+
+        if workflow_version is not None:
+            clauses.append(f"{a}.workflow_version = :workflow_version")
+            params["workflow_version"] = workflow_version
+
+        if run_name is not None:
+            clauses.append(f"{a}.run_name = :run_name")
+            params["run_name"] = run_name
+
+        if sample_id is not None:
+            clauses.append(f"{a}.sample_id = :sample_id")
+            params["sample_id"] = sample_id
+
+        fragment = (" and " + " and ".join(clauses)) if clauses else ""
+        return fragment, params
+
+    async def summary(
+        self,
+        *,
+        window_days: int | None = None,
+        window_hours: int | None = None,
+        since: dt.datetime | None = None,
+        until: dt.datetime | None = None,
+        workflow_id: str | None = None,
+        workflow_version: str | None = None,
+        run_name: str | None = None,
+        sample_id: str | None = None,
+        min_samples: int = 5,
+        limit: int = 10,
+    ) -> dict[str, Any]:
         if min_samples < 1:
             raise ValueError("min_samples must be >= 1")
         if limit < 1:
             raise ValueError("limit must be >= 1")
 
-        window_clause, params = self._window_clause(window_days)
+        fc, params = self._filter_clause(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+            workflow_id=workflow_id, workflow_version=workflow_version,
+            run_name=run_name, sample_id=sample_id,
+        )
         params = {**params, "min_samples": min_samples, "limit": limit}
 
         cards_sql = text(
@@ -47,7 +112,7 @@ class ProcessMetricsService:
               from telemetry t
               where t.event = 'process_completed'
                 and t.trace is not null
-                {window_clause}
+                {fc}
             )
             select
               count(*) as process_completed_rows,
@@ -74,7 +139,7 @@ class ProcessMetricsService:
               from telemetry t
               where t.event = 'process_completed'
                 and t.trace is not null
-                {window_clause}
+                {fc}
             )
             select
               process,
@@ -99,7 +164,7 @@ class ProcessMetricsService:
               from telemetry t
               where t.event = 'process_completed'
                 and t.trace is not null
-                {window_clause}
+                {fc}
             )
             select
               process,
@@ -125,7 +190,7 @@ class ProcessMetricsService:
             where t.event = 'process_completed'
               and t.trace is not null
               and coalesce(t.trace->>'status','') in ('FAILED', 'ABORTED')
-              {window_clause}
+              {fc}
             group by exit_code
             order by failures desc, exit_code
             limit :limit
@@ -137,7 +202,7 @@ class ProcessMetricsService:
             select t.event, count(*) as rows
             from telemetry t
             where true
-              {window_clause}
+              {fc}
             group by t.event
             order by rows desc, t.event
             """
@@ -160,13 +225,31 @@ class ProcessMetricsService:
             "top_failure_exit_codes": top_exit_codes,
         }
 
-    async def retries(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 50) -> dict[str, Any]:
+    async def retries(
+        self,
+        *,
+        window_days: int | None = None,
+        window_hours: int | None = None,
+        since: dt.datetime | None = None,
+        until: dt.datetime | None = None,
+        workflow_id: str | None = None,
+        workflow_version: str | None = None,
+        run_name: str | None = None,
+        sample_id: str | None = None,
+        min_samples: int = 5,
+        limit: int = 50,
+    ) -> dict[str, Any]:
         if min_samples < 1:
             raise ValueError("min_samples must be >= 1")
         if limit < 1:
             raise ValueError("limit must be >= 1")
 
-        window_clause, params = self._window_clause(window_days)
+        fc, params = self._filter_clause(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+            workflow_id=workflow_id, workflow_version=workflow_version,
+            run_name=run_name, sample_id=sample_id,
+        )
         params = {**params, "min_samples": min_samples, "limit": limit}
 
         summary_sql = text(
@@ -178,7 +261,7 @@ class ProcessMetricsService:
               from telemetry t
               where t.event = 'process_completed'
                 and t.trace is not null
-                {window_clause}
+                {fc}
             )
             select
               count(*) as process_completed_rows,
@@ -202,7 +285,7 @@ class ProcessMetricsService:
               from telemetry t
               where t.event = 'process_completed'
                 and t.trace is not null
-                {window_clause}
+                {fc}
             )
             select
               process,
@@ -230,7 +313,7 @@ class ProcessMetricsService:
             from telemetry t
             where t.event = 'process_completed'
               and t.trace is not null
-              {window_clause}
+              {fc}
             group by attempt
             order by attempt
             """
@@ -253,7 +336,14 @@ class ProcessMetricsService:
         self,
         *,
         window_days: int | None = None,
-        min_samples: int = 50,
+        window_hours: int | None = None,
+        since: dt.datetime | None = None,
+        until: dt.datetime | None = None,
+        workflow_id: str | None = None,
+        workflow_version: str | None = None,
+        run_name: str | None = None,
+        sample_id: str | None = None,
+        min_samples: int = 5,
         limit: int = 100,
     ) -> dict[str, Any]:
         if min_samples < 1:
@@ -261,7 +351,12 @@ class ProcessMetricsService:
         if limit < 1:
             raise ValueError("limit must be >= 1")
 
-        window_clause, params = self._window_clause(window_days)
+        fc, params = self._filter_clause(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+            workflow_id=workflow_id, workflow_version=workflow_version,
+            run_name=run_name, sample_id=sample_id,
+        )
         params = {**params, "min_samples": min_samples, "limit": limit}
 
         sql = text(
@@ -283,7 +378,7 @@ class ProcessMetricsService:
               where t.event = 'process_completed'
                 and t.trace is not null
                 and t.trace->>'process' is not null
-                {window_clause}
+                {fc}
             )
             select
               process,
@@ -319,13 +414,31 @@ class ProcessMetricsService:
             "rows": rows,
         }
 
-    async def failures(self, *, window_days: int | None = None, min_samples: int = 50, limit: int = 50) -> dict[str, Any]:
+    async def failures(
+        self,
+        *,
+        window_days: int | None = None,
+        window_hours: int | None = None,
+        since: dt.datetime | None = None,
+        until: dt.datetime | None = None,
+        workflow_id: str | None = None,
+        workflow_version: str | None = None,
+        run_name: str | None = None,
+        sample_id: str | None = None,
+        min_samples: int = 5,
+        limit: int = 50,
+    ) -> dict[str, Any]:
         if min_samples < 1:
             raise ValueError("min_samples must be >= 1")
         if limit < 1:
             raise ValueError("limit must be >= 1")
 
-        window_clause, params = self._window_clause(window_days)
+        fc, params = self._filter_clause(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+            workflow_id=workflow_id, workflow_version=workflow_version,
+            run_name=run_name, sample_id=sample_id,
+        )
         params = {**params, "min_samples": min_samples, "limit": limit}
 
         sql = text(
@@ -338,7 +451,7 @@ class ProcessMetricsService:
               from telemetry t
               where t.event = 'process_completed'
                 and t.trace is not null
-                {window_clause}
+                {fc}
             ),
             grouped as (
               select
@@ -386,14 +499,115 @@ class ProcessMetricsService:
             "rows": rows,
         }
 
-    async def running(self) -> dict[str, Any]:
-        """Tasks currently in flight across all active Nextflow runs.
+    async def failure_signatures(
+        self,
+        *,
+        window_days: int | None = None,
+        window_hours: int | None = None,
+        since: dt.datetime | None = None,
+        until: dt.datetime | None = None,
+        workflow_id: str | None = None,
+        workflow_version: str | None = None,
+        run_name: str | None = None,
+        sample_id: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
 
-        Derives live state from the event stream:
-        - queued:  process_submitted but no process_started yet
-        - running: process_started but no process_completed yet
-        Only considers runs where workflow_runs.status = 'running'.
-        """
+        fc, params = self._filter_clause(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+            workflow_id=workflow_id, workflow_version=workflow_version,
+            run_name=run_name, sample_id=sample_id,
+        )
+        params = {**params, "limit": limit}
+
+        sql = text(
+            f"""
+            select
+              coalesce(t.trace->>'process','<null>') as process,
+              coalesce(t.trace->>'exit','<null>') as exit_code,
+              count(*) as failures
+            from telemetry t
+            where t.event = 'process_completed'
+              and t.trace is not null
+              and coalesce(t.trace->>'status','') in ('FAILED', 'ABORTED')
+              {fc}
+            group by process, exit_code
+            order by failures desc, process, exit_code
+            limit :limit
+            """
+        )
+
+        async with self.engine.connect() as conn:
+            rows = [dict(row) for row in (await conn.execute(sql, params)).mappings().all()]
+
+        return {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "window_days": window_days,
+            "rows": rows,
+        }
+
+    async def timeline(
+        self,
+        *,
+        bucket: Literal["hour", "day", "week"] = "hour",
+        window_days: int | None = None,
+        window_hours: int | None = None,
+        since: dt.datetime | None = None,
+        until: dt.datetime | None = None,
+        workflow_id: str | None = None,
+        workflow_version: str | None = None,
+        process: str | None = None,
+    ) -> dict[str, Any]:
+        if bucket not in ("hour", "day", "week"):
+            raise ValueError("bucket must be 'hour', 'day', or 'week'")
+
+        fc, params = self._filter_clause(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+            workflow_id=workflow_id, workflow_version=workflow_version,
+        )
+        params = {**params, "bucket": bucket}
+
+        process_clause = ""
+        if process is not None:
+            process_clause = "and t.trace->>'process' = :process"
+            params["process"] = process
+
+        sql = text(
+            f"""
+            select
+              date_trunc(:bucket, t.utc_time) as bucket_start,
+              count(*) as total,
+              count(*) filter (where coalesce(t.trace->>'status','') = 'COMPLETED') as success,
+              count(*) filter (where coalesce(t.trace->>'status','') in ('FAILED','ABORTED')) as failed,
+              coalesce(round(
+                100.0 * count(*) filter (where coalesce(t.trace->>'status','') in ('FAILED','ABORTED'))::numeric
+                / nullif(count(*), 0), 2
+              ), 0) as failure_pct
+            from telemetry t
+            where t.event = 'process_completed'
+              and t.trace is not null
+              {fc}
+              {process_clause}
+            group by bucket_start
+            order by bucket_start
+            """
+        )
+
+        async with self.engine.connect() as conn:
+            rows = [dict(row) for row in (await conn.execute(sql, params)).mappings().all()]
+
+        return {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "bucket": bucket,
+            "rows": rows,
+        }
+
+    async def running(self) -> dict[str, Any]:
+        """Tasks currently in flight across all active Nextflow runs."""
         sql = text(
             """
             with active_runs as (
@@ -448,37 +662,4 @@ class ProcessMetricsService:
             "total_running": total_running,
             "total_queued": total_queued,
             "by_process": rows,
-        }
-
-    async def failure_signatures(self, *, window_days: int | None = None, limit: int = 100) -> dict[str, Any]:
-        if limit < 1:
-            raise ValueError("limit must be >= 1")
-
-        window_clause, params = self._window_clause(window_days)
-        params = {**params, "limit": limit}
-
-        sql = text(
-            f"""
-            select
-              coalesce(t.trace->>'process','<null>') as process,
-              coalesce(t.trace->>'exit','<null>') as exit_code,
-              count(*) as failures
-            from telemetry t
-            where t.event = 'process_completed'
-              and t.trace is not null
-              and coalesce(t.trace->>'status','') in ('FAILED', 'ABORTED')
-              {window_clause}
-            group by process, exit_code
-            order by failures desc, process, exit_code
-            limit :limit
-            """
-        )
-
-        async with self.engine.connect() as conn:
-            rows = [dict(row) for row in (await conn.execute(sql, params)).mappings().all()]
-
-        return {
-            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-            "window_days": window_days,
-            "rows": rows,
         }
