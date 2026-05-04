@@ -131,6 +131,22 @@ workflow_runs_tbl = Table(
 )
 
 # ---------------------------------------------------------------------------
+# Task logs — .command.sh and .command.err uploaded by nf-client post-run
+# ---------------------------------------------------------------------------
+task_logs_tbl = Table(
+    "task_logs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("run_name", String, nullable=False),
+    Column("task_hash", String, nullable=False),   # e.g. "ab/1234ef5678..."
+    Column("log_type", String, nullable=False),    # "command_sh" or "command_err"
+    Column("content", Text, nullable=False),
+    Column("uploaded_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("run_name", "task_hash", "log_type", name="uq_task_log"),
+    Index("ix_task_logs_run_hash", "run_name", "task_hash"),
+)
+
+# ---------------------------------------------------------------------------
 # Dead letter queue — populated when a run completes without MARK_COMPLETE
 # ---------------------------------------------------------------------------
 dead_letter_tbl = Table(

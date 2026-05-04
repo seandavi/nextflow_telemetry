@@ -70,6 +70,28 @@ class JobClient:
         response.raise_for_status()
         return DispatchBatchResponse.model_validate(response.json())
 
+    async def upload_task_log(
+        self,
+        *,
+        run_name: str,
+        task_hash: str,
+        log_type: str,
+        content: str,
+    ) -> None:
+        """Upload a single task log file (.command.sh or .command.err) to the server.
+
+        Idempotent: re-uploading the same (run_name, task_hash, log_type) replaces
+        the previous content.
+        """
+        payload = {
+            "run_name": run_name,
+            "task_hash": task_hash,
+            "log_type": log_type,
+            "content": content,
+        }
+        response = await self._client.post("/task-logs", json=payload)
+        response.raise_for_status()
+
     async def report_submitted(
         self,
         run_name: str,

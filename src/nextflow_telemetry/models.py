@@ -267,6 +267,7 @@ class TaskRow(BaseModel):
     name: Optional[str] = Field(default=None, description="Human-readable task name including tag.")
     status: str = Field(description="Task exit status: COMPLETED, FAILED, ABORTED, etc.")
     attempt: int = Field(description="Nextflow attempt number (1 = first attempt).")
+    task_hash: Optional[str] = Field(default=None, description="Nextflow work directory hash, e.g. 'ab/1234ef'. Used to retrieve task logs.")
     exit_code: Optional[str] = Field(default=None, description="Process exit code.")
     error_action: Optional[str] = Field(default=None, description="Nextflow error action: RETRY, FINISH, or IGNORE.")
     realtime_ms: Optional[float] = Field(default=None, description="Wall-clock time in milliseconds.")
@@ -306,6 +307,35 @@ class RunningProcessesResponse(BaseModel):
     total_running: int = Field(description="Total tasks actively executing across all runs.")
     total_queued: int = Field(description="Total tasks submitted to SLURM but not yet started.")
     by_process: list[RunningProcessRow]
+
+
+# ---------------------------------------------------------------------------
+# Task log upload / retrieval models
+# ---------------------------------------------------------------------------
+
+class TaskLogUploadRequest(BaseModel):
+    """Body for POST /task-logs — upload a single task log file."""
+    run_name: str = Field(description="Nextflow run name (must match an existing workflow_run).")
+    task_hash: str = Field(description="Nextflow work directory hash, e.g. 'ab/1234ef'.")
+    log_type: str = Field(description="Log file type: 'command_sh' or 'command_err'.")
+    content: str = Field(description="Raw text content of the log file (max 1 MB).")
+
+
+class TaskLogEntry(BaseModel):
+    """A single uploaded task log."""
+    id: int
+    run_name: str
+    task_hash: str
+    log_type: str
+    content: str
+    uploaded_at: datetime.datetime
+
+
+class TaskLogsResponse(BaseModel):
+    """Response from GET /task-logs/{run_name}/{task_hash}."""
+    run_name: str
+    task_hash: str
+    logs: list[TaskLogEntry]
 
 
 class WorkflowJobSummary(BaseModel):

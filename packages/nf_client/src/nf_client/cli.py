@@ -5,9 +5,10 @@ Looping, resource-awareness, and scheduling are left to the operator
 (cron, Airflow, site-specific daemon).
 
 Usage:
-    nf-client submit --config client-hpc.yaml [--dry-run]
-    nf-client fetch  --config client-hpc.yaml
-    nf-client daemon --config client-local.yaml [--batch-size 10]
+    nf-client submit      --config client-hpc.yaml [--dry-run]
+    nf-client fetch       --config client-hpc.yaml
+    nf-client daemon      --config client-local.yaml [--batch-size 10]
+    nf-client upload-logs --config client-hpc.yaml --run-name <name> --work-dir /path/to/work
 """
 from __future__ import annotations
 
@@ -248,3 +249,94 @@ def daemon(
                 typer.echo(f"  WARN: failed to report submitted: {e}", err=True)
 
     typer.echo(f"\nDaemon finished after {run_number} run(s).")
+
+
+@app.command(name="upload-logs")
+def upload_logs(
+    config: Path = config_option,
+    run_name: str = typer.Option(..., "--run-name", "-r", help="Nextflow run name (value passed to -name)."),
+    work_dir: Path = typer.Option(..., "--work-dir", "-w", help="Nextflow work directory (contains task subdirs)."),
+    max_size_kb: int = typer.Option(512, "--max-size-kb", help="Skip files larger than this many KB (default 512)."),
+    dry_run: bool = dry_run_option,
+) -> None:
+    """Walk a Nextflow work directory and upload .command.sh and .command.err for each task.
+
+    The Nextflow work directory structure is:
+
+        work/<2-char-prefix>/<rest-of-hash>/
+            .command.sh
+            .command.err
+
+    This command reconstructs the task_hash as "<prefix>/<rest>" and uploads both
+    files to the server as log_type "command_sh" and "command_err" respectively.
+
+    Intended to be called after a Nextflow run completes, typically from the SLURM
+    job script or a Nextflow afterScript hook. Idempotent — safe to re-run.
+    """
+    _LOG_FILES = {
+        ".command.sh":  "command_sh",
+        ".command.err": "command_err",
+    }
+    max_bytes = max_size_kb * 1024
+
+    if not work_dir.is_dir():
+        typer.echo(f"ERROR: work-dir does not exist: {work_dir}", err=True)
+        raise typer.Exit(1)
+
+    # Discover all task directories: work/<2chars>/<rest>/
+    tasks: list[tuple[str, Path]] = []
+    for prefix_dir in sorted(work_dir.iterdir()):
+        if not prefix_dir.is_dir() or len(prefix_dir.name) != 2:
+            continue
+        for task_dir in sorted(prefix_dir.iterdir()):
+            if not task_dir.is_dir():
+                continue
+            task_hash = f"{prefix_dir.name}/{task_dir.name}"
+            tasks.append((task_hash, task_dir))
+
+    if not tasks:
+        typer.echo(f"No task directories found in {work_dir}")
+        return
+
+    typer.echo(f"Found {len(tasks)} task directories in {work_dir}")
+
+    if dry_run:
+        for task_hash, task_dir in tasks:
+            for fname in _LOG_FILES:
+                fpath = task_dir / fname
+                if fpath.exists():
+                    size_kb = fpath.stat().st_size // 1024
+                    typer.echo(f"  would upload {task_hash}/{fname} ({size_kb} KB)")
+        return
+
+    cfg = ClientConfig.from_yaml(config)
+    uploaded = skipped = errors = 0
+
+    async def _upload_all() -> None:
+        nonlocal uploaded, skipped, errors
+        async with JobClient(cfg) as client:
+            for task_hash, task_dir in tasks:
+                for fname, log_type in _LOG_FILES.items():
+                    fpath = task_dir / fname
+                    if not fpath.exists():
+                        continue
+                    size = fpath.stat().st_size
+                    if size > max_bytes:
+                        typer.echo(f"  SKIP {task_hash}/{fname} ({size // 1024} KB > {max_size_kb} KB limit)")
+                        skipped += 1
+                        continue
+                    content = fpath.read_text(errors="replace")
+                    try:
+                        await client.upload_task_log(
+                            run_name=run_name,
+                            task_hash=task_hash,
+                            log_type=log_type,
+                            content=content,
+                        )
+                        uploaded += 1
+                    except Exception as exc:
+                        typer.echo(f"  ERROR {task_hash}/{fname}: {exc}", err=True)
+                        errors += 1
+
+    asyncio.run(_upload_all())
+    typer.echo(f"Done — uploaded: {uploaded}, skipped (too large): {skipped}, errors: {errors}")
