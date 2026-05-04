@@ -25,6 +25,7 @@ class FakeProcessMetricsService:
                 "retried_rows": 11,
                 "retry_pct": 8.9,
                 "retry_success_pct": 30.0,
+                "memory_efficiency_pct": 45.2,
                 "latest_process_completed_utc": "2026-01-01T00:00:00Z",
             },
             "event_mix": [{"event": "process_completed", "rows": 123}],

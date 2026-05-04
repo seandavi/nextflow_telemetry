@@ -108,7 +108,9 @@ class ProcessMetricsService:
                 t.utc_time,
                 coalesce(t.trace->>'process','<null>') as process,
                 coalesce(t.trace->>'status','') as status,
-                coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt
+                coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt,
+                nullif(t.trace->>'peak_rss','')::double precision as peak_rss,
+                nullif(t.trace->>'memory','')::double precision as requested_memory_bytes
               from telemetry t
               where t.event = 'process_completed'
                 and t.trace is not null
@@ -125,6 +127,9 @@ class ProcessMetricsService:
               coalesce(round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2), 0) as retry_pct,
               coalesce(round(100.0 * count(*) filter (where attempt > 1 and status = 'COMPLETED')::numeric /
                     nullif(count(*) filter (where attempt > 1), 0), 2), 0) as retry_success_pct,
+              coalesce(round(100.0 * avg(peak_rss / nullif(requested_memory_bytes, 0))
+                    filter (where peak_rss is not null and requested_memory_bytes is not null and requested_memory_bytes > 0)::numeric, 2), 0)
+                as memory_efficiency_pct,
               max(utc_time) as latest_process_completed_utc
             from x
             """
@@ -447,7 +452,8 @@ class ProcessMetricsService:
               select
                 coalesce(t.trace->>'process','<null>') as process,
                 coalesce(t.trace->>'status','') as status,
-                coalesce(t.trace->>'exit','<null>') as exit_code
+                coalesce(t.trace->>'exit','<null>') as exit_code,
+                nullif(t.trace->>'error_action', '') as error_action
               from telemetry t
               where t.event = 'process_completed'
                 and t.trace is not null
@@ -474,6 +480,18 @@ class ProcessMetricsService:
               from x
               where status in ('FAILED', 'ABORTED')
               group by process, exit_code
+            ),
+            fail_action as (
+              select
+                process,
+                error_action,
+                row_number() over (
+                  partition by process
+                  order by count(*) desc, error_action
+                ) as rn
+              from x
+              where status in ('FAILED', 'ABORTED') and error_action is not null
+              group by process, error_action
             )
             select
               g.process,
@@ -481,10 +499,11 @@ class ProcessMetricsService:
               g.success,
               g.failed,
               round(100.0 * g.failed::numeric / nullif(g.total_completed, 0), 2) as failure_pct,
-              f.exit_code as modal_failure_exit_code
+              f.exit_code as modal_failure_exit_code,
+              a.error_action as modal_error_action
             from grouped g
-            left join fail_exit f
-              on f.process = g.process and f.rn = 1
+            left join fail_exit f on f.process = g.process and f.rn = 1
+            left join fail_action a on a.process = g.process and a.rn = 1
             order by g.failed desc, failure_pct desc, g.total_completed desc
             limit :limit
             """
@@ -528,13 +547,14 @@ class ProcessMetricsService:
             select
               coalesce(t.trace->>'process','<null>') as process,
               coalesce(t.trace->>'exit','<null>') as exit_code,
+              nullif(t.trace->>'error_action', '') as error_action,
               count(*) as failures
             from telemetry t
             where t.event = 'process_completed'
               and t.trace is not null
               and coalesce(t.trace->>'status','') in ('FAILED', 'ABORTED')
               {fc}
-            group by process, exit_code
+            group by process, exit_code, error_action
             order by failures desc, process, exit_code
             limit :limit
             """
