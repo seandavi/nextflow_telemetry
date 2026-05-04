@@ -183,6 +183,20 @@ export interface ProcessFailureSignaturesResponse {
   rows: FailureSignatureRow[]
 }
 
+export interface TimelineRow {
+  bucket_start: string
+  total: number
+  success: number
+  failed: number
+  failure_pct: number
+}
+
+export interface ProcessTimelineResponse {
+  generated_at_utc: string
+  bucket: string
+  rows: TimelineRow[]
+}
+
 export interface RunningProcessRow {
   process: string
   running: number

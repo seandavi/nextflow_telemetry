@@ -20,6 +20,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# don't ignore frontend source lib (Python rule above is too broad)
+!frontend/src/lib/
 parts/
 sdist/
 var/

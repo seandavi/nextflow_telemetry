@@ -8,6 +8,7 @@ import type {
   ProcessRetriesResponse,
   ProcessResourcesByAttemptResponse,
   ProcessFailureSignaturesResponse,
+  ProcessTimelineResponse,
   RunningProcessesResponse,
   DispatchBatchResponse,
   ReconcileResult,
@@ -16,6 +17,32 @@ import type {
   SampleRegisterRequest,
   SubmittedRequest,
 } from '../types'
+
+export interface MetricsFilters {
+  workflowId?: string
+  workflowVersion?: string
+  windowHours?: number
+  windowDays?: number
+  since?: string
+  until?: string
+  runName?: string
+  sampleId?: string
+}
+
+function metricsParams(f: MetricsFilters, extra?: Record<string, string | number>): string {
+  const p = new URLSearchParams()
+  if (f.workflowId)      p.set('workflow_id',      f.workflowId)
+  if (f.workflowVersion) p.set('workflow_version',  f.workflowVersion)
+  if (f.windowHours)     p.set('window_hours',      String(f.windowHours))
+  else if (f.windowDays) p.set('window_days',       String(f.windowDays))
+  if (f.since)           p.set('since',             f.since)
+  if (f.until)           p.set('until',             f.until)
+  if (f.runName)         p.set('run_name',          f.runName)
+  if (f.sampleId)        p.set('sample_id',         f.sampleId)
+  if (extra) Object.entries(extra).forEach(([k, v]) => p.set(k, String(v)))
+  const s = p.toString()
+  return s ? `?${s}` : ''
+}
 
 const BASE = '/api'
 
@@ -56,11 +83,13 @@ export const api = {
 
   metrics: {
     running:    () => get<RunningProcessesResponse>('/metrics/processes/running'),
-    summary:    (days?: number) => get<ProcessSummaryResponse>(`/metrics/processes/summary${days ? `?window_days=${days}` : ''}`),
-    failures:   (days?: number) => get<ProcessFailuresResponse>(`/metrics/processes/failures${days ? `?window_days=${days}` : ''}`),
-    retries:    (days?: number) => get<ProcessRetriesResponse>(`/metrics/processes/retries${days ? `?window_days=${days}` : ''}`),
-    resources:  (days?: number) => get<ProcessResourcesByAttemptResponse>(`/metrics/processes/resources-by-attempt${days ? `?window_days=${days}` : ''}`),
-    signatures: (days?: number) => get<ProcessFailureSignaturesResponse>(`/metrics/processes/failure-signatures${days ? `?window_days=${days}` : ''}`),
+    summary:    (f: MetricsFilters = {}) => get<ProcessSummaryResponse>(`/metrics/processes/summary${metricsParams(f)}`),
+    failures:   (f: MetricsFilters = {}) => get<ProcessFailuresResponse>(`/metrics/processes/failures${metricsParams(f)}`),
+    retries:    (f: MetricsFilters = {}) => get<ProcessRetriesResponse>(`/metrics/processes/retries${metricsParams(f)}`),
+    resources:  (f: MetricsFilters = {}) => get<ProcessResourcesByAttemptResponse>(`/metrics/processes/resources-by-attempt${metricsParams(f)}`),
+    signatures: (f: MetricsFilters = {}) => get<ProcessFailureSignaturesResponse>(`/metrics/processes/failure-signatures${metricsParams(f)}`),
+    timeline:   (f: MetricsFilters = {}, bucket: 'hour' | 'day' | 'week' = 'hour') =>
+      get<ProcessTimelineResponse>(`/metrics/processes/timeline${metricsParams(f, { bucket })}`),
   },
 
   dispatch: {
