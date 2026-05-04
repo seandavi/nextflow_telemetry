@@ -235,6 +235,22 @@ class ProcessFailureSignaturesResponse(BaseModel):
     rows: list[FailureSignatureRow]
 
 
+class TimelineRow(BaseModel):
+    """Success/failure counts for a single time bucket."""
+    bucket_start: datetime.datetime
+    total: int
+    success: int
+    failed: int
+    failure_pct: float
+
+
+class ProcessTimelineResponse(BaseModel):
+    """Response from GET /metrics/processes/timeline."""
+    generated_at_utc: datetime.datetime
+    bucket: str
+    rows: list[TimelineRow]
+
+
 # ---------------------------------------------------------------------------
 # Workflow job-summary model
 # ---------------------------------------------------------------------------
