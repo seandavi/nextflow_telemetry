@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
+import { useUrlFilters } from '../lib/useUrlFilters'
 import { T } from '../tokens'
 import { fmtNum, fmtPct } from '../lib/format'
 import { api, type MetricsFilters } from '../lib/api'
@@ -391,7 +392,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 
 export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
   const [tab, setTab]         = useState<Tab>('failures')
-  const [filters, setFilters] = useState<MetricsFilters>({ windowDays: 30 })
+  const [filters, setFilters] = useUrlFilters({ windowDays: 30 })
   const [bucket, setBucket]   = useState<'hour' | 'day' | 'week'>('hour')
   const [workflows, setWorkflows] = useState<string[]>([])
 
