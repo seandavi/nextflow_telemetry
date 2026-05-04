@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { T } from '../tokens'
 import { fmtNum, fmtPct } from '../lib/format'
-import { api } from '../lib/api'
+import { api, type MetricsFilters } from '../lib/api'
 import KPICard from '../components/KPICard'
 import SectionHeader from '../components/SectionHeader'
 import DataTable from '../components/DataTable'
@@ -16,16 +16,78 @@ import type {
   ProcessRetriesResponse,
   ProcessResourcesByAttemptResponse,
   ProcessFailureSignaturesResponse,
+  ProcessTimelineResponse,
   ProcessFailuresRow,
   RetryByAttemptRow,
   RetryByProcessRow,
   ResourceByAttemptRow,
+  TimelineRow,
 } from '../types'
+
+// ── Window presets ────────────────────────────────────────────────────────────
+const WINDOW_PRESETS = [
+  { label: 'Last 30 min', windowHours: undefined, windowMinutes: 30 },
+  { label: 'Last 1 h',    windowHours: 1  },
+  { label: 'Last 6 h',    windowHours: 6  },
+  { label: 'Last 24 h',   windowHours: 24 },
+  { label: 'Last 7 d',    windowDays: 7   },
+  { label: 'Last 30 d',   windowDays: 30  },
+  { label: 'All time',    windowDays: undefined },
+] as const
+
+function windowLabel(f: MetricsFilters): string {
+  if (!f.windowHours && !f.windowDays) return 'All time'
+  if (f.windowHours) return `Last ${f.windowHours} h`
+  return `Last ${f.windowDays} d`
+}
+
+// ── Filter bar ────────────────────────────────────────────────────────────────
+function FilterBar({
+  filters, onChange, workflows,
+}: {
+  filters: MetricsFilters
+  onChange: (f: MetricsFilters) => void
+  workflows: string[]
+}) {
+  const presetOptions = WINDOW_PRESETS.map(p => ({ value: p.label, label: p.label }))
+  const currentPresetLabel = windowLabel(filters)
+
+  function applyPreset(label: string) {
+    const preset = WINDOW_PRESETS.find(p => p.label === label)
+    if (!preset) return
+    const { windowHours, windowDays } = preset as { windowHours?: number; windowDays?: number }
+    onChange({ ...filters, windowHours, windowDays })
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: '8px 0' }}>
+      <div style={{ width: 140 }}>
+        <Select
+          label="Window"
+          value={currentPresetLabel}
+          onChange={applyPreset}
+          options={presetOptions}
+        />
+      </div>
+      <div style={{ width: 200 }}>
+        <Select
+          label="Workflow"
+          value={filters.workflowId ?? ''}
+          onChange={v => onChange({ ...filters, workflowId: v || undefined, workflowVersion: undefined })}
+          options={[{ value: '', label: 'All workflows' }, ...workflows.map(w => ({ value: w, label: w }))]}
+        />
+      </div>
+      {(filters.workflowId || filters.windowHours || filters.windowDays) && (
+        <Btn variant="ghost" small onClick={() => onChange({})}>Clear filters</Btn>
+      )}
+    </div>
+  )
+}
 
 function FailuresTab({ data }: { data: ProcessFailuresResponse }) {
   return (
     <Panel>
-      <SectionHeader title="Failure Rate by Process" sub="Ranked by total failures · min 50 samples" />
+      <SectionHeader title="Failure Rate by Process" sub="Ranked by total failures" />
       {data.rows.length === 0
         ? <div style={{ color: T.muted, fontSize: 13 }}>No failures recorded.</div>
         : (
@@ -255,30 +317,114 @@ function SignaturesTab({ data }: { data: ProcessFailureSignaturesResponse }) {
   )
 }
 
-type Tab = 'failures' | 'retries' | 'resources' | 'signatures'
+function TimelineTab({ data, bucket, onBucket }: {
+  data: ProcessTimelineResponse
+  bucket: 'hour' | 'day' | 'week'
+  onBucket: (b: 'hour' | 'day' | 'week') => void
+}) {
+  const fmtBucket = (s: string) => {
+    const d = new Date(s)
+    if (bucket === 'hour') return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
+
+  return (
+    <Panel>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <SectionHeader title="Failure Trend Over Time" sub="Success/failure counts per time bucket" />
+        <div style={{ display: 'flex', gap: 4 }}>
+          {(['hour', 'day', 'week'] as const).map(b => (
+            <button key={b} onClick={() => onBucket(b)} style={{
+              background: bucket === b ? T.accent : T.elevated,
+              border: `1px solid ${bucket === b ? T.accent : T.border}`,
+              color: bucket === b ? '#fff' : T.muted,
+              borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer',
+            }}>{b}</button>
+          ))}
+        </div>
+      </div>
+      {data.rows.length === 0
+        ? <div style={{ color: T.muted, fontSize: 13 }}>No data for this window.</div>
+        : (
+          <DataTable<TimelineRow>
+            columns={[
+              { key: 'bucket_start', label: 'Time',        render: v => fmtBucket(v as string) },
+              { key: 'total',        label: 'Total',        align: 'right', mono: true, render: v => fmtNum(v as number) },
+              { key: 'success',      label: 'Success',      align: 'right', mono: true,
+                render: v => <span style={{ color: T.green }}>{fmtNum(v as number)}</span> },
+              { key: 'failed',       label: 'Failed',       align: 'right', mono: true,
+                render: v => <span style={{ color: (v as number) > 0 ? T.red : T.muted }}>{fmtNum(v as number)}</span> },
+              { key: 'failure_pct',  label: 'Failure Rate',
+                render: (v, row) => {
+                  const pct = v as number
+                  const total = (row as TimelineRow).total
+                  void total  // used for proportional bar width via CSS flex
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 120, height: 6, background: T.border, borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', height: '100%' }}>
+                          <div style={{ width: `${100 - pct}%`, background: T.green }} />
+                          <div style={{ width: `${pct}%`, background: pct > 20 ? T.red : T.amber }} />
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 11, color: T.muted, minWidth: 36 }}>{fmtPct(pct)}</span>
+                    </div>
+                  )
+                }},
+            ]}
+            rows={data.rows}
+          />
+        )
+      }
+    </Panel>
+  )
+}
+
+type Tab = 'failures' | 'retries' | 'resources' | 'signatures' | 'timeline'
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'failures',   label: 'Failures'   },
   { id: 'retries',    label: 'Retries'    },
   { id: 'resources',  label: 'Resources'  },
   { id: 'signatures', label: 'Signatures' },
+  { id: 'timeline',   label: 'Timeline'   },
 ]
 
 export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
-  const [tab, setTab] = useState<Tab>('failures')
+  const [tab, setTab]         = useState<Tab>('failures')
+  const [filters, setFilters] = useState<MetricsFilters>({ windowDays: 30 })
+  const [bucket, setBucket]   = useState<'hour' | 'day' | 'week'>('hour')
+  const [workflows, setWorkflows] = useState<string[]>([])
+
   const [failures,   setFailures]   = useState<ProcessFailuresResponse | null>(null)
   const [retries,    setRetries]    = useState<ProcessRetriesResponse | null>(null)
   const [resources,  setResources]  = useState<ProcessResourcesByAttemptResponse | null>(null)
   const [signatures, setSignatures] = useState<ProcessFailureSignaturesResponse | null>(null)
+  const [timeline,   setTimeline]   = useState<ProcessTimelineResponse | null>(null)
+
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
+  // Load workflow names once for the filter dropdown
   useEffect(() => {
-    api.metrics.failures().then(setFailures).catch(console.error)
-    api.metrics.retries().then(setRetries).catch(console.error)
-    api.metrics.resources().then(setResources).catch(console.error)
-    api.metrics.signatures().then(setSignatures).catch(console.error)
-  }, [tick])
+    api.workflows.list()
+      .then(wfs => setWorkflows([...new Set(wfs.map(w => w.workflow_id))]))
+      .catch(console.error)
+  }, [])
 
-  const loading = !failures || !retries || !resources || !signatures
+  useEffect(() => {
+    setFailures(null); setRetries(null); setResources(null); setSignatures(null); setTimeline(null)
+    api.metrics.failures(filters).then(setFailures).catch(console.error)
+    api.metrics.retries(filters).then(setRetries).catch(console.error)
+    api.metrics.resources(filters).then(setResources).catch(console.error)
+    api.metrics.signatures(filters).then(setSignatures).catch(console.error)
+    api.metrics.timeline(filters, bucket).then(setTimeline).catch(console.error)
+  }, [tick, filters, bucket])
+
+  const windowDesc = filters.windowHours
+    ? `last ${filters.windowHours}h`
+    : filters.windowDays
+      ? `last ${filters.windowDays}d`
+      : 'all time'
+  const filterDesc = filters.workflowId ? ` · ${filters.workflowId}` : ''
 
   return (
     <PageWrap>
@@ -286,7 +432,7 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
         <div>
           <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>Process Metrics</div>
           <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
-            Task-level telemetry across all Nextflow runs · last 30 days
+            Task-level telemetry across all Nextflow runs · {windowDesc}{filterDesc}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
@@ -294,6 +440,7 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
           <button onClick={refresh} style={{ background: T.elevated, border: `1px solid ${T.border}`, color: T.muted, fontSize: 11, cursor: 'pointer', borderRadius: 4, padding: '3px 8px' }}>↻</button>
         </div>
       </div>
+      <FilterBar filters={filters} onChange={setFilters} workflows={workflows} />
       <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${T.border}` }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
@@ -305,14 +452,16 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
           }}>{t.label}</button>
         ))}
       </div>
-      {loading
+      {(tab !== 'timeline' && (!failures || !retries || !resources || !signatures)) ||
+       (tab === 'timeline' && !timeline)
         ? <div style={{ color: T.muted, fontSize: 14, padding: '32px 0' }}>Loading…</div>
         : (
           <>
-            {tab === 'failures'   && <FailuresTab   data={failures}   />}
-            {tab === 'retries'    && <RetriesTab    data={retries}    />}
-            {tab === 'resources'  && <ResourcesTab  data={resources}  />}
-            {tab === 'signatures' && <SignaturesTab  data={signatures} />}
+            {tab === 'failures'   && <FailuresTab   data={failures!}   />}
+            {tab === 'retries'    && <RetriesTab    data={retries!}    />}
+            {tab === 'resources'  && <ResourcesTab  data={resources!}  />}
+            {tab === 'signatures' && <SignaturesTab  data={signatures!} />}
+            {tab === 'timeline'   && <TimelineTab   data={timeline!}   bucket={bucket} onBucket={setBucket} />}
           </>
         )
       }

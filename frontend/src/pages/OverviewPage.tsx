@@ -78,7 +78,7 @@ export default function OverviewPage({ pollInterval = 30_000 }: { pollInterval?:
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
   useEffect(() => {
-    api.metrics.summary(30).then(setSummary).catch(console.error)
+    api.metrics.summary({ windowDays: 30 }).then(setSummary).catch(console.error)
     api.metrics.running().then(setRunning).catch(console.error)
   }, [tick])
 
