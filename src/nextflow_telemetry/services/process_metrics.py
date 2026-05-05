@@ -106,7 +106,7 @@ class ProcessMetricsService:
               select
                 t.run_id,
                 t.utc_time,
-                coalesce(t.trace->>'process','<null>') as process,
+                t.trace->>'process' as process,
                 coalesce(t.trace->>'status','') as status,
                 coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt,
                 nullif(t.trace->>'peak_rss','')::double precision as peak_rss,
