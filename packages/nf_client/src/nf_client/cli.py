@@ -248,6 +248,11 @@ def daemon(
             except Exception as e:
                 typer.echo(f"  WARN: failed to report submitted: {e}", err=True)
 
+            # Give the scheduler time to register the job before the next
+            # concurrency check — squeue can lag a few seconds after sbatch.
+            if max_concurrent is not None:
+                time.sleep(5)
+
     typer.echo(f"\nDaemon finished after {run_number} run(s).")
 
 
