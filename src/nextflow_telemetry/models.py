@@ -188,10 +188,12 @@ class ResourceByAttemptRow(BaseModel):
     avg_requested_cpus: Optional[float]
     avg_requested_memory_gb: Optional[float]
     avg_requested_time_min: Optional[float]
-    avg_pct_cpu: Optional[float] = Field(description="Average CPU utilisation as a percentage of requested CPUs.")
-    p95_pct_cpu: Optional[float] = Field(description="95th-percentile CPU utilisation.")
-    avg_pct_mem: Optional[float] = Field(description="Average memory utilisation as a percentage of requested memory.")
+    avg_pct_cpu: Optional[float] = Field(description="Average CPU utilisation as a percentage of one core (raw Nextflow %cpu).")
+    p95_pct_cpu: Optional[float] = Field(description="95th-percentile raw CPU utilisation.")
+    avg_cpu_efficiency_pct: Optional[float] = Field(description="Average CPU efficiency: pct_cpu / (requested_cpus × 100). 100% means all requested CPUs were fully used.")
+    avg_pct_mem: Optional[float] = Field(description="Average memory utilisation as a percentage of total node memory (raw Nextflow %mem).")
     p95_pct_mem: Optional[float]
+    avg_memory_efficiency_pct: Optional[float] = Field(description="Average memory efficiency: peak_rss / requested_memory. Computed per attempt so retry rows use their higher requested memory.")
     avg_peak_rss_gb: Optional[float] = Field(description="Average peak RSS (resident set size) in GB.")
     p95_peak_rss_gb: Optional[float]
     avg_read_gb: Optional[float] = Field(description="Average bytes read from disk, in GB.")

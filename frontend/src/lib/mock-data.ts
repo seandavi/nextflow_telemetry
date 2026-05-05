@@ -36,6 +36,7 @@ export const MOCK_SUMMARY: ProcessSummaryResponse = {
     retry_pct: 3.81,
     retry_success_pct: 77.4,
     latest_process_completed_utc: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+    memory_efficiency_pct: 65.4,
   },
   event_mix: [
     { event: 'process_completed', rows: 48_320_000 },
@@ -82,6 +83,7 @@ export const MOCK_FAILURES: ProcessFailuresResponse = {
       success: total - failed, failed,
       failure_pct: +((failed / total) * 100).toFixed(2),
       modal_failure_exit_code: pick(['137','1','2','134','null']),
+      modal_error_action: pick(['RETRY','FINISH','IGNORE',null]),
     }
   }).sort((a, b) => b.failed - a.failed),
 }
@@ -128,8 +130,10 @@ export const MOCK_RESOURCES: ProcessResourcesByAttemptResponse = {
     avg_requested_time_min: rnd(30, 480),
     avg_pct_cpu: rnd(20, 95),
     p95_pct_cpu: rnd(60, 110),
+    avg_cpu_efficiency_pct: rnd(10, 85),
     avg_pct_mem: rnd(25, 88),
     p95_pct_mem: rnd(55, 105),
+    avg_memory_efficiency_pct: rnd(15, 90),
     avg_peak_rss_gb: rnd(1, 28),
     p95_peak_rss_gb: rnd(4, 56),
     avg_read_gb: rnd(0.5, 40),
@@ -143,6 +147,7 @@ export const MOCK_SIGNATURES: ProcessFailureSignaturesResponse = {
   rows: PROCESSES.flatMap(p =>
     ['137','1','2','134'].slice(0, ri(1,4)).map(code => ({
       process: p, exit_code: code, failures: ri(1_000, 200_000),
+      error_action: pick(['RETRY','FINISH','IGNORE',null]),
     }))
   ).sort((a, b) => b.failures - a.failures),
 }

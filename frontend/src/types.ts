@@ -159,8 +159,10 @@ export interface ResourceByAttemptRow {
   avg_requested_time_min: number | null
   avg_pct_cpu: number | null
   p95_pct_cpu: number | null
+  avg_cpu_efficiency_pct: number | null
   avg_pct_mem: number | null
   p95_pct_mem: number | null
+  avg_memory_efficiency_pct: number | null
   avg_peak_rss_gb: number | null
   p95_peak_rss_gb: number | null
   avg_read_gb: number | null

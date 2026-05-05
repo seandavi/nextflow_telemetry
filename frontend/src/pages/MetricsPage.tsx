@@ -20,9 +20,9 @@ import type {
   ProcessFailureSignaturesResponse,
   ProcessTimelineResponse,
   TasksResponse,
-  TaskRow,
   TaskLogsResponse,
   ProcessFailuresRow,
+  FailureSignatureRow,
   RetryByAttemptRow,
   RetryByProcessRow,
   ResourceByAttemptRow,
@@ -239,7 +239,7 @@ function ResourcesTab({ data, summary }: { data: ProcessResourcesByAttemptRespon
                 { key: 'avg_requested_cpus',     label: 'Req CPU',       align: 'right', mono: true },
                 { key: 'avg_requested_memory_gb', label: 'Req Mem (GB)', align: 'right', mono: true,
                   render: v => (v as number | null)?.toFixed(0) ?? '—' },
-                { key: 'avg_pct_cpu',            label: 'CPU avg',
+                { key: 'avg_cpu_efficiency_pct', label: 'CPU eff',
                   render: v => {
                     const n = v as number | null
                     return n != null
@@ -251,7 +251,7 @@ function ResourcesTab({ data, summary }: { data: ProcessResourcesByAttemptRespon
                     const n = v as number | null
                     return n != null ? <span style={{ color: n > 100 ? T.red : T.muted }}>{n.toFixed(0)}%</span> : '—'
                   }},
-                { key: 'avg_pct_mem',            label: 'Mem avg',
+                { key: 'avg_memory_efficiency_pct', label: 'Mem eff',
                   render: v => {
                     const n = v as number | null
                     return n != null
