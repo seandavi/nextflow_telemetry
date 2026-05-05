@@ -315,13 +315,6 @@ class RunningProcessesResponse(BaseModel):
 # Task log upload / retrieval models
 # ---------------------------------------------------------------------------
 
-class TaskLogUploadRequest(BaseModel):
-    """Body for POST /task-logs — upload a single task log file."""
-    run_name: str = Field(description="Nextflow run name (must match an existing workflow_run).")
-    task_hash: str = Field(description="Nextflow work directory hash, e.g. 'ab/1234ef'.")
-    log_type: str = Field(description="Log file type: 'command_sh' or 'command_err'.")
-    content: str = Field(description="Raw text content of the log file (max 1 MB).")
-
 
 class TaskLogEntry(BaseModel):
     """A single uploaded task log."""

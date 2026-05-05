@@ -83,13 +83,11 @@ class JobClient:
         Idempotent: re-uploading the same (run_name, task_hash, log_type) replaces
         the previous content.
         """
-        payload = {
-            "run_name": run_name,
-            "task_hash": task_hash,
-            "log_type": log_type,
-            "content": content,
-        }
-        response = await self._client.post("/task-logs", json=payload)
+        response = await self._client.post(
+            "/task-logs",
+            data={"run_name": run_name, "task_hash": task_hash, "log_type": log_type},
+            files={"content": ("content", content.encode("utf-8", errors="replace"), "text/plain")},
+        )
         response.raise_for_status()
 
     async def report_submitted(

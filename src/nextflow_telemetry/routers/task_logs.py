@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, File, Form, HTTPException, Path, UploadFile
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -25,19 +25,26 @@ def create_task_logs_router(engine: AsyncEngine) -> APIRouter:
         summary="Upload a task log file",
         description=(
             "Upload the content of a .command.sh or .command.err file for a specific "
-            "Nextflow task. Identified by (run_name, task_hash, log_type). "
+            "Nextflow task via multipart form data. Identified by (run_name, task_hash, log_type). "
             "Idempotent: re-uploading the same (run_name, task_hash, log_type) "
             "replaces the previous content."
         ),
     )
-    async def upload_task_log(body: models.TaskLogUploadRequest) -> models.TaskLogEntry:
-        if body.log_type not in _VALID_LOG_TYPES:
+    async def upload_task_log(
+        run_name: Annotated[str, Form()],
+        task_hash: Annotated[str, Form()],
+        log_type: Annotated[str, Form()],
+        content: Annotated[UploadFile, File()],
+    ) -> models.TaskLogEntry:
+        if log_type not in _VALID_LOG_TYPES:
             raise HTTPException(
                 status_code=422,
                 detail=f"log_type must be one of: {sorted(_VALID_LOG_TYPES)}",
             )
-        if len(body.content.encode()) > _MAX_CONTENT_BYTES:
+        raw = await content.read()
+        if len(raw) > _MAX_CONTENT_BYTES:
             raise HTTPException(status_code=413, detail="Content exceeds 1 MB limit.")
+        content_str = raw.decode("utf-8", errors="replace")
 
         now = datetime.datetime.now(datetime.timezone.utc)
 
@@ -52,10 +59,10 @@ def create_task_logs_router(engine: AsyncEngine) -> APIRouter:
         )
         async with engine.begin() as conn:
             row = (await conn.execute(upsert_sql, {
-                "run_name": body.run_name,
-                "task_hash": body.task_hash,
-                "log_type": body.log_type,
-                "content": body.content,
+                "run_name": run_name,
+                "task_hash": task_hash,
+                "log_type": log_type,
+                "content": content_str,
                 "uploaded_at": now,
             })).mappings().one()
 

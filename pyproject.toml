@@ -14,7 +14,8 @@ dependencies = [
     "uvicorn>=0.30.0,<0.31.0",
     "asyncpg>=0.29.0,<1.0.0",
     "pydantic-settings>=2.0.0,<3.0.0",
-    "uuid7>=0.1.0",   # installs as uuid_extensions; provides uuid7() on Python < 3.13
+    "uuid7>=0.1.0", # installs as uuid_extensions; provides uuid7() on Python < 3.13
+    "python-multipart>=0.0.27",
 ]
 
 [dependency-groups]

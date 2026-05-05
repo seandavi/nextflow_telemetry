@@ -47,14 +47,18 @@ _FAKE_ROW = {
 }
 
 
+def _multipart(run_name: str, task_hash: str, log_type: str, content: str) -> dict:
+    return dict(
+        data={"run_name": run_name, "task_hash": task_hash, "log_type": log_type},
+        files={"content": ("content", content.encode(), "text/plain")},
+    )
+
+
 def test_upload_task_log_returns_201():
     client = _client_with_mock_row(_FAKE_ROW)
-    r = client.post("/task-logs", json={
-        "run_name": "happy-goldfish",
-        "task_hash": "ab/1234ef",
-        "log_type": "command_sh",
-        "content": "#!/bin/bash\necho hello",
-    })
+    r = client.post("/task-logs", **_multipart(
+        "happy-goldfish", "ab/1234ef", "command_sh", "#!/bin/bash\necho hello",
+    ))
     assert r.status_code == 201
     body = r.json()
     assert body["log_type"] == "command_sh"
@@ -66,12 +70,7 @@ def test_invalid_log_type_is_rejected():
     app = FastAPI()
     app.include_router(create_task_logs_router(engine))
     client = TestClient(app)
-    r = client.post("/task-logs", json={
-        "run_name": "x",
-        "task_hash": "ab/cd",
-        "log_type": "bad_type",
-        "content": "data",
-    })
+    r = client.post("/task-logs", **_multipart("x", "ab/cd", "bad_type", "data"))
     assert r.status_code == 422
 
 
@@ -80,12 +79,7 @@ def test_content_too_large_is_rejected():
     app = FastAPI()
     app.include_router(create_task_logs_router(engine))
     client = TestClient(app)
-    r = client.post("/task-logs", json={
-        "run_name": "x",
-        "task_hash": "ab/cd",
-        "log_type": "command_sh",
-        "content": "x" * (1024 * 1024 + 1),
-    })
+    r = client.post("/task-logs", **_multipart("x", "ab/cd", "command_sh", "x" * (1024 * 1024 + 1)))
     assert r.status_code == 413
 
 
