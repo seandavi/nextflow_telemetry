@@ -119,7 +119,12 @@ class ProcessMetricsService:
             select
               count(*) as process_completed_rows,
               count(distinct run_id) as distinct_runs,
-              count(distinct process) as distinct_processes,
+              (select count(distinct trace->>'process')
+               from telemetry t2
+               where t2.event in ('process_submitted','process_started','process_completed')
+                 and t2.trace is not null
+                 and t2.trace->>'process' is not null
+                 {fc}) as distinct_processes,
               count(*) filter (where status = 'COMPLETED') as success_rows,
               count(*) filter (where status in ('FAILED', 'ABORTED')) as failure_rows,
               coalesce(round(100.0 * count(*) filter (where status in ('FAILED', 'ABORTED'))::numeric / nullif(count(*), 0), 2), 0) as failure_pct,
