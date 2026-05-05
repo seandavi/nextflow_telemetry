@@ -48,4 +48,10 @@ NF_EXIT=$?
 echo "Nextflow exited with code $NF_EXIT"
 cp .nextflow.log {{ log_dir }}/nextflow-${SLURM_JOB_ID}.log 2>/dev/null || true
 rm -rf $WORKDIR
+
+# Notify server so it can sweep incomplete jobs even if Nextflow crashed.
+curl -sS --max-time 30 --retry 3 \
+  -X POST "{{ server_url }}/admin/close-run?run_name={{ run_name }}" \
+  -o /dev/null || echo "WARN: close-run notification failed"
+
 exit $NF_EXIT
