@@ -181,4 +181,4 @@ work/
 .nextflow
 report.html*
 timeline.html*
-trace.txt*
+trace.txt*.env.prod
