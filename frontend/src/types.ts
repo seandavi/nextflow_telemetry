@@ -58,6 +58,7 @@ export interface ProcessSummaryCards {
   retried_rows: number
   retry_pct: number
   retry_success_pct: number
+  memory_efficiency_pct: number
   latest_process_completed_utc: string | null
 }
 
@@ -104,6 +105,7 @@ export interface ProcessFailuresRow {
   failed: number
   failure_pct: number
   modal_failure_exit_code: string | null
+  modal_error_action: string | null
 }
 
 export interface ProcessFailuresResponse {
@@ -174,6 +176,7 @@ export interface ProcessResourcesByAttemptResponse {
 export interface FailureSignatureRow {
   process: string
   exit_code: string
+  error_action: string | null
   failures: number
 }
 

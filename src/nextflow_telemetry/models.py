@@ -92,9 +92,10 @@ class ProcessSummaryCards(BaseModel):
     success_rows: int = Field(description="Events where the task exited successfully.")
     failure_rows: int = Field(description="Events where the task failed.")
     failure_pct: float = Field(description="Failure rate as a percentage (0–100).")
-    retried_rows: int = Field(description="Events that were retried at least once.")
+    retried_rows: int = Field(description="Events that were retried at least once (Nextflow attempt > 1).")
     retry_pct: float = Field(description="Retry rate as a percentage (0–100).")
-    retry_success_pct: float = Field(description="Percentage of retried tasks that eventually succeeded.")
+    retry_success_pct: float = Field(description="Percentage of Nextflow-retried tasks that eventually succeeded.")
+    memory_efficiency_pct: float = Field(description="Average memory efficiency (peak_rss / requested_memory × 100). Low values indicate over-provisioned memory requests.")
     latest_process_completed_utc: Optional[datetime.datetime] = Field(description="Timestamp of the most recent process_completed event.")
 
 
@@ -212,6 +213,7 @@ class ProcessFailuresRow(BaseModel):
     failed: int
     failure_pct: float
     modal_failure_exit_code: Optional[str] = Field(description="Most common exit code among failed tasks for this process.")
+    modal_error_action: Optional[str] = Field(default=None, description="Most common error_action (RETRY/FINISH/IGNORE) among failed tasks for this process.")
 
 
 class ProcessFailuresResponse(BaseModel):
@@ -222,9 +224,10 @@ class ProcessFailuresResponse(BaseModel):
 
 
 class FailureSignatureRow(BaseModel):
-    """Count of failures grouped by (process, exit_code) pair."""
+    """Count of failures grouped by (process, exit_code, error_action) triple."""
     process: str
     exit_code: str
+    error_action: Optional[str] = Field(default=None, description="Nextflow error strategy action taken: RETRY, FINISH, or IGNORE.")
     failures: int
 
 

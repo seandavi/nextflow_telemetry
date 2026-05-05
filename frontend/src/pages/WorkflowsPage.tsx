@@ -63,7 +63,7 @@ function WorkflowFormModal({
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 11, color: T.muted, fontWeight: 600,
-            letterSpacing: '0.05em', textTransform: 'uppercase' }}>Max Retries</label>
+            letterSpacing: '0.05em', textTransform: 'uppercase' }}>Max Pipeline Re-queues</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <input type="range" min={0} max={10} value={form.max_retries}
               onChange={e => set('max_retries', +e.target.value)}
@@ -118,9 +118,9 @@ function JobSummaryBar({ summary }: { summary: WorkflowJobSummary }) {
           <span style={{ fontSize: 10, color: T.amber }}>{fmtNum(pending + claimed)} pending</span>
         )}
         {running > 0 && <span style={{ fontSize: 10, color: T.blue }}>{fmtNum(running)} running</span>}
-        {failed  > 0 && <span style={{ fontSize: 10, color: T.red  }}>{fmtNum(failed)} failed</span>}
+        {failed  > 0 && <span style={{ fontSize: 10, color: T.red  }} title="Exhausted all pipeline re-queues">{fmtNum(failed)} perm. failed</span>}
         {dead_letter > 0 && (
-          <span style={{ fontSize: 10, color: T.muted }}>{fmtNum(dead_letter)} DLQ</span>
+          <span style={{ fontSize: 10, color: T.muted }} title="Dead-letter queue">{fmtNum(dead_letter)} DLQ</span>
         )}
       </div>
     </div>
@@ -186,7 +186,7 @@ function WorkflowCard({
               ['Repository',  wf.repository_url],
               ['Revision',    wf.revision],
               ['Profile',     wf.profile],
-              ['Max Retries', String(wf.max_retries)],
+              ['Max Re-queues', String(wf.max_retries)],
               ['Registered',  fmtDate(wf.created_at)],
               ['Updated',     fmtAgo(wf.updated_at)],
             ] as [string, string][]).map(([k, v]) => (

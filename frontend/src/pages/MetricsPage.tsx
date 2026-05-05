@@ -13,6 +13,7 @@ import PageWrap from '../components/PageWrap'
 import Btn from '../components/Btn'
 import Select from '../components/Select'
 import type {
+  ProcessSummaryResponse,
   ProcessFailuresResponse,
   ProcessRetriesResponse,
   ProcessResourcesByAttemptResponse,
@@ -85,10 +86,28 @@ function FilterBar({
   )
 }
 
+const ERROR_ACTION_COLOR: Record<string, string> = {
+  RETRY:  '#2563eb',
+  FINISH: '#dc2626',
+  IGNORE: '#d97706',
+}
+
+function ErrorActionBadge({ action }: { action: string | null }) {
+  if (!action) return <span style={{ color: T.border }}>—</span>
+  const color = ERROR_ACTION_COLOR[action] ?? T.muted
+  return (
+    <span style={{
+      display: 'inline-block', padding: '1px 6px', borderRadius: 3,
+      fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+      background: color + '22', color, border: `1px solid ${color}44`,
+    }}>{action}</span>
+  )
+}
+
 function FailuresTab({ data }: { data: ProcessFailuresResponse }) {
   return (
     <Panel>
-      <SectionHeader title="Failure Rate by Process" sub="Ranked by total failures" />
+      <SectionHeader title="Failure Rate by Process" sub="Ranked by total failures · error_action = what Nextflow did on failure" />
       {data.rows.length === 0
         ? <div style={{ color: T.muted, fontSize: 13 }}>No failures recorded.</div>
         : (
@@ -109,6 +128,8 @@ function FailuresTab({ data }: { data: ProcessFailuresResponse }) {
                 render: v => v != null
                   ? <span style={{ color: T.muted, fontSize: 12 }}>exit {v as string}</span>
                   : <span style={{ color: T.border }}>—</span> },
+              { key: 'modal_error_action', label: 'NF Action',
+                render: v => <ErrorActionBadge action={v as string | null} /> },
             ]}
             rows={data.rows}
           />
@@ -122,12 +143,16 @@ function RetriesTab({ data }: { data: ProcessRetriesResponse }) {
   const { summary, by_attempt, by_process } = data
   return (
     <>
+      <div style={{ fontSize: 11, color: T.muted, padding: '4px 0 8px' }}>
+        These are <strong>Nextflow-level retries</strong> (attempt &gt; 1 within a single pipeline run),
+        not pipeline re-queues managed by this server.
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px,1fr))', gap: 12 }}>
-        <KPICard label="Retried Tasks"   value={fmtNum(summary.retried_rows)}
+        <KPICard label="NF-Retried Tasks"  value={fmtNum(summary.retried_rows)}
           sub={`${fmtPct(summary.retried_pct)} of completions`} accent={T.amber} />
-        <KPICard label="Retry Successes" value={fmtNum(summary.retry_success_rows)} sub="Eventually passed"  accent={T.green} />
-        <KPICard label="Retry Failures"  value={fmtNum(summary.retry_failure_rows)} sub="Went to DLQ"        accent={T.red} />
-        <KPICard label="Retry Win Rate"  value={fmtPct(summary.retry_success_pct)}  sub="Success after retry" accent={T.green} />
+        <KPICard label="Retry Recoveries" value={fmtNum(summary.retry_success_rows)} sub="Retried → succeeded"  accent={T.green} />
+        <KPICard label="Retry Exhausted"  value={fmtNum(summary.retry_failure_rows)} sub="Retried → still failed" accent={T.red} />
+        <KPICard label="Retry Win Rate"   value={fmtPct(summary.retry_success_pct)}  sub="Success after retry"   accent={T.green} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 16 }}>
         <Panel>
@@ -170,13 +195,25 @@ function RetriesTab({ data }: { data: ProcessRetriesResponse }) {
   )
 }
 
-function ResourcesTab({ data }: { data: ProcessResourcesByAttemptResponse }) {
+function ResourcesTab({ data, summary }: { data: ProcessResourcesByAttemptResponse; summary: ProcessSummaryResponse | null }) {
   const [filterProcess, setFilterProcess] = useState('')
   const processes = [...new Set(data.rows.map(r => r.process))]
   const rows = data.rows.filter(r => !filterProcess || r.process === filterProcess)
 
+  const memEff = summary?.cards.memory_efficiency_pct ?? null
+
   return (
     <>
+      {memEff !== null && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px,1fr))', gap: 12, marginBottom: 4 }}>
+          <KPICard
+            label="Memory Efficiency"
+            value={`${memEff.toFixed(1)}%`}
+            sub="avg peak_rss / requested — low = over-provisioned"
+            accent={memEff < 20 ? T.amber : memEff < 50 ? T.accent : T.green}
+          />
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
         <div style={{ width: 280 }}>
           <Select label="Filter by process" value={filterProcess} onChange={setFilterProcess}
@@ -247,13 +284,15 @@ function SignaturesTab({ data }: { data: ProcessFailureSignaturesResponse }) {
   }
 
   const max = Math.max(...rows.map(r => r.failures))
+  // Key heatmap columns on "exit_code|error_action" so RETRY and FINISH variants are distinct
+  const colKey = (r: FailureSignatureRow) => `${r.exit_code}|${r.error_action ?? ''}`
   type ProcessMap = Record<string, Record<string, number>>
   const byProcess = rows.reduce<ProcessMap>((acc, r) => {
     if (!acc[r.process]) acc[r.process] = {}
-    acc[r.process]![r.exit_code] = r.failures
+    acc[r.process]![colKey(r)] = r.failures
     return acc
   }, {})
-  const exitCodes = [...new Set(rows.map(r => r.exit_code))].sort()
+  const cols = [...new Set(rows.map(colKey))].sort()
   const procs = Object.keys(byProcess)
 
   const cellColor = (v: number): string => {
@@ -274,12 +313,16 @@ function SignaturesTab({ data }: { data: ProcessFailureSignaturesResponse }) {
             <tr>
               <th style={{ padding: '6px 12px', textAlign: 'left', color: T.muted, fontWeight: 600,
                 borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>Process</th>
-              {exitCodes.map(ec => (
-                <th key={ec} style={{ padding: '6px 10px', textAlign: 'center', color: T.muted,
-                  fontWeight: 600, borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>
-                  exit {ec}
-                </th>
-              ))}
+              {cols.map(col => {
+                const [ec, action] = col.split('|')
+                return (
+                  <th key={col} style={{ padding: '6px 10px', textAlign: 'center', color: T.muted,
+                    fontWeight: 600, borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>
+                    <div>exit {ec}</div>
+                    {action && <ErrorActionBadge action={action} />}
+                  </th>
+                )
+              })}
               <th style={{ padding: '6px 10px', textAlign: 'right', color: T.muted, fontWeight: 600,
                 borderBottom: `1px solid ${T.border}` }}>Total</th>
             </tr>
@@ -292,10 +335,10 @@ function SignaturesTab({ data }: { data: ProcessFailureSignaturesResponse }) {
                   onMouseEnter={e => (e.currentTarget.style.background = T.elevated)}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                   <td style={{ padding: '8px 12px', color: T.text, whiteSpace: 'nowrap' }}>{p}</td>
-                  {exitCodes.map(ec => {
-                    const v = byProcess[p]![ec]
+                  {cols.map(col => {
+                    const v = byProcess[p]![col]
                     return (
-                      <td key={ec} style={{ padding: '6px 10px', textAlign: 'center' }}>
+                      <td key={col} style={{ padding: '6px 10px', textAlign: 'center' }}>
                         {v ? (
                           <span style={{
                             display: 'inline-block', minWidth: 52, padding: '2px 6px',
@@ -396,6 +439,7 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
   const [bucket, setBucket]   = useState<'hour' | 'day' | 'week'>('hour')
   const [workflows, setWorkflows] = useState<string[]>([])
 
+  const [summary,    setSummary]    = useState<ProcessSummaryResponse | null>(null)
   const [failures,   setFailures]   = useState<ProcessFailuresResponse | null>(null)
   const [retries,    setRetries]    = useState<ProcessRetriesResponse | null>(null)
   const [resources,  setResources]  = useState<ProcessResourcesByAttemptResponse | null>(null)
@@ -412,7 +456,8 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
   }, [])
 
   useEffect(() => {
-    setFailures(null); setRetries(null); setResources(null); setSignatures(null); setTimeline(null)
+    setSummary(null); setFailures(null); setRetries(null); setResources(null); setSignatures(null); setTimeline(null)
+    api.metrics.summary(filters).then(setSummary).catch(console.error)
     api.metrics.failures(filters).then(setFailures).catch(console.error)
     api.metrics.retries(filters).then(setRetries).catch(console.error)
     api.metrics.resources(filters).then(setResources).catch(console.error)
@@ -460,7 +505,7 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
           <>
             {tab === 'failures'   && <FailuresTab   data={failures!}   />}
             {tab === 'retries'    && <RetriesTab    data={retries!}    />}
-            {tab === 'resources'  && <ResourcesTab  data={resources!}  />}
+            {tab === 'resources'  && <ResourcesTab  data={resources!} summary={summary} />}
             {tab === 'signatures' && <SignaturesTab  data={signatures!} />}
             {tab === 'timeline'   && <TimelineTab   data={timeline!}   bucket={bucket} onBucket={setBucket} />}
           </>
