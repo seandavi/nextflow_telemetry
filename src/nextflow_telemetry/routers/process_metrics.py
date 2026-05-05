@@ -203,6 +203,43 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.get(
+        "/tasks",
+        response_model=models.TasksResponse,
+        summary="Individual task execution browser",
+        description=(
+            "Returns paginated rows of individual process_completed events with full trace "
+            "details: process name, status, attempt, exit code, error action, wall time, "
+            "and resource utilisation. Supports all standard filters plus per-process and "
+            "per-status filtering."
+        ),
+    )
+    async def process_tasks(
+        window_days: int | None = Query(default=None, ge=1, description=_WINDOW_DAYS_DESC),
+        window_hours: int | None = Query(default=None, ge=1, description=_WINDOW_HOURS_DESC),
+        since: dt.datetime | None = Query(default=None, description=_SINCE_DESC),
+        until: dt.datetime | None = Query(default=None, description=_UNTIL_DESC),
+        workflow_id: str | None = Query(default=None, description=_WORKFLOW_ID_DESC),
+        workflow_version: str | None = Query(default=None, description=_WORKFLOW_VERSION_DESC),
+        run_name: str | None = Query(default=None, description=_RUN_NAME_DESC),
+        sample_id: str | None = Query(default=None, description=_SAMPLE_ID_DESC),
+        process: str | None = Query(default=None, description="Filter to a specific process name."),
+        status: str | None = Query(default=None, description="Filter by task status: COMPLETED or FAILED."),
+        limit: int = Query(default=50, ge=1, le=500, description=_LIMIT_DESC),
+        offset: int = Query(default=0, ge=0, description="Pagination offset."),
+    ):
+        try:
+            return await service.tasks(
+                window_days=window_days, window_hours=window_hours,
+                since=since, until=until,
+                workflow_id=workflow_id, workflow_version=workflow_version,
+                run_name=run_name, sample_id=sample_id,
+                process=process, status=status,
+                limit=limit, offset=offset,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.get(
         "/timeline",
         response_model=models.ProcessTimelineResponse,
         summary="Failure and success counts over time",

@@ -254,6 +254,40 @@ class ProcessTimelineResponse(BaseModel):
     rows: list[TimelineRow]
 
 
+class TaskRow(BaseModel):
+    """A single process_completed event with full trace fields, for the task browser."""
+    telemetry_id: int = Field(description="Primary key of the telemetry row.")
+    run_name: str
+    run_id: Optional[str] = Field(default=None)
+    sample_id: Optional[str] = Field(default=None)
+    workflow_id: Optional[str] = Field(default=None)
+    workflow_version: Optional[str] = Field(default=None)
+    utc_time: datetime.datetime = Field(description="Timestamp of the process_completed event.")
+    process: str = Field(description="Fully-qualified Nextflow process name.")
+    name: Optional[str] = Field(default=None, description="Human-readable task name including tag.")
+    status: str = Field(description="Task exit status: COMPLETED, FAILED, ABORTED, etc.")
+    attempt: int = Field(description="Nextflow attempt number (1 = first attempt).")
+    exit_code: Optional[str] = Field(default=None, description="Process exit code.")
+    error_action: Optional[str] = Field(default=None, description="Nextflow error action: RETRY, FINISH, or IGNORE.")
+    realtime_ms: Optional[float] = Field(default=None, description="Wall-clock time in milliseconds.")
+    requested_cpus: Optional[float] = Field(default=None)
+    requested_memory_gb: Optional[float] = Field(default=None)
+    pct_cpu: Optional[float] = Field(default=None, description="CPU utilisation as a percentage of requested CPUs.")
+    pct_mem: Optional[float] = Field(default=None, description="Memory utilisation as a percentage of requested memory.")
+    peak_rss_gb: Optional[float] = Field(default=None, description="Peak RSS in GB.")
+    read_gb: Optional[float] = Field(default=None, description="Bytes read from disk, in GB.")
+    write_gb: Optional[float] = Field(default=None, description="Bytes written to disk, in GB.")
+
+
+class TasksResponse(BaseModel):
+    """Response from GET /metrics/processes/tasks."""
+    generated_at_utc: datetime.datetime
+    total: int = Field(description="Total matching rows (before pagination).")
+    limit: int
+    offset: int
+    rows: list[TaskRow]
+
+
 # ---------------------------------------------------------------------------
 # Workflow job-summary model
 # ---------------------------------------------------------------------------

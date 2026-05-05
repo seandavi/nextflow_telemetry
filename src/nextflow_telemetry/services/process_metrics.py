@@ -683,3 +683,94 @@ class ProcessMetricsService:
             "total_queued": total_queued,
             "by_process": rows,
         }
+
+    async def tasks(
+        self,
+        *,
+        window_days: int | None = None,
+        window_hours: int | None = None,
+        since: dt.datetime | None = None,
+        until: dt.datetime | None = None,
+        workflow_id: str | None = None,
+        workflow_version: str | None = None,
+        run_name: str | None = None,
+        sample_id: str | None = None,
+        process: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Individual process_completed rows for the task browser."""
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        if offset < 0:
+            raise ValueError("offset must be >= 0")
+
+        fc, params = self._filter_clause(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+            workflow_id=workflow_id, workflow_version=workflow_version,
+            run_name=run_name, sample_id=sample_id,
+        )
+        params = {**params, "limit": limit, "offset": offset}
+
+        extra_clauses = ""
+        if process is not None:
+            extra_clauses += " and t.trace->>'process' = :process"
+            params["process"] = process
+        if status is not None:
+            extra_clauses += " and coalesce(t.trace->>'status','') = :status"
+            params["status"] = status
+
+        sql = text(
+            f"""
+            select
+              t.id                                                              as telemetry_id,
+              t.run_name,
+              t.run_id,
+              t.sample_id,
+              t.workflow_id,
+              t.workflow_version,
+              t.utc_time,
+              coalesce(t.trace->>'process','<null>')                           as process,
+              t.trace->>'name'                                                 as name,
+              coalesce(t.trace->>'status','')                                  as status,
+              coalesce(nullif(t.trace->>'attempt',''),'1')::int                as attempt,
+              nullif(t.trace->>'exit','')                                      as exit_code,
+              nullif(t.trace->>'error_action','')                              as error_action,
+              nullif(t.trace->>'realtime','')::double precision                as realtime_ms,
+              nullif(t.trace->>'cpus','')::double precision                    as requested_cpus,
+              nullif(t.trace->>'memory','')::double precision / 1073741824.0  as requested_memory_gb,
+              nullif(t.trace->>'%cpu','')::double precision                    as pct_cpu,
+              nullif(t.trace->>'%mem','')::double precision                    as pct_mem,
+              nullif(t.trace->>'peak_rss','')::double precision / 1073741824.0 as peak_rss_gb,
+              nullif(t.trace->>'rchar','')::double precision / 1073741824.0    as read_gb,
+              nullif(t.trace->>'wchar','')::double precision / 1073741824.0    as write_gb,
+              count(*) over ()                                                  as total_count
+            from telemetry t
+            where t.event = 'process_completed'
+              and t.trace is not null
+              {fc}
+              {extra_clauses}
+            order by t.utc_time desc
+            limit :limit offset :offset
+            """
+        )
+
+        async with self.engine.connect() as conn:
+            result = (await conn.execute(sql, params)).mappings().all()
+
+        total = result[0]["total_count"] if result else 0
+        rows = []
+        for row in result:
+            d = dict(row)
+            d.pop("total_count", None)
+            rows.append(d)
+
+        return {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "rows": rows,
+        }

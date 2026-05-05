@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { useUrlFilters } from '../lib/useUrlFilters'
 import { T } from '../tokens'
-import { fmtNum, fmtPct } from '../lib/format'
+import { fmtNum, fmtPct, fmtDate } from '../lib/format'
 import { api, type MetricsFilters } from '../lib/api'
 import KPICard from '../components/KPICard'
 import SectionHeader from '../components/SectionHeader'
@@ -19,6 +19,8 @@ import type {
   ProcessResourcesByAttemptResponse,
   ProcessFailureSignaturesResponse,
   ProcessTimelineResponse,
+  TasksResponse,
+  TaskRow,
   ProcessFailuresRow,
   RetryByAttemptRow,
   RetryByProcessRow,
@@ -424,13 +426,160 @@ function TimelineTab({ data, bucket, onBucket }: {
   )
 }
 
-type Tab = 'failures' | 'retries' | 'resources' | 'signatures' | 'timeline'
+function StatusBadge({ status }: { status: string }) {
+  const color = status === 'COMPLETED' ? T.green : status === 'FAILED' ? T.red : T.amber
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, fontFamily: 'DM Mono, monospace',
+      color, border: `1px solid ${color}`, borderRadius: 3, padding: '1px 5px',
+    }}>{status}</span>
+  )
+}
+
+function fmtDuration(ms: number | null): string {
+  if (ms == null) return '—'
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`
+  return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`
+}
+
+function TasksTab({ filters }: { filters: MetricsFilters }) {
+  const PAGE_SIZE = 50
+  const [processFilter, setProcessFilter] = useState('')
+  const [statusFilter,  setStatusFilter]  = useState<'' | 'COMPLETED' | 'FAILED'>('')
+  const [page, setPage] = useState(0)
+  const [data, setData] = useState<TasksResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setPage(0)
+  }, [filters, processFilter, statusFilter])
+
+  useEffect(() => {
+    setLoading(true)
+    setData(null)
+    api.metrics.tasks(filters, {
+      process: processFilter || undefined,
+      status:  statusFilter  || undefined,
+      limit:   PAGE_SIZE,
+      offset:  page * PAGE_SIZE,
+    })
+      .then(setData)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [filters, processFilter, statusFilter, page])
+
+  const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0
+
+  return (
+    <Panel>
+      <SectionHeader
+        title="Task Browser"
+        sub="Individual process_completed events — click a row to expand full trace details"
+      />
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          value={processFilter}
+          onChange={e => setProcessFilter(e.target.value)}
+          placeholder="Filter by process name…"
+          style={{
+            background: T.elevated, border: `1px solid ${T.border}`, color: T.text,
+            borderRadius: 6, padding: '5px 10px', fontSize: 12,
+            fontFamily: 'DM Mono, monospace', width: 240,
+          }}
+        />
+        {(['', 'COMPLETED', 'FAILED'] as const).map(s => (
+          <button key={s} onClick={() => setStatusFilter(s)} style={{
+            background: statusFilter === s ? T.accentDim : T.elevated,
+            border: `1px solid ${statusFilter === s ? T.accent : T.border}`,
+            color: statusFilter === s ? T.accent : T.muted,
+            borderRadius: 20, padding: '4px 12px', fontSize: 11,
+            fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+          }}>
+            {s === '' ? 'All' : s === 'COMPLETED' ? 'Completed' : 'Failed'}
+          </button>
+        ))}
+        {data && (
+          <span style={{ fontSize: 11, color: T.muted, marginLeft: 'auto' }}>
+            {fmtNum(data.total)} tasks
+          </span>
+        )}
+      </div>
+
+      {loading
+        ? <div style={{ color: T.muted, fontSize: 14, padding: '24px 0' }}>Loading…</div>
+        : !data || data.rows.length === 0
+          ? <div style={{ color: T.muted, fontSize: 13, padding: '16px 0' }}>No tasks found.</div>
+          : (
+            <>
+              <div style={{ overflowX: 'auto' }}>
+                <DataTable<TaskRow>
+                  columns={[
+                    { key: 'utc_time', label: 'Time',
+                      render: v => <span style={{ fontSize: 11, color: T.muted }}>{fmtDate(v as string)}</span> },
+                    { key: 'process', label: 'Process',
+                      render: v => <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11 }}>{v as string}</span> },
+                    { key: 'status', label: 'Status',
+                      render: v => <StatusBadge status={v as string} /> },
+                    { key: 'attempt', label: 'Att.', align: 'right', mono: true,
+                      render: v => (v as number) > 1
+                        ? <span style={{ color: T.amber }}>{v as number}</span>
+                        : <span style={{ color: T.muted }}>{v as number}</span> },
+                    { key: 'exit_code', label: 'Exit', align: 'right', mono: true,
+                      render: v => {
+                        if (v == null || v === '') return <span style={{ color: T.muted }}>—</span>
+                        const isFailure = v !== '0'
+                        return <span style={{ color: isFailure ? T.red : T.muted }}>{v as string}</span>
+                      }},
+                    { key: 'error_action', label: 'NF Action',
+                      render: v => <ErrorActionBadge action={v as string | null} /> },
+                    { key: 'sample_id', label: 'Sample',
+                      render: v => <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: T.muted }}>{v as string ?? '—'}</span> },
+                    { key: 'run_name', label: 'Run',
+                      render: v => <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: T.muted, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{v as string}</span> },
+                    { key: 'realtime_ms', label: 'Duration', align: 'right', mono: true,
+                      render: v => fmtDuration(v as number | null) },
+                    { key: 'pct_cpu', label: 'CPU%', align: 'right', mono: true,
+                      render: v => v != null ? `${(v as number).toFixed(0)}%` : '—' },
+                    { key: 'pct_mem', label: 'Mem%', align: 'right', mono: true,
+                      render: v => v != null ? `${(v as number).toFixed(1)}%` : '—' },
+                    { key: 'peak_rss_gb', label: 'Peak RSS', align: 'right', mono: true,
+                      render: v => v != null ? `${(v as number).toFixed(2)} GB` : '—' },
+                  ]}
+                  rows={data.rows}
+                />
+              </div>
+              {totalPages > 1 && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', marginTop: 8 }}>
+                  <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{
+                    background: T.elevated, border: `1px solid ${T.border}`, color: page === 0 ? T.muted : T.text,
+                    borderRadius: 4, padding: '3px 10px', fontSize: 12, cursor: page === 0 ? 'default' : 'pointer',
+                  }}>← Prev</button>
+                  <span style={{ fontSize: 12, color: T.muted }}>
+                    Page {page + 1} of {totalPages}
+                  </span>
+                  <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={{
+                    background: T.elevated, border: `1px solid ${T.border}`, color: page >= totalPages - 1 ? T.muted : T.text,
+                    borderRadius: 4, padding: '3px 10px', fontSize: 12, cursor: page >= totalPages - 1 ? 'default' : 'pointer',
+                  }}>Next →</button>
+                </div>
+              )}
+            </>
+          )
+      }
+    </Panel>
+  )
+}
+
+type Tab = 'failures' | 'retries' | 'resources' | 'signatures' | 'timeline' | 'tasks'
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'failures',   label: 'Failures'   },
   { id: 'retries',    label: 'Retries'    },
   { id: 'resources',  label: 'Resources'  },
   { id: 'signatures', label: 'Signatures' },
   { id: 'timeline',   label: 'Timeline'   },
+  { id: 'tasks',      label: 'Tasks'      },
 ]
 
 export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
@@ -498,18 +647,20 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
           }}>{t.label}</button>
         ))}
       </div>
-      {(tab !== 'timeline' && (!failures || !retries || !resources || !signatures)) ||
-       (tab === 'timeline' && !timeline)
-        ? <div style={{ color: T.muted, fontSize: 14, padding: '32px 0' }}>Loading…</div>
-        : (
-          <>
-            {tab === 'failures'   && <FailuresTab   data={failures!}   />}
-            {tab === 'retries'    && <RetriesTab    data={retries!}    />}
-            {tab === 'resources'  && <ResourcesTab  data={resources!} summary={summary} />}
-            {tab === 'signatures' && <SignaturesTab  data={signatures!} />}
-            {tab === 'timeline'   && <TimelineTab   data={timeline!}   bucket={bucket} onBucket={setBucket} />}
-          </>
-        )
+      {tab === 'tasks'
+        ? <TasksTab filters={filters} />
+        : (tab !== 'timeline' && (!failures || !retries || !resources || !signatures)) ||
+          (tab === 'timeline' && !timeline)
+          ? <div style={{ color: T.muted, fontSize: 14, padding: '32px 0' }}>Loading…</div>
+          : (
+            <>
+              {tab === 'failures'   && <FailuresTab   data={failures!}   />}
+              {tab === 'retries'    && <RetriesTab    data={retries!}    />}
+              {tab === 'resources'  && <ResourcesTab  data={resources!} summary={summary} />}
+              {tab === 'signatures' && <SignaturesTab  data={signatures!} />}
+              {tab === 'timeline'   && <TimelineTab   data={timeline!}   bucket={bucket} onBucket={setBucket} />}
+            </>
+          )
       }
     </PageWrap>
   )

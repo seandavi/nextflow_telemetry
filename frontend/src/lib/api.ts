@@ -9,6 +9,7 @@ import type {
   ProcessResourcesByAttemptResponse,
   ProcessFailureSignaturesResponse,
   ProcessTimelineResponse,
+  TasksResponse,
   RunningProcessesResponse,
   DispatchBatchResponse,
   ReconcileResult,
@@ -90,6 +91,14 @@ export const api = {
     signatures: (f: MetricsFilters = {}) => get<ProcessFailureSignaturesResponse>(`/metrics/processes/failure-signatures${metricsParams(f)}`),
     timeline:   (f: MetricsFilters = {}, bucket: 'hour' | 'day' | 'week' = 'hour') =>
       get<ProcessTimelineResponse>(`/metrics/processes/timeline${metricsParams(f, { bucket })}`),
+    tasks: (f: MetricsFilters = {}, extra: { process?: string; status?: string; limit?: number; offset?: number } = {}) => {
+      const e: Record<string, string | number> = {}
+      if (extra.process) e['process'] = extra.process
+      if (extra.status)  e['status']  = extra.status
+      if (extra.limit  != null) e['limit']  = extra.limit
+      if (extra.offset != null) e['offset'] = extra.offset
+      return get<TasksResponse>(`/metrics/processes/tasks${metricsParams(f, e)}`)
+    },
   },
 
   dispatch: {

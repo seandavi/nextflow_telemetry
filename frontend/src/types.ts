@@ -251,6 +251,38 @@ export interface RequeueResult {
   requeued_runs: number
 }
 
+export interface TaskRow {
+  telemetry_id: number
+  run_name: string
+  run_id: string | null
+  sample_id: string | null
+  workflow_id: string | null
+  workflow_version: string | null
+  utc_time: string
+  process: string
+  name: string | null
+  status: string
+  attempt: number
+  exit_code: string | null
+  error_action: string | null
+  realtime_ms: number | null
+  requested_cpus: number | null
+  requested_memory_gb: number | null
+  pct_cpu: number | null
+  pct_mem: number | null
+  peak_rss_gb: number | null
+  read_gb: number | null
+  write_gb: number | null
+}
+
+export interface TasksResponse {
+  generated_at_utc: string
+  total: number
+  limit: number
+  offset: number
+  rows: TaskRow[]
+}
+
 export interface WorkflowJobSummary {
   workflow_pk: number
   workflow_id: string
