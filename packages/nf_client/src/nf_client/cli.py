@@ -125,6 +125,7 @@ def submit(
                 "workflow_id": batch.workflow_id,
                 "workflow_version": batch.workflow_version,
                 "metadata_tsv_content": generate_metadata_tsv(batch.jobs),
+                "config_path": str(config.resolve()),
             }
             script = render_submission_script(cfg.submission.template_path, context)
 
@@ -233,6 +234,7 @@ def daemon(
                 "workflow_id": batch.workflow_id,
                 "workflow_version": batch.workflow_version,
                 "metadata_tsv_content": generate_metadata_tsv(batch.jobs),
+                "config_path": str(config.resolve()),
             }
             script = render_submission_script(cfg.submission.template_path, context)
 
