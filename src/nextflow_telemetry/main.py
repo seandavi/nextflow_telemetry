@@ -51,12 +51,12 @@ app.add_middleware(
 process_metrics_service = ProcessMetricsService(engine=engine)
 telemetry_service = TelemetryService(engine=engine)
 
-app.include_router(create_process_metrics_router(process_metrics_service))
-app.include_router(create_dispatch_router(engine))
-app.include_router(create_samples_router(engine))
-app.include_router(create_workflows_router(engine))
-app.include_router(create_admin_router(engine))
-app.include_router(create_task_logs_router(engine))
+app.include_router(create_process_metrics_router(process_metrics_service), prefix="/api")
+app.include_router(create_dispatch_router(engine), prefix="/api")
+app.include_router(create_samples_router(engine), prefix="/api")
+app.include_router(create_workflows_router(engine), prefix="/api")
+app.include_router(create_admin_router(engine), prefix="/api")
+app.include_router(create_task_logs_router(engine), prefix="/api")
 
 
 @app.get(

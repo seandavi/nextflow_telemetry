@@ -64,7 +64,7 @@ class JobClient:
         if self._config.dispatch.workflow_version:
             payload["workflow_version"] = self._config.dispatch.workflow_version
 
-        response = await self._client.post("/dispatch/batch", json=payload)
+        response = await self._client.post("dispatch/batch", json=payload)
         if response.status_code == 204:
             return None
         response.raise_for_status()
@@ -84,7 +84,7 @@ class JobClient:
         the previous content.
         """
         response = await self._client.post(
-            "/task-logs",
+            "task-logs",
             data={"run_name": run_name, "task_hash": task_hash, "log_type": log_type},
             files={"content": ("content", content.encode("utf-8", errors="replace"), "text/plain")},
         )
@@ -107,6 +107,6 @@ class JobClient:
             sample_ids=sample_ids,
         )
         response = await self._client.post(
-            "/dispatch/submitted", json=payload.model_dump()
+            "dispatch/submitted", json=payload.model_dump()
         )
         response.raise_for_status()
