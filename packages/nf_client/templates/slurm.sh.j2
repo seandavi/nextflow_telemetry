@@ -34,4 +34,7 @@ nf-client upload-logs \
   --work-dir "$(pwd)/work" \
   || echo "WARNING: log upload failed (non-fatal)"
 
+echo "Cleaning up work directory..."
+rm -rf "$(pwd)/work"
+
 exit ${NF_EXIT}
