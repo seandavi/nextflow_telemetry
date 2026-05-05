@@ -181,4 +181,12 @@ work/
 .nextflow
 report.html*
 timeline.html*
-trace.txt*.env.prod
+trace.txt*
+.env
+.env.*
+*.db
+*.png
+*.jpg
+results/
+.playwright-mcp/
+.firebase/
