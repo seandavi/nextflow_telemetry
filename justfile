@@ -126,7 +126,7 @@ deploy-api:
 # Build frontend and deploy to Firebase Hosting.
 deploy-frontend:
 	cd frontend && npm run build
-	cd deploy && firebase deploy --only hosting
+	firebase deploy --only hosting
 
 # Run Alembic migrations against a target DB.
 # Usage: SQLALCHEMY_URI=postgresql://... just migrate-prod
