@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -33,14 +34,22 @@ from .submission import (
 app = typer.Typer(help="nf-client: claim and submit Nextflow telemetry jobs")
 
 
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
+
+
 def _count_active_slurm_jobs() -> int:
-    """Count running/pending nf-client wrapper jobs (job name prefix 'nf_')."""
+    """Count running/pending nf-client wrapper jobs.
+
+    Wrapper jobs are named with the UUID run_name assigned by the server.
+    Child task jobs spawned by Nextflow use a different format (e.g. 'nf-<process>'),
+    so UUID matching reliably isolates only the master wrapper jobs.
+    """
     result = subprocess.run(
         ["squeue", "--me", "--noheader", "--format=%j"],
         capture_output=True,
         text=True,
     )
-    return len([l for l in result.stdout.splitlines() if l.startswith("nf_")])
+    return len([l for l in result.stdout.splitlines() if _UUID_RE.match(l.strip())])
 
 config_option = typer.Option(..., "--config", "-c", help="Path to client YAML config")
 dry_run_option = typer.Option(False, "--dry-run", help="Print what would be submitted without executing")
