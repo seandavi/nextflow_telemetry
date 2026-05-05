@@ -41,9 +41,13 @@ The local `.env.prod` file mirrors the secret for running migrations locally —
 ## Deploy API
 
 ```bash
-just build-api    # builds via Cloud Build (linux/amd64), pushes to Artifact Registry
-just deploy-api   # deploys deploy/cloudrun.yaml to Cloud Run
+just build-api    # builds via Cloud Build, tags image as api:<git-sha>
+just deploy-api   # deploys that git-sha-tagged image to Cloud Run
 ```
+
+Images are tagged with the short git SHA (e.g. `api:7822a49`) rather than `latest`.
+This guarantees Cloud Run always creates a new revision on deploy, and makes it trivial
+to roll back: `gcloud run services update-traffic nf-telemetry --to-revisions=<rev>=100`.
 
 Cloud Build is used (not local Docker) to ensure the image is always `linux/amd64` — required by Cloud Run.
 

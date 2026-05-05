@@ -112,16 +112,23 @@ GCP_PROJECT := env_var_or_default("GCP_PROJECT", "curatedmetagenomicdata")
 REGION      := env_var_or_default("REGION", "us-central1")
 AR_REPO     := "nextflow-telemetry"
 IMAGE       := REGION + "-docker.pkg.dev/" + GCP_PROJECT + "/" + AR_REPO + "/api"
+GIT_SHA     := `git rev-parse --short HEAD`
 
-# Build and push the API image to Artifact Registry.
+# Build and push the API image tagged with the current git SHA.
 build-api:
-	gcloud builds submit --tag {{IMAGE}}:latest --project {{GCP_PROJECT}} .
+	gcloud builds submit --tag {{IMAGE}}:{{GIT_SHA}} --project {{GCP_PROJECT}} .
 
-# Deploy the Cloud Run service from deploy/cloudrun.yaml (run build-api first).
+# Deploy the git-SHA-tagged image to Cloud Run.
 deploy-api:
-	gcloud run services replace deploy/cloudrun.yaml \
+	gcloud run deploy nf-telemetry \
+	  --image {{IMAGE}}:{{GIT_SHA}} \
 	  --region {{REGION}} \
-	  --project {{GCP_PROJECT}}
+	  --project {{GCP_PROJECT}} \
+	  --service-account nextflow-telemetry-api@{{GCP_PROJECT}}.iam.gserviceaccount.com \
+	  --set-secrets SQLALCHEMY_URI=nextflow-telemetry-db-uri:latest \
+	  --min-instances 1 --max-instances 4 \
+	  --memory 512Mi --cpu 1 --port 8000 \
+	  --allow-unauthenticated
 
 # Build frontend and deploy to Firebase Hosting.
 deploy-frontend:
