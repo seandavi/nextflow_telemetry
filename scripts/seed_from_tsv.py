@@ -37,10 +37,11 @@ def main() -> None:
     parser.add_argument("--server", default=DEFAULT_SERVER)
     args = parser.parse_args()
 
-    client = httpx.Client(base_url=args.server, timeout=30)
+    server = args.server.rstrip("/")
+    client = httpx.Client(base_url=f"{server}/api/", timeout=30)
 
     try:
-        client.get("/health").raise_for_status()
+        httpx.get(f"{server}/health", timeout=10).raise_for_status()
     except Exception as e:
         print(f"ERROR: cannot reach {args.server}: {e}", file=sys.stderr)
         sys.exit(1)
@@ -60,7 +61,7 @@ def main() -> None:
             skipped += 1
             continue
 
-        resp = client.post("/samples", json={
+        resp = client.post("samples", json={
             "sample_id": sample_id,
             "metadata": {"ncbi_accession": ncbi_accession, "cohort": cohort},
         })
@@ -71,14 +72,14 @@ def main() -> None:
 
     print(f"Samples: {registered} registered, {skipped} skipped")
 
-    resp = client.post("/workflows", json=NF_TESTING_WORKFLOW)
+    resp = client.post("workflows", json=NF_TESTING_WORKFLOW)
     if resp.status_code in (200, 201):
         wf = resp.json()
         print(f"Workflow: {wf['workflow_id']} v{wf['version']} registered (id={wf['id']})")
     else:
         print(f"WARN: workflow: {resp.status_code} {resp.text}", file=sys.stderr)
 
-    resp = client.post("/admin/reconcile-jobs")
+    resp = client.post("admin/reconcile-jobs")
     resp.raise_for_status()
     result = resp.json()
     print(f"Reconcile: {result['jobs_created']} pending jobs created")
