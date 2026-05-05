@@ -125,7 +125,7 @@ deploy-api:
 
 # Build frontend and deploy to Firebase Hosting.
 deploy-frontend:
-	cd frontend && npm run build
+	cd frontend && VITE_API_URL=https://nf-telemetry-819875667022.us-central1.run.app npm run build
 	firebase deploy --only hosting
 
 # Run Alembic migrations against a target DB.
