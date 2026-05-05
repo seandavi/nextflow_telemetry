@@ -11,6 +11,7 @@ set -euo pipefail
 echo "Starting Nextflow run {{ run_name }} at $(date -u)"
 echo "Samples: {{ sample_ids }}"
 
+set +e
 nextflow run {{ workflow_repository }} \
   -revision {{ workflow_revision }} \
   -profile {{ profile }} \
@@ -21,5 +22,12 @@ nextflow run {{ workflow_repository }} \
   --workflow_version {{ workflow_version }} \
   --run_name {{ run_name }} \
   --outdir {{ outdir | default('results') }}
+NF_EXIT=$?
+set -e
 
-echo "Nextflow run {{ run_name }} finished at $(date -u)"
+echo "Nextflow run {{ run_name }} finished at $(date -u) with exit code ${NF_EXIT}"
+
+echo "Cleaning up work directory..."
+rm -rf "$(pwd)/work"
+
+exit ${NF_EXIT}
