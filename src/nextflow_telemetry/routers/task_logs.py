@@ -46,6 +46,13 @@ def create_task_logs_router(engine: AsyncEngine) -> APIRouter:
             raise HTTPException(status_code=413, detail="Content exceeds 1 MB limit.")
         content_str = raw.decode("utf-8", errors="replace")
 
+        # Normalize to Nextflow's short hash format (ab/cdef12) so it matches
+        # the hash stored in telemetry. The afterScript derives the hash from
+        # the full work dir path, which gives the complete hex string.
+        parts = task_hash.split("/", 1)
+        if len(parts) == 2 and len(parts[1]) > 6:
+            task_hash = f"{parts[0]}/{parts[1][:6]}"
+
         now = datetime.datetime.now(datetime.timezone.utc)
 
         upsert_sql = text(
