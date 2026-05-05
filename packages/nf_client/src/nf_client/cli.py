@@ -34,13 +34,13 @@ app = typer.Typer(help="nf-client: claim and submit Nextflow telemetry jobs")
 
 
 def _count_active_slurm_jobs() -> int:
-    """Count running/pending SLURM jobs for the current user."""
+    """Count running/pending nf-client wrapper jobs (job name prefix 'nf_')."""
     result = subprocess.run(
         ["squeue", "--me", "--noheader", "--format=%j"],
         capture_output=True,
         text=True,
     )
-    return len([line for line in result.stdout.splitlines() if line.strip()])
+    return len([l for l in result.stdout.splitlines() if l.startswith("nf_")])
 
 config_option = typer.Option(..., "--config", "-c", help="Path to client YAML config")
 dry_run_option = typer.Option(False, "--dry-run", help="Print what would be submitted without executing")
