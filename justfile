@@ -108,15 +108,14 @@ daemon:
 # ── Cloud deployment ──────────────────────────────────────────────────────────
 # Set GCP_PROJECT and REGION env vars (or export them) before using these.
 
-GCP_PROJECT := env_var_or_default("GCP_PROJECT", "YOUR_GCP_PROJECT")
+GCP_PROJECT := env_var_or_default("GCP_PROJECT", "curatedmetagenomicdata")
 REGION      := env_var_or_default("REGION", "us-central1")
 AR_REPO     := "nextflow-telemetry"
 IMAGE       := REGION + "-docker.pkg.dev/" + GCP_PROJECT + "/" + AR_REPO + "/api"
 
 # Build and push the API image to Artifact Registry.
 build-api:
-	docker build --tag {{IMAGE}}:latest .
-	docker push {{IMAGE}}:latest
+	gcloud builds submit --tag {{IMAGE}}:latest --project {{GCP_PROJECT}} .
 
 # Deploy the Cloud Run service from deploy/cloudrun.yaml (run build-api first).
 deploy-api:

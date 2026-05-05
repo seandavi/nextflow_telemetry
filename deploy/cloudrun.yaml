@@ -1,7 +1,7 @@
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: nextflow-telemetry-api
+  name: nf-telemetry
   annotations:
     run.googleapis.com/ingress: all
 spec:
@@ -11,9 +11,9 @@ spec:
         autoscaling.knative.dev/minScale: "1"
         autoscaling.knative.dev/maxScale: "4"
     spec:
-      serviceAccountName: nextflow-telemetry-api@YOUR_GCP_PROJECT.iam.gserviceaccount.com
+      serviceAccountName: nextflow-telemetry-api@curatedmetagenomicdata.iam.gserviceaccount.com
       containers:
-        - image: YOUR_REGION-docker.pkg.dev/YOUR_GCP_PROJECT/nextflow-telemetry/api:latest
+        - image: us-central1-docker.pkg.dev/curatedmetagenomicdata/nextflow-telemetry/api:latest
           ports:
             - containerPort: 8000
           env:
