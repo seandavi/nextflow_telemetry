@@ -736,6 +736,7 @@ class ProcessMetricsService:
               t.trace->>'name'                                                 as name,
               coalesce(t.trace->>'status','')                                  as status,
               coalesce(nullif(t.trace->>'attempt',''),'1')::int                as attempt,
+              nullif(t.trace->>'hash','')                                      as task_hash,
               nullif(t.trace->>'exit','')                                      as exit_code,
               nullif(t.trace->>'error_action','')                              as error_action,
               nullif(t.trace->>'realtime','')::double precision                as realtime_ms,

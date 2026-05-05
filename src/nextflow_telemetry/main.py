@@ -12,6 +12,7 @@ from .routers.admin import create_admin_router
 from .routers.dispatch import create_dispatch_router
 from .routers.process_metrics import create_process_metrics_router
 from .routers.samples import create_samples_router
+from .routers.task_logs import create_task_logs_router
 from .routers.workflows import create_workflows_router
 from .services.process_metrics import ProcessMetricsService
 from .services.telemetry import TelemetryService
@@ -55,6 +56,7 @@ app.include_router(create_dispatch_router(engine))
 app.include_router(create_samples_router(engine))
 app.include_router(create_workflows_router(engine))
 app.include_router(create_admin_router(engine))
+app.include_router(create_task_logs_router(engine))
 
 
 @app.get(

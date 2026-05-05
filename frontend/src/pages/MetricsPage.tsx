@@ -21,6 +21,7 @@ import type {
   ProcessTimelineResponse,
   TasksResponse,
   TaskRow,
+  TaskLogsResponse,
   ProcessFailuresRow,
   RetryByAttemptRow,
   RetryByProcessRow,
@@ -444,6 +445,55 @@ function fmtDuration(ms: number | null): string {
   return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`
 }
 
+function TaskLogViewer({ runName, taskHash }: { runName: string; taskHash: string }) {
+  const [logs, setLogs] = useState<TaskLogsResponse | null>(null)
+  const [activeLog, setActiveLog] = useState<'command_sh' | 'command_err'>('command_err')
+
+  useEffect(() => {
+    api.metrics.taskLogs(runName, taskHash).then(setLogs).catch(console.error)
+  }, [runName, taskHash])
+
+  if (!logs) return <div style={{ color: T.muted, fontSize: 12, padding: 8 }}>Loading logs…</div>
+  if (logs.logs.length === 0) {
+    return (
+      <div style={{ color: T.muted, fontSize: 12, padding: '8px 0' }}>
+        No logs captured for this task. Run <code>nf-client upload-logs</code> after the pipeline completes.
+      </div>
+    )
+  }
+
+  const logTypes = logs.logs.map(l => l.log_type)
+  const current = logs.logs.find(l => l.log_type === activeLog) ?? logs.logs[0]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 4 }}>
+        {(['command_err', 'command_sh'] as const).map(lt => (
+          logTypes.includes(lt) && (
+            <button key={lt} onClick={() => setActiveLog(lt)} style={{
+              background: activeLog === lt ? T.accentDim : T.elevated,
+              border: `1px solid ${activeLog === lt ? T.accent : T.border}`,
+              color: activeLog === lt ? T.accent : T.muted,
+              borderRadius: 4, padding: '2px 10px', fontSize: 11,
+              fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Mono, monospace',
+            }}>{lt === 'command_err' ? '.command.err' : '.command.sh'}</button>
+          )
+        ))}
+      </div>
+      {current && (
+        <pre style={{
+          background: '#0a0f1a', border: `1px solid ${T.border}`, borderRadius: 6,
+          padding: 12, fontSize: 11, fontFamily: 'DM Mono, monospace', color: T.text,
+          maxHeight: 300, overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+          margin: 0,
+        }}>
+          {current.content || '(empty)'}
+        </pre>
+      )}
+    </div>
+  )
+}
+
 function TasksTab({ filters }: { filters: MetricsFilters }) {
   const PAGE_SIZE = 50
   const [processFilter, setProcessFilter] = useState('')
@@ -451,14 +501,17 @@ function TasksTab({ filters }: { filters: MetricsFilters }) {
   const [page, setPage] = useState(0)
   const [data, setData] = useState<TasksResponse | null>(null)
   const [loading, setLoading] = useState(false)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
 
   useEffect(() => {
     setPage(0)
+    setExpandedId(null)
   }, [filters, processFilter, statusFilter])
 
   useEffect(() => {
     setLoading(true)
     setData(null)
+    setExpandedId(null)
     api.metrics.tasks(filters, {
       process: processFilter || undefined,
       status:  statusFilter  || undefined,
@@ -472,11 +525,20 @@ function TasksTab({ filters }: { filters: MetricsFilters }) {
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0
 
+  const COL_STYLE: React.CSSProperties = {
+    padding: '7px 10px', fontSize: 12, borderBottom: `1px solid ${T.border}`,
+    verticalAlign: 'middle',
+  }
+  const TH_STYLE: React.CSSProperties = {
+    ...COL_STYLE, fontSize: 10, color: T.muted, fontWeight: 700,
+    letterSpacing: '0.06em', textTransform: 'uppercase', background: T.elevated,
+  }
+
   return (
     <Panel>
       <SectionHeader
         title="Task Browser"
-        sub="Individual process_completed events — click a row to expand full trace details"
+        sub="Individual process_completed events — click a row to view logs"
       />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
@@ -514,41 +576,70 @@ function TasksTab({ filters }: { filters: MetricsFilters }) {
           : (
             <>
               <div style={{ overflowX: 'auto' }}>
-                <DataTable<TaskRow>
-                  columns={[
-                    { key: 'utc_time', label: 'Time',
-                      render: v => <span style={{ fontSize: 11, color: T.muted }}>{fmtDate(v as string)}</span> },
-                    { key: 'process', label: 'Process',
-                      render: v => <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11 }}>{v as string}</span> },
-                    { key: 'status', label: 'Status',
-                      render: v => <StatusBadge status={v as string} /> },
-                    { key: 'attempt', label: 'Att.', align: 'right', mono: true,
-                      render: v => (v as number) > 1
-                        ? <span style={{ color: T.amber }}>{v as number}</span>
-                        : <span style={{ color: T.muted }}>{v as number}</span> },
-                    { key: 'exit_code', label: 'Exit', align: 'right', mono: true,
-                      render: v => {
-                        if (v == null || v === '') return <span style={{ color: T.muted }}>—</span>
-                        const isFailure = v !== '0'
-                        return <span style={{ color: isFailure ? T.red : T.muted }}>{v as string}</span>
-                      }},
-                    { key: 'error_action', label: 'NF Action',
-                      render: v => <ErrorActionBadge action={v as string | null} /> },
-                    { key: 'sample_id', label: 'Sample',
-                      render: v => <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: T.muted }}>{v as string ?? '—'}</span> },
-                    { key: 'run_name', label: 'Run',
-                      render: v => <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: T.muted, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{v as string}</span> },
-                    { key: 'realtime_ms', label: 'Duration', align: 'right', mono: true,
-                      render: v => fmtDuration(v as number | null) },
-                    { key: 'pct_cpu', label: 'CPU%', align: 'right', mono: true,
-                      render: v => v != null ? `${(v as number).toFixed(0)}%` : '—' },
-                    { key: 'pct_mem', label: 'Mem%', align: 'right', mono: true,
-                      render: v => v != null ? `${(v as number).toFixed(1)}%` : '—' },
-                    { key: 'peak_rss_gb', label: 'Peak RSS', align: 'right', mono: true,
-                      render: v => v != null ? `${(v as number).toFixed(2)} GB` : '—' },
-                  ]}
-                  rows={data.rows}
-                />
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      {['Time', 'Process', 'Status', 'Att.', 'Exit', 'NF Action', 'Sample', 'Run', 'Duration', 'CPU%', 'Mem%', 'Peak RSS'].map(h => (
+                        <th key={h} style={{ ...TH_STYLE, textAlign: ['Att.','Exit','Duration','CPU%','Mem%','Peak RSS'].includes(h) ? 'right' : 'left' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.rows.map(row => (
+                      <>
+                        <tr
+                          key={row.telemetry_id}
+                          onClick={() => setExpandedId(id => id === row.telemetry_id ? null : row.telemetry_id)}
+                          style={{ cursor: 'pointer', background: expandedId === row.telemetry_id ? T.elevated : 'transparent' }}
+                        >
+                          <td style={COL_STYLE}><span style={{ fontSize: 11, color: T.muted }}>{fmtDate(row.utc_time)}</span></td>
+                          <td style={COL_STYLE}><span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11 }}>{row.process}</span></td>
+                          <td style={COL_STYLE}><StatusBadge status={row.status} /></td>
+                          <td style={{ ...COL_STYLE, textAlign: 'right' }}>
+                            <span style={{ color: row.attempt > 1 ? T.amber : T.muted, fontFamily: 'DM Mono, monospace' }}>{row.attempt}</span>
+                          </td>
+                          <td style={{ ...COL_STYLE, textAlign: 'right' }}>
+                            {row.exit_code == null || row.exit_code === ''
+                              ? <span style={{ color: T.muted }}>—</span>
+                              : <span style={{ color: row.exit_code !== '0' ? T.red : T.muted, fontFamily: 'DM Mono, monospace' }}>{row.exit_code}</span>}
+                          </td>
+                          <td style={COL_STYLE}><ErrorActionBadge action={row.error_action} /></td>
+                          <td style={COL_STYLE}><span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: T.muted }}>{row.sample_id ?? '—'}</span></td>
+                          <td style={COL_STYLE}><span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: T.muted, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{row.run_name}</span></td>
+                          <td style={{ ...COL_STYLE, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 11 }}>{fmtDuration(row.realtime_ms)}</td>
+                          <td style={{ ...COL_STYLE, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 11 }}>{row.pct_cpu != null ? `${row.pct_cpu.toFixed(0)}%` : '—'}</td>
+                          <td style={{ ...COL_STYLE, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 11 }}>{row.pct_mem != null ? `${row.pct_mem.toFixed(1)}%` : '—'}</td>
+                          <td style={{ ...COL_STYLE, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 11 }}>{row.peak_rss_gb != null ? `${row.peak_rss_gb.toFixed(2)} GB` : '—'}</td>
+                        </tr>
+                        {expandedId === row.telemetry_id && (
+                          <tr key={`${row.telemetry_id}-detail`}>
+                            <td colSpan={12} style={{ padding: '8px 16px 16px 16px', background: T.elevated, borderBottom: `1px solid ${T.border}` }}>
+                              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 10 }}>
+                                {[
+                                  ['Task hash', row.task_hash ?? '—'],
+                                  ['Name', row.name ?? '—'],
+                                  ['Read', row.read_gb != null ? `${row.read_gb.toFixed(2)} GB` : '—'],
+                                  ['Write', row.write_gb != null ? `${row.write_gb.toFixed(2)} GB` : '—'],
+                                  ['Requested CPUs', row.requested_cpus != null ? String(row.requested_cpus) : '—'],
+                                  ['Requested mem', row.requested_memory_gb != null ? `${row.requested_memory_gb.toFixed(1)} GB` : '—'],
+                                ].map(([k, v]) => (
+                                  <div key={k}>
+                                    <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 2 }}>{k}</div>
+                                    <div style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: T.text }}>{v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              {row.task_hash
+                                ? <TaskLogViewer runName={row.run_name} taskHash={row.task_hash} />
+                                : <div style={{ color: T.muted, fontSize: 12 }}>No task hash available — logs cannot be retrieved.</div>
+                              }
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    ))}
+                  </tbody>
+                </table>
               </div>
               {totalPages > 1 && (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', marginTop: 8 }}>

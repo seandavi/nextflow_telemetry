@@ -251,6 +251,21 @@ export interface RequeueResult {
   requeued_runs: number
 }
 
+export interface TaskLogEntry {
+  id: number
+  run_name: string
+  task_hash: string
+  log_type: string
+  content: string
+  uploaded_at: string
+}
+
+export interface TaskLogsResponse {
+  run_name: string
+  task_hash: string
+  logs: TaskLogEntry[]
+}
+
 export interface TaskRow {
   telemetry_id: number
   run_name: string
@@ -263,6 +278,7 @@ export interface TaskRow {
   name: string | null
   status: string
   attempt: number
+  task_hash: string | null
   exit_code: string | null
   error_action: string | null
   realtime_ms: number | null
