@@ -90,6 +90,13 @@ class JobClient:
         )
         response.raise_for_status()
 
+    async def post_heartbeat(self, payload: dict) -> None:
+        """Send a heartbeat to the server. Never raises — failure is silently ignored."""
+        try:
+            await self._client.put("daemons/heartbeat", json=payload, timeout=5)
+        except Exception:
+            pass
+
     async def report_submitted(
         self,
         run_name: str,

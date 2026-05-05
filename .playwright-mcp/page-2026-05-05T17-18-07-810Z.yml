@@ -1,0 +1,45 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]: "N"
+      - generic [ref=e8]:
+        - generic [ref=e9]: Nextflow
+        - generic [ref=e10]: Telemetry
+    - navigation [ref=e11]:
+      - button "Overview Pipeline health" [ref=e12] [cursor=pointer]:
+        - img [ref=e13]
+        - generic [ref=e18]:
+          - generic [ref=e19]: Overview
+          - generic [ref=e20]: Pipeline health
+      - button "Process Metrics Failures & resources" [ref=e21] [cursor=pointer]:
+        - img [ref=e22]
+        - generic [ref=e23]:
+          - generic [ref=e24]: Process Metrics
+          - generic [ref=e25]: Failures & resources
+      - button "Workflows Registry" [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+        - generic [ref=e31]:
+          - generic [ref=e32]: Workflows
+          - generic [ref=e33]: Registry
+      - button "Samples Catalog" [ref=e34] [cursor=pointer]:
+        - img [ref=e35]
+        - generic [ref=e37]:
+          - generic [ref=e38]: Samples
+          - generic [ref=e39]: Catalog
+      - button "Dispatch & Admin" [ref=e40] [cursor=pointer]:
+        - img [ref=e41]
+        - generic [ref=e43]:
+          - generic [ref=e44]: Dispatch
+          - generic [ref=e45]: "& Admin"
+    - generic [ref=e46]:
+      - generic [ref=e49]: Healthy
+      - generic [ref=e50]:
+        - generic [ref=e51]: Auto-refresh
+        - combobox [ref=e52] [cursor=pointer]:
+          - option "10s"
+          - option "30s" [selected]
+          - option "1 min"
+          - option "2 min"
+      - generic [ref=e53]: v0.1.0
+  - main [ref=e54]:
+    - generic [ref=e56]: Loading…

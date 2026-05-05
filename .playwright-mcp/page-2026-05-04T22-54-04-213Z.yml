@@ -1,0 +1,1007 @@
+- generic [ref=e2]:
+  - navigation [ref=e4]:
+    - generic [ref=e5]:
+      - link "Seqera Cloud Logo" [ref=e1577] [cursor=pointer]:
+        - /url: /user/seandavi
+        - img "Seqera Cloud Logo" [ref=e1578]
+      - generic [ref=e11] [cursor=pointer]:
+        - img "logo" [ref=e1579]
+        - generic [ref=e14]: seandavi
+    - list [ref=e18]:
+      - listitem [ref=e19]:
+        - link "Dashboard" [ref=e1580] [cursor=pointer]:
+          - /url: /dashboard
+      - listitem [ref=e21]:
+        - link "󱳌 Docs" [ref=e1581] [cursor=pointer]:
+          - /url: https://docs.seqera.io
+          - generic [ref=e23]: 󱳌
+          - text: Docs
+      - listitem [ref=e24]:
+        - link "󰵰 Support" [ref=e1582] [cursor=pointer]:
+          - /url: https://support.seqera.io
+          - generic [ref=e26]: 󰵰
+          - text: Support
+      - listitem [ref=e27]:
+        - img "Sean Davis" [ref=e1583]
+  - generic [ref=e31]:
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - generic [ref=e39]: PIPELINES
+          - link "Launchpad" [ref=e1584] [cursor=pointer]:
+            - /url: /user/seandavi/launchpad
+            - img [ref=e43]
+            - generic [ref=e49]: Launchpad
+          - link "Runs" [ref=e1585] [cursor=pointer]:
+            - /url: /user/seandavi/watch
+            - img [ref=e53]
+            - generic [ref=e61]: Runs
+          - link "Actions" [ref=e1586] [cursor=pointer]:
+            - /url: /user/seandavi/actions
+            - img [ref=e65]
+            - generic [ref=e67]: Actions
+        - generic [ref=e68]:
+          - generic [ref=e69]: DATA
+          - link "Datasets" [ref=e1587] [cursor=pointer]:
+            - /url: /user/seandavi/datasets
+            - img [ref=e73]
+            - generic [ref=e78]: Datasets
+          - link "Data Explorer" [ref=e1588] [cursor=pointer]:
+            - /url: /user/seandavi/data-explorer
+            - img [ref=e82]
+            - generic [ref=e85]: Data Explorer
+        - generic [ref=e86]:
+          - generic [ref=e87]: COMPUTE
+          - link "Compute Environments" [ref=e1589] [cursor=pointer]:
+            - /url: /user/seandavi/compute-envs
+            - generic [ref=e89]: 󰅣
+            - generic [ref=e90]: Compute Environments
+          - link "Credentials" [ref=e1590] [cursor=pointer]:
+            - /url: /user/seandavi/credentials
+            - img [ref=e94]
+            - generic [ref=e97]: Credentials
+          - link "Secrets" [ref=e1591] [cursor=pointer]:
+            - /url: /user/seandavi/secrets
+            - img [ref=e101]
+            - generic [ref=e105]: Secrets
+        - generic [ref=e106]:
+          - generic [ref=e107]: SETTINGS
+          - link "Settings" [ref=e1592] [cursor=pointer]:
+            - /url: /user/seandavi/settings
+            - generic [ref=e109]: 󰢻
+            - generic [ref=e110]: Settings
+          - link "Participants" [ref=e1593] [cursor=pointer]:
+            - /url: /user/seandavi/participants
+            - generic [ref=e112]: 󰀏
+            - generic [ref=e113]: Participants
+      - button "Collapse sidebar" [ref=e1594] [cursor=pointer]:
+        - img [ref=e118]
+    - generic [ref=e125]:
+      - generic [ref=e130]:
+        - generic [ref=e132]:
+          - navigation "breadcrumb" [ref=e1595]:
+            - list [ref=e136]:
+              - listitem [ref=e1596]:
+                - link "Runs list" [ref=e1597] [cursor=pointer]:
+                  - /url: /user/seandavi/watch
+              - listitem [ref=e1598]:
+                - text: 󰅂
+                - generic [ref=e1599]: Details
+          - generic [ref=e142]:
+            - generic [ref=e145]:
+              - generic [ref=e146]: 󰀨
+              - text: 󰓨
+            - generic [ref=e147]:
+              - generic [ref=e148]:
+                - heading "tender_saha" [level=2] [ref=e1600]
+                - generic [ref=e150]:
+                  - button "󰓒" [ref=e1601] [cursor=pointer]:
+                    - generic [ref=e152]: 󰓒
+                  - button "Run actions menu" [ref=e1602] [cursor=pointer]: 󰇙
+              - generic [ref=e154]:
+                - generic [ref=e156]:
+                  - generic [ref=e157]: 󰻾
+                  - generic [ref=e159]:
+                    - generic [ref=e160]: 10DksQpsxkJtZv
+                    - button "Copy to clipboard" [ref=e1603] [cursor=pointer]:
+                      - generic [ref=e163]:
+                        - generic [ref=e164]: 󰆏
+                        - generic [ref=e165]: 󰄬
+                - generic [ref=e167]:
+                  - generic [ref=e168]: 󰘬
+                  - generic [ref=e170]:
+                    - generic [ref=e171]: cmgd_nextflow
+                    - button "Copy to clipboard" [ref=e1604] [cursor=pointer]:
+                      - generic [ref=e174]:
+                        - generic [ref=e175]: 󰆏
+                        - generic [ref=e176]: 󰄬
+                - generic [ref=e178]:
+                  - generic [ref=e179]: 󰲁
+                  - generic [ref=e181]:
+                    - generic [ref=e182]: /gpfs/alpine1/scratch/seda0001_amc/nf_worker/22781047/work
+                    - button "Copy to clipboard" [ref=e1605] [cursor=pointer]:
+                      - generic [ref=e185]:
+                        - generic [ref=e186]: 󰆏
+                        - generic [ref=e187]: 󰄬
+                - generic [ref=e189]:
+                  - generic [ref=e190]: 󰃮
+                  - generic [ref=e192]:
+                    - time [ref=e194]: 2026-01-14 02:37:17
+                    - button "Copy to clipboard" [ref=e1606] [cursor=pointer]:
+                      - generic [ref=e197]:
+                        - generic [ref=e198]: 󰆏
+                        - generic [ref=e199]: 󰄬
+              - button "Add labels" [ref=e1607] [cursor=pointer]
+              - generic [ref=e204]:
+                - generic [ref=e205]:
+                  - generic "progress percentage" [ref=e1608]: 10%
+                  - generic "progress label" [ref=e1609]: Workflow run progress
+                - progressbar "progress bar" [ref=e1610]
+          - tablist [ref=e216]:
+            - generic [ref=e219]:
+              - tab "Tasks" [selected] [ref=e1611] [cursor=pointer]:
+                - generic [ref=e222]: Tasks
+              - tab "Logs" [ref=e1612] [cursor=pointer]:
+                - generic [ref=e225]: Logs
+              - tab "Metrics" [ref=e1613] [cursor=pointer]:
+                - generic [ref=e228]: Metrics
+              - tab "Configuration" [ref=e1614] [cursor=pointer]:
+                - generic [ref=e231]: Configuration
+              - tab "Inputs" [ref=e1615] [cursor=pointer]:
+                - generic [ref=e234]: Inputs
+              - tab "Outputs" [ref=e1616] [cursor=pointer]:
+                - generic [ref=e237]: Outputs
+              - tab "Containers" [ref=e1617] [cursor=pointer]:
+                - generic [ref=e240]: Containers
+              - tab "Run Info" [ref=e1618] [cursor=pointer]:
+                - generic [ref=e243]: Run Info
+        - tabpanel [ref=e246]:
+          - generic [ref=e247]:
+            - generic [ref=e248]:
+              - generic [ref=e251] [cursor=pointer]:
+                - generic [ref=e252]: "54"
+                - generic [ref=e253]: All tasks
+              - generic [ref=e255] [cursor=pointer]:
+                - generic [ref=e257]: 󰅐
+                - generic [ref=e258]:
+                  - generic "Pending" [ref=e1619]: "0"
+                  - generic [ref=e260]: Pending
+              - generic [ref=e262] [cursor=pointer]:
+                - generic [ref=e264]: 󰮍
+                - generic [ref=e265]:
+                  - generic "Submitted" [ref=e1620]: "0"
+                  - generic [ref=e267]: Submitted
+              - generic [ref=e269] [cursor=pointer]:
+                - generic [ref=e271]: 󰪠
+                - generic [ref=e272]:
+                  - generic "Running" [ref=e1621]: "0"
+                  - generic [ref=e274]: Running
+              - generic [ref=e276] [cursor=pointer]:
+                - generic [ref=e278]: 󰃨
+                - generic [ref=e279]:
+                  - generic "Cached" [ref=e1622]: "0"
+                  - generic [ref=e281]: Cached
+              - generic [ref=e283] [cursor=pointer]:
+                - generic [ref=e285]: 󰗠
+                - generic [ref=e286]:
+                  - generic "Succeeded" [ref=e1623]: "26"
+                  - generic [ref=e288]: Succeeded
+              - generic [ref=e290] [cursor=pointer]:
+                - img [ref=e294]
+                - generic [ref=e296]:
+                  - generic "Failed" [ref=e1624]: "3"
+                  - generic [ref=e298]: Failed
+              - generic [ref=e300] [cursor=pointer]:
+                - img [ref=e304]
+                - generic [ref=e306]:
+                  - generic "Aborted" [ref=e1625]: "25"
+                  - generic [ref=e308]: Aborted
+            - generic [ref=e310]:
+              - heading "Processes" [level=6] [ref=e1626]
+              - generic [ref=e313]:
+                - generic [ref=e316] [cursor=pointer]:
+                  - generic [ref=e317]: fasterq_dump
+                  - generic [ref=e318]: 25 of 25
+                - generic [ref=e325] [cursor=pointer]:
+                  - generic [ref=e326]: install_metaphlan_db
+                  - generic [ref=e327]: 0 of 0
+                - generic [ref=e332] [cursor=pointer]:
+                  - generic [ref=e333]: uniref_db
+                  - generic [ref=e334]: 0 of 0
+                - generic [ref=e339] [cursor=pointer]:
+                  - generic [ref=e340]: chocophlan_db
+                  - generic [ref=e341]: 0 of 0
+                - generic [ref=e346] [cursor=pointer]:
+                  - generic [ref=e347]: utility_mapping_db
+                  - generic [ref=e348]: 0 of 0
+                - generic [ref=e353] [cursor=pointer]:
+                  - generic [ref=e354]: kneaddata_human_database
+                  - generic [ref=e355]: 0 of 0
+                - generic [ref=e360] [cursor=pointer]:
+                  - generic [ref=e361]: kneaddata_mouse_database
+                  - generic [ref=e362]: 0 of 0
+                - generic [ref=e367] [cursor=pointer]:
+                  - generic [ref=e368]: kneaddata
+                  - generic [ref=e369]: 1 of 8
+                - generic [ref=e377] [cursor=pointer]:
+                  - generic [ref=e378]: metaphlan_unknown_viruses_lists
+                  - generic [ref=e379]: 0 of 0
+                - generic [ref=e384] [cursor=pointer]:
+                  - generic [ref=e385]: metaphlan_markers
+                  - generic [ref=e386]: 0 of 0
+                - generic [ref=e391] [cursor=pointer]:
+                  - generic [ref=e392]: sample_to_markers
+                  - generic [ref=e393]: 0 of 0
+            - generic [ref=e397]:
+              - heading "Tasks" [level=6] [ref=e1627]
+              - textbox "Search task" [ref=e1628]
+              - table [ref=e407]:
+                - rowgroup [ref=e408]:
+                  - row "task_id process tag hash status attempt exit container native_id submit duration realtime % cpu % mem peak_rss peak_vmem rchar wchar vol_ctxt inv_ctxt" [ref=e1629]:
+                    - columnheader "task_id" [ref=e1630] [cursor=pointer]:
+                      - button "task_id" [ref=e1631]:
+                        - generic [ref=e412]: task_id
+                        - img [ref=e414]
+                    - columnheader "process" [ref=e1632]:
+                      - generic [ref=e418]: process
+                    - columnheader "tag" [ref=e1633]:
+                      - generic [ref=e421]: tag
+                    - columnheader "hash" [ref=e1634]:
+                      - generic [ref=e424]: hash
+                    - columnheader "status" [ref=e1635]:
+                      - generic [ref=e427]: status
+                    - columnheader "attempt" [ref=e1636]:
+                      - generic [ref=e430]: attempt
+                    - columnheader "exit" [ref=e1637]:
+                      - generic [ref=e433]: exit
+                    - columnheader "container" [ref=e1638]:
+                      - generic [ref=e436]: container
+                    - columnheader "native_id" [ref=e1639]:
+                      - generic [ref=e439]: native_id
+                    - columnheader "submit" [ref=e1640]:
+                      - generic [ref=e442]: submit
+                    - columnheader "duration" [ref=e1641]:
+                      - generic [ref=e445]: duration
+                    - columnheader "realtime" [ref=e1642]:
+                      - generic [ref=e448]: realtime
+                    - columnheader "% cpu" [ref=e1643]:
+                      - generic [ref=e451]: "% cpu"
+                    - columnheader "% mem" [ref=e1644]:
+                      - generic [ref=e454]: "% mem"
+                    - columnheader "peak_rss" [ref=e1645]:
+                      - generic [ref=e457]: peak_rss
+                    - columnheader "peak_vmem" [ref=e1646]:
+                      - generic [ref=e460]: peak_vmem
+                    - columnheader "rchar" [ref=e1647]:
+                      - generic [ref=e463]: rchar
+                    - columnheader "wchar" [ref=e1648]:
+                      - generic [ref=e466]: wchar
+                    - columnheader "vol_ctxt" [ref=e1649]:
+                      - generic [ref=e469]: vol_ctxt
+                    - columnheader "inv_ctxt" [ref=e1650]:
+                      - generic [ref=e472]: inv_ctxt
+                - rowgroup [ref=e473]:
+                  - row "󰐙 7 fasterq_dump 93f271085a15f3d9e4d73a70fe2a1f78 76/709e2a 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781571 2026-01-14 02:37:00 15 h 47 m 20 s 1 h 56 m 54 s 151.3 0.2 418.3 MB 3.4 GB 415.9 GB 307.0 GB 8,089,240 5,074" [ref=e1651]:
+                    - cell "󰐙 7" [ref=e1652]:
+                      - button "󰐙" [ref=e1653] [cursor=pointer]
+                      - text: "7"
+                    - cell "fasterq_dump" [ref=e1654]
+                    - cell "93f271085a15f3d9e4d73a70fe2a1f78" [ref=e1655]
+                    - cell "76/709e2a" [ref=e1656]
+                    - cell "󰗠 Succeeded" [ref=e1657]:
+                      - generic [ref=e482]:
+                        - generic [ref=e483]: 󰗠
+                        - generic [ref=e484]: Succeeded
+                    - cell "1" [ref=e1658]
+                    - cell "0" [ref=e1659]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1660]
+                    - cell "22781571" [ref=e1661]
+                    - cell "2026-01-14 02:37:00" [ref=e1662]:
+                      - time [ref=e491]: 2026-01-14 02:37:00
+                    - cell "15 h 47 m 20 s" [ref=e1663]
+                    - cell "1 h 56 m 54 s" [ref=e1664]
+                    - cell "151.3" [ref=e1665]
+                    - cell "0.2" [ref=e1666]
+                    - cell "418.3 MB" [ref=e1667]
+                    - cell "3.4 GB" [ref=e1668]
+                    - cell "415.9 GB" [ref=e1669]
+                    - cell "307.0 GB" [ref=e1670]
+                    - cell "8,089,240" [ref=e1671]
+                    - cell "5,074" [ref=e1672]
+                  - row "󰐙 8 fasterq_dump 0a1111e71d267d4aee741fb982a68b8f 8e/68b37e 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781570 2026-01-14 02:37:00 14 h 19 m 30 m 55 s 141.2 0.2 410.7 MB 3.4 GB 97.7 GB 72.1 GB 1,873,402 4,859" [ref=e1673]:
+                    - cell "󰐙 8" [ref=e1674]:
+                      - button "󰐙" [ref=e1675] [cursor=pointer]
+                      - text: "8"
+                    - cell "fasterq_dump" [ref=e1676]
+                    - cell "0a1111e71d267d4aee741fb982a68b8f" [ref=e1677]
+                    - cell "8e/68b37e" [ref=e1678]
+                    - cell "󰗠 Succeeded" [ref=e1679]:
+                      - generic [ref=e510]:
+                        - generic [ref=e511]: 󰗠
+                        - generic [ref=e512]: Succeeded
+                    - cell "1" [ref=e1680]
+                    - cell "0" [ref=e1681]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1682]
+                    - cell "22781570" [ref=e1683]
+                    - cell "2026-01-14 02:37:00" [ref=e1684]:
+                      - time [ref=e519]: 2026-01-14 02:37:00
+                    - cell "14 h 19 m" [ref=e1685]
+                    - cell "30 m 55 s" [ref=e1686]
+                    - cell "141.2" [ref=e1687]
+                    - cell "0.2" [ref=e1688]
+                    - cell "410.7 MB" [ref=e1689]
+                    - cell "3.4 GB" [ref=e1690]
+                    - cell "97.7 GB" [ref=e1691]
+                    - cell "72.1 GB" [ref=e1692]
+                    - cell "1,873,402" [ref=e1693]
+                    - cell "4,859" [ref=e1694]
+                  - row "󰐙 9 fasterq_dump b1ab504412326d2d56cc9fb46936ae1c 85/ea5e22 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781572 2026-01-14 02:37:00 14 h 14 m 15 s 23 m 36 s 142.3 0.2 400.4 MB 3.4 GB 68.6 GB 51.1 GB 1,324,766 11,221" [ref=e1695]:
+                    - cell "󰐙 9" [ref=e1696]:
+                      - button "󰐙" [ref=e1697] [cursor=pointer]
+                      - text: "9"
+                    - cell "fasterq_dump" [ref=e1698]
+                    - cell "b1ab504412326d2d56cc9fb46936ae1c" [ref=e1699]
+                    - cell "85/ea5e22" [ref=e1700]
+                    - cell "󰗠 Succeeded" [ref=e1701]:
+                      - generic [ref=e538]:
+                        - generic [ref=e539]: 󰗠
+                        - generic [ref=e540]: Succeeded
+                    - cell "1" [ref=e1702]
+                    - cell "0" [ref=e1703]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1704]
+                    - cell "22781572" [ref=e1705]
+                    - cell "2026-01-14 02:37:00" [ref=e1706]:
+                      - time [ref=e547]: 2026-01-14 02:37:00
+                    - cell "14 h 14 m 15 s" [ref=e1707]
+                    - cell "23 m 36 s" [ref=e1708]
+                    - cell "142.3" [ref=e1709]
+                    - cell "0.2" [ref=e1710]
+                    - cell "400.4 MB" [ref=e1711]
+                    - cell "3.4 GB" [ref=e1712]
+                    - cell "68.6 GB" [ref=e1713]
+                    - cell "51.1 GB" [ref=e1714]
+                    - cell "1,324,766" [ref=e1715]
+                    - cell "11,221" [ref=e1716]
+                  - row "󰐙 10 fasterq_dump 7ac6ac53f8f4a52e035948810b67b92a 55/6af799 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781573 2026-01-14 02:37:00 14 h 41 m 25 s 50 m 10 s 149.7 0.2 414.7 MB 3.4 GB 173.7 GB 128.3 GB 3,379,138 4,849" [ref=e1717]:
+                    - cell "󰐙 10" [ref=e1718]:
+                      - button "󰐙" [ref=e1719] [cursor=pointer]
+                      - text: "10"
+                    - cell "fasterq_dump" [ref=e1720]
+                    - cell "7ac6ac53f8f4a52e035948810b67b92a" [ref=e1721]
+                    - cell "55/6af799" [ref=e1722]
+                    - cell "󰗠 Succeeded" [ref=e1723]:
+                      - generic [ref=e566]:
+                        - generic [ref=e567]: 󰗠
+                        - generic [ref=e568]: Succeeded
+                    - cell "1" [ref=e1724]
+                    - cell "0" [ref=e1725]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1726]
+                    - cell "22781573" [ref=e1727]
+                    - cell "2026-01-14 02:37:00" [ref=e1728]:
+                      - time [ref=e575]: 2026-01-14 02:37:00
+                    - cell "14 h 41 m 25 s" [ref=e1729]
+                    - cell "50 m 10 s" [ref=e1730]
+                    - cell "149.7" [ref=e1731]
+                    - cell "0.2" [ref=e1732]
+                    - cell "414.7 MB" [ref=e1733]
+                    - cell "3.4 GB" [ref=e1734]
+                    - cell "173.7 GB" [ref=e1735]
+                    - cell "128.3 GB" [ref=e1736]
+                    - cell "3,379,138" [ref=e1737]
+                    - cell "4,849" [ref=e1738]
+                  - row "󰐙 11 fasterq_dump 7fca92b433b3833f667c936a3b449bbc 24/01a5ea 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781574 2026-01-14 02:37:00 15 h 10 m 20 s 1 h 18 m 31 s 148.9 0.2 406.4 MB 3.4 GB 262.7 GB 194.0 GB 5,155,745 5,057" [ref=e1739]:
+                    - cell "󰐙 11" [ref=e1740]:
+                      - button "󰐙" [ref=e1741] [cursor=pointer]
+                      - text: "11"
+                    - cell "fasterq_dump" [ref=e1742]
+                    - cell "7fca92b433b3833f667c936a3b449bbc" [ref=e1743]
+                    - cell "24/01a5ea" [ref=e1744]
+                    - cell "󰗠 Succeeded" [ref=e1745]:
+                      - generic [ref=e594]:
+                        - generic [ref=e595]: 󰗠
+                        - generic [ref=e596]: Succeeded
+                    - cell "1" [ref=e1746]
+                    - cell "0" [ref=e1747]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1748]
+                    - cell "22781574" [ref=e1749]
+                    - cell "2026-01-14 02:37:00" [ref=e1750]:
+                      - time [ref=e603]: 2026-01-14 02:37:00
+                    - cell "15 h 10 m 20 s" [ref=e1751]
+                    - cell "1 h 18 m 31 s" [ref=e1752]
+                    - cell "148.9" [ref=e1753]
+                    - cell "0.2" [ref=e1754]
+                    - cell "406.4 MB" [ref=e1755]
+                    - cell "3.4 GB" [ref=e1756]
+                    - cell "262.7 GB" [ref=e1757]
+                    - cell "194.0 GB" [ref=e1758]
+                    - cell "5,155,745" [ref=e1759]
+                    - cell "5,057" [ref=e1760]
+                  - row "󰐙 12 fasterq_dump a46b0d7c905c5213d37a7fbe787a41dd 12/846814 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781575 2026-01-14 02:37:00 14 h 13 m 34 s 16 m 33 s 139.7 0.2 419.0 MB 3.4 GB 53.0 GB 39.2 GB 1,025,019 5,059" [ref=e1761]:
+                    - cell "󰐙 12" [ref=e1762]:
+                      - button "󰐙" [ref=e1763] [cursor=pointer]
+                      - text: "12"
+                    - cell "fasterq_dump" [ref=e1764]
+                    - cell "a46b0d7c905c5213d37a7fbe787a41dd" [ref=e1765]
+                    - cell "12/846814" [ref=e1766]
+                    - cell "󰗠 Succeeded" [ref=e1767]:
+                      - generic [ref=e622]:
+                        - generic [ref=e623]: 󰗠
+                        - generic [ref=e624]: Succeeded
+                    - cell "1" [ref=e1768]
+                    - cell "0" [ref=e1769]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1770]
+                    - cell "22781575" [ref=e1771]
+                    - cell "2026-01-14 02:37:00" [ref=e1772]:
+                      - time [ref=e631]: 2026-01-14 02:37:00
+                    - cell "14 h 13 m 34 s" [ref=e1773]
+                    - cell "16 m 33 s" [ref=e1774]
+                    - cell "139.7" [ref=e1775]
+                    - cell "0.2" [ref=e1776]
+                    - cell "419.0 MB" [ref=e1777]
+                    - cell "3.4 GB" [ref=e1778]
+                    - cell "53.0 GB" [ref=e1779]
+                    - cell "39.2 GB" [ref=e1780]
+                    - cell "1,025,019" [ref=e1781]
+                    - cell "5,059" [ref=e1782]
+                  - row "󰐙 13 fasterq_dump 84aa0648ab72dae9f1f5fc57fdbd3159 18/1d4c9f 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781576 2026-01-14 02:37:00 15 h 38 m 30 s 1 h 40 m 55 s 153.7 0.2 417.2 MB 3.4 GB 362.6 GB 268.0 GB 7,057,464 5,189" [ref=e1783]:
+                    - cell "󰐙 13" [ref=e1784]:
+                      - button "󰐙" [ref=e1785] [cursor=pointer]
+                      - text: "13"
+                    - cell "fasterq_dump" [ref=e1786]
+                    - cell "84aa0648ab72dae9f1f5fc57fdbd3159" [ref=e1787]
+                    - cell "18/1d4c9f" [ref=e1788]
+                    - cell "󰗠 Succeeded" [ref=e1789]:
+                      - generic [ref=e650]:
+                        - generic [ref=e651]: 󰗠
+                        - generic [ref=e652]: Succeeded
+                    - cell "1" [ref=e1790]
+                    - cell "0" [ref=e1791]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1792]
+                    - cell "22781576" [ref=e1793]
+                    - cell "2026-01-14 02:37:00" [ref=e1794]:
+                      - time [ref=e659]: 2026-01-14 02:37:00
+                    - cell "15 h 38 m 30 s" [ref=e1795]
+                    - cell "1 h 40 m 55 s" [ref=e1796]
+                    - cell "153.7" [ref=e1797]
+                    - cell "0.2" [ref=e1798]
+                    - cell "417.2 MB" [ref=e1799]
+                    - cell "3.4 GB" [ref=e1800]
+                    - cell "362.6 GB" [ref=e1801]
+                    - cell "268.0 GB" [ref=e1802]
+                    - cell "7,057,464" [ref=e1803]
+                    - cell "5,189" [ref=e1804]
+                  - row "󰐙 14 fasterq_dump b58c7e54829aaba73b930392c200d301 9d/d1819b 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781577 2026-01-14 02:37:00 14 h 23 m 4 s 23 m 22 s 142.7 0.2 417.9 MB 3.4 GB 74.1 GB 54.8 GB 1,435,600 10,371" [ref=e1805]:
+                    - cell "󰐙 14" [ref=e1806]:
+                      - button "󰐙" [ref=e1807] [cursor=pointer]
+                      - text: "14"
+                    - cell "fasterq_dump" [ref=e1808]
+                    - cell "b58c7e54829aaba73b930392c200d301" [ref=e1809]
+                    - cell "9d/d1819b" [ref=e1810]
+                    - cell "󰗠 Succeeded" [ref=e1811]:
+                      - generic [ref=e678]:
+                        - generic [ref=e679]: 󰗠
+                        - generic [ref=e680]: Succeeded
+                    - cell "1" [ref=e1812]
+                    - cell "0" [ref=e1813]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1814]
+                    - cell "22781577" [ref=e1815]
+                    - cell "2026-01-14 02:37:00" [ref=e1816]:
+                      - time [ref=e687]: 2026-01-14 02:37:00
+                    - cell "14 h 23 m 4 s" [ref=e1817]
+                    - cell "23 m 22 s" [ref=e1818]
+                    - cell "142.7" [ref=e1819]
+                    - cell "0.2" [ref=e1820]
+                    - cell "417.9 MB" [ref=e1821]
+                    - cell "3.4 GB" [ref=e1822]
+                    - cell "74.1 GB" [ref=e1823]
+                    - cell "54.8 GB" [ref=e1824]
+                    - cell "1,435,600" [ref=e1825]
+                    - cell "10,371" [ref=e1826]
+                  - row "󰐙 15 fasterq_dump a1ac96a382f21b57f1047a4ce33ac471 b6/be72b2 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781578 2026-01-14 02:37:00 14 h 53 m 44 s 53 m 42 s 153 0.2 414.0 MB 3.4 GB 184.6 GB 136.5 GB 3,658,468 4,824" [ref=e1827]:
+                    - cell "󰐙 15" [ref=e1828]:
+                      - button "󰐙" [ref=e1829] [cursor=pointer]
+                      - text: "15"
+                    - cell "fasterq_dump" [ref=e1830]
+                    - cell "a1ac96a382f21b57f1047a4ce33ac471" [ref=e1831]
+                    - cell "b6/be72b2" [ref=e1832]
+                    - cell "󰗠 Succeeded" [ref=e1833]:
+                      - generic [ref=e706]:
+                        - generic [ref=e707]: 󰗠
+                        - generic [ref=e708]: Succeeded
+                    - cell "1" [ref=e1834]
+                    - cell "0" [ref=e1835]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1836]
+                    - cell "22781578" [ref=e1837]
+                    - cell "2026-01-14 02:37:00" [ref=e1838]:
+                      - time [ref=e715]: 2026-01-14 02:37:00
+                    - cell "14 h 53 m 44 s" [ref=e1839]
+                    - cell "53 m 42 s" [ref=e1840]
+                    - cell "153" [ref=e1841]
+                    - cell "0.2" [ref=e1842]
+                    - cell "414.0 MB" [ref=e1843]
+                    - cell "3.4 GB" [ref=e1844]
+                    - cell "184.6 GB" [ref=e1845]
+                    - cell "136.5 GB" [ref=e1846]
+                    - cell "3,658,468" [ref=e1847]
+                    - cell "4,824" [ref=e1848]
+                  - row "󰐙 16 fasterq_dump 09f1b060f76d6a4e094ad5c7a13891df a7/b72111 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781579 2026-01-14 02:37:00 15 h 8 m 29 s 1 h 6 m 29 s 153.8 0.2 411.0 MB 3.4 GB 230.4 GB 170.5 GB 4,454,866 5,017" [ref=e1849]:
+                    - cell "󰐙 16" [ref=e1850]:
+                      - button "󰐙" [ref=e1851] [cursor=pointer]
+                      - text: "16"
+                    - cell "fasterq_dump" [ref=e1852]
+                    - cell "09f1b060f76d6a4e094ad5c7a13891df" [ref=e1853]
+                    - cell "a7/b72111" [ref=e1854]
+                    - cell "󰗠 Succeeded" [ref=e1855]:
+                      - generic [ref=e734]:
+                        - generic [ref=e735]: 󰗠
+                        - generic [ref=e736]: Succeeded
+                    - cell "1" [ref=e1856]
+                    - cell "0" [ref=e1857]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1858]
+                    - cell "22781579" [ref=e1859]
+                    - cell "2026-01-14 02:37:00" [ref=e1860]:
+                      - time [ref=e743]: 2026-01-14 02:37:00
+                    - cell "15 h 8 m 29 s" [ref=e1861]
+                    - cell "1 h 6 m 29 s" [ref=e1862]
+                    - cell "153.8" [ref=e1863]
+                    - cell "0.2" [ref=e1864]
+                    - cell "411.0 MB" [ref=e1865]
+                    - cell "3.4 GB" [ref=e1866]
+                    - cell "230.4 GB" [ref=e1867]
+                    - cell "170.5 GB" [ref=e1868]
+                    - cell "4,454,866" [ref=e1869]
+                    - cell "5,017" [ref=e1870]
+                  - row "󰐙 17 fasterq_dump 239d7e5b2e63c62c3cf8e56bf9ba98cd d2/a82a7d 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781580 2026-01-14 02:37:00 14 h 42 m 29 s 36 m 10 s 154.5 0.2 413.1 MB 3.4 GB 125.1 GB 92.4 GB 2,463,762 13,447" [ref=e1871]:
+                    - cell "󰐙 17" [ref=e1872]:
+                      - button "󰐙" [ref=e1873] [cursor=pointer]
+                      - text: "17"
+                    - cell "fasterq_dump" [ref=e1874]
+                    - cell "239d7e5b2e63c62c3cf8e56bf9ba98cd" [ref=e1875]
+                    - cell "d2/a82a7d" [ref=e1876]
+                    - cell "󰗠 Succeeded" [ref=e1877]:
+                      - generic [ref=e762]:
+                        - generic [ref=e763]: 󰗠
+                        - generic [ref=e764]: Succeeded
+                    - cell "1" [ref=e1878]
+                    - cell "0" [ref=e1879]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1880]
+                    - cell "22781580" [ref=e1881]
+                    - cell "2026-01-14 02:37:00" [ref=e1882]:
+                      - time [ref=e771]: 2026-01-14 02:37:00
+                    - cell "14 h 42 m 29 s" [ref=e1883]
+                    - cell "36 m 10 s" [ref=e1884]
+                    - cell "154.5" [ref=e1885]
+                    - cell "0.2" [ref=e1886]
+                    - cell "413.1 MB" [ref=e1887]
+                    - cell "3.4 GB" [ref=e1888]
+                    - cell "125.1 GB" [ref=e1889]
+                    - cell "92.4 GB" [ref=e1890]
+                    - cell "2,463,762" [ref=e1891]
+                    - cell "13,447" [ref=e1892]
+                  - row "󰐙 18 fasterq_dump 5f034ef877519a4330f97940a0ea81c5 d4/d2317c 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781581 2026-01-14 02:37:00 14 h 25 m 59 s 17 m 7 s 152.9 0.2 411.0 MB 3.4 GB 60.2 GB 44.5 GB 1,171,821 4,745" [ref=e1893]:
+                    - cell "󰐙 18" [ref=e1894]:
+                      - button "󰐙" [ref=e1895] [cursor=pointer]
+                      - text: "18"
+                    - cell "fasterq_dump" [ref=e1896]
+                    - cell "5f034ef877519a4330f97940a0ea81c5" [ref=e1897]
+                    - cell "d4/d2317c" [ref=e1898]
+                    - cell "󰗠 Succeeded" [ref=e1899]:
+                      - generic [ref=e790]:
+                        - generic [ref=e791]: 󰗠
+                        - generic [ref=e792]: Succeeded
+                    - cell "1" [ref=e1900]
+                    - cell "0" [ref=e1901]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1902]
+                    - cell "22781581" [ref=e1903]
+                    - cell "2026-01-14 02:37:00" [ref=e1904]:
+                      - time [ref=e799]: 2026-01-14 02:37:00
+                    - cell "14 h 25 m 59 s" [ref=e1905]
+                    - cell "17 m 7 s" [ref=e1906]
+                    - cell "152.9" [ref=e1907]
+                    - cell "0.2" [ref=e1908]
+                    - cell "411.0 MB" [ref=e1909]
+                    - cell "3.4 GB" [ref=e1910]
+                    - cell "60.2 GB" [ref=e1911]
+                    - cell "44.5 GB" [ref=e1912]
+                    - cell "1,171,821" [ref=e1913]
+                    - cell "4,745" [ref=e1914]
+                  - row "󰐙 19 fasterq_dump 3a3d1987148c265433debba7530319dd d3/25b7f6 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781582 2026-01-14 02:37:00 15 h 54 m 49 s 1 h 44 m 27 s 153 0.2 411.2 MB 3.4 GB 371.7 GB 274.5 GB 7,181,196 5,282" [ref=e1915]:
+                    - cell "󰐙 19" [ref=e1916]:
+                      - button "󰐙" [ref=e1917] [cursor=pointer]
+                      - text: "19"
+                    - cell "fasterq_dump" [ref=e1918]
+                    - cell "3a3d1987148c265433debba7530319dd" [ref=e1919]
+                    - cell "d3/25b7f6" [ref=e1920]
+                    - cell "󰗠 Succeeded" [ref=e1921]:
+                      - generic [ref=e818]:
+                        - generic [ref=e819]: 󰗠
+                        - generic [ref=e820]: Succeeded
+                    - cell "1" [ref=e1922]
+                    - cell "0" [ref=e1923]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1924]
+                    - cell "22781582" [ref=e1925]
+                    - cell "2026-01-14 02:37:00" [ref=e1926]:
+                      - time [ref=e827]: 2026-01-14 02:37:00
+                    - cell "15 h 54 m 49 s" [ref=e1927]
+                    - cell "1 h 44 m 27 s" [ref=e1928]
+                    - cell "153" [ref=e1929]
+                    - cell "0.2" [ref=e1930]
+                    - cell "411.2 MB" [ref=e1931]
+                    - cell "3.4 GB" [ref=e1932]
+                    - cell "371.7 GB" [ref=e1933]
+                    - cell "274.5 GB" [ref=e1934]
+                    - cell "7,181,196" [ref=e1935]
+                    - cell "5,282" [ref=e1936]
+                  - row "󰐙 20 fasterq_dump c3902a23ce8afaccfd1165d3452a8010 5b/654df8 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781583 2026-01-14 02:37:00 14 h 47 m 14 s 35 m 26 s 154.2 0.2 411.5 MB 3.4 GB 130.5 GB 96.2 GB 2,503,156 4,819" [ref=e1937]:
+                    - cell "󰐙 20" [ref=e1938]:
+                      - button "󰐙" [ref=e1939] [cursor=pointer]
+                      - text: "20"
+                    - cell "fasterq_dump" [ref=e1940]
+                    - cell "c3902a23ce8afaccfd1165d3452a8010" [ref=e1941]
+                    - cell "5b/654df8" [ref=e1942]
+                    - cell "󰗠 Succeeded" [ref=e1943]:
+                      - generic [ref=e846]:
+                        - generic [ref=e847]: 󰗠
+                        - generic [ref=e848]: Succeeded
+                    - cell "1" [ref=e1944]
+                    - cell "0" [ref=e1945]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1946]
+                    - cell "22781583" [ref=e1947]
+                    - cell "2026-01-14 02:37:00" [ref=e1948]:
+                      - time [ref=e855]: 2026-01-14 02:37:00
+                    - cell "14 h 47 m 14 s" [ref=e1949]
+                    - cell "35 m 26 s" [ref=e1950]
+                    - cell "154.2" [ref=e1951]
+                    - cell "0.2" [ref=e1952]
+                    - cell "411.5 MB" [ref=e1953]
+                    - cell "3.4 GB" [ref=e1954]
+                    - cell "130.5 GB" [ref=e1955]
+                    - cell "96.2 GB" [ref=e1956]
+                    - cell "2,503,156" [ref=e1957]
+                    - cell "4,819" [ref=e1958]
+                  - row "󰐙 21 fasterq_dump 843ddad5386e24daaa22ed561f6c5277 63/ba4d44 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781584 2026-01-14 02:37:00 14 h 42 m 49 s 30 m 29 s 154.2 0.2 410.3 MB 3.4 GB 102.9 GB 76.0 GB 1,987,648 4,813" [ref=e1959]:
+                    - cell "󰐙 21" [ref=e1960]:
+                      - button "󰐙" [ref=e1961] [cursor=pointer]
+                      - text: "21"
+                    - cell "fasterq_dump" [ref=e1962]
+                    - cell "843ddad5386e24daaa22ed561f6c5277" [ref=e1963]
+                    - cell "63/ba4d44" [ref=e1964]
+                    - cell "󰗠 Succeeded" [ref=e1965]:
+                      - generic [ref=e874]:
+                        - generic [ref=e875]: 󰗠
+                        - generic [ref=e876]: Succeeded
+                    - cell "1" [ref=e1966]
+                    - cell "0" [ref=e1967]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1968]
+                    - cell "22781584" [ref=e1969]
+                    - cell "2026-01-14 02:37:00" [ref=e1970]:
+                      - time [ref=e883]: 2026-01-14 02:37:00
+                    - cell "14 h 42 m 49 s" [ref=e1971]
+                    - cell "30 m 29 s" [ref=e1972]
+                    - cell "154.2" [ref=e1973]
+                    - cell "0.2" [ref=e1974]
+                    - cell "410.3 MB" [ref=e1975]
+                    - cell "3.4 GB" [ref=e1976]
+                    - cell "102.9 GB" [ref=e1977]
+                    - cell "76.0 GB" [ref=e1978]
+                    - cell "1,987,648" [ref=e1979]
+                    - cell "4,813" [ref=e1980]
+                  - row "󰐙 22 fasterq_dump 696a22146ab30522b9d4db11d1965d9c 42/1427a6 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781585 2026-01-14 02:37:00 14 h 29 m 54 s 16 m 17 s 153.9 0.2 410.8 MB 3.4 GB 58.4 GB 43.1 GB 1,145,293 4,742" [ref=e1981]:
+                    - cell "󰐙 22" [ref=e1982]:
+                      - button "󰐙" [ref=e1983] [cursor=pointer]
+                      - text: "22"
+                    - cell "fasterq_dump" [ref=e1984]
+                    - cell "696a22146ab30522b9d4db11d1965d9c" [ref=e1985]
+                    - cell "42/1427a6" [ref=e1986]
+                    - cell "󰗠 Succeeded" [ref=e1987]:
+                      - generic [ref=e902]:
+                        - generic [ref=e903]: 󰗠
+                        - generic [ref=e904]: Succeeded
+                    - cell "1" [ref=e1988]
+                    - cell "0" [ref=e1989]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e1990]
+                    - cell "22781585" [ref=e1991]
+                    - cell "2026-01-14 02:37:00" [ref=e1992]:
+                      - time [ref=e911]: 2026-01-14 02:37:00
+                    - cell "14 h 29 m 54 s" [ref=e1993]
+                    - cell "16 m 17 s" [ref=e1994]
+                    - cell "153.9" [ref=e1995]
+                    - cell "0.2" [ref=e1996]
+                    - cell "410.8 MB" [ref=e1997]
+                    - cell "3.4 GB" [ref=e1998]
+                    - cell "58.4 GB" [ref=e1999]
+                    - cell "43.1 GB" [ref=e2000]
+                    - cell "1,145,293" [ref=e2001]
+                    - cell "4,742" [ref=e2002]
+                  - row "󰐙 23 fasterq_dump 8e3d5ed09d10a335cb64fc2d979ea296 75/a8cd74 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781586 2026-01-14 02:37:00 14 h 32 m 44 s 18 m 26 s 153 0.2 415.8 MB 3.4 GB 64.0 GB 47.3 GB 1,230,706 4,677" [ref=e2003]:
+                    - cell "󰐙 23" [ref=e2004]:
+                      - button "󰐙" [ref=e2005] [cursor=pointer]
+                      - text: "23"
+                    - cell "fasterq_dump" [ref=e2006]
+                    - cell "8e3d5ed09d10a335cb64fc2d979ea296" [ref=e2007]
+                    - cell "75/a8cd74" [ref=e2008]
+                    - cell "󰗠 Succeeded" [ref=e2009]:
+                      - generic [ref=e930]:
+                        - generic [ref=e931]: 󰗠
+                        - generic [ref=e932]: Succeeded
+                    - cell "1" [ref=e2010]
+                    - cell "0" [ref=e2011]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e2012]
+                    - cell "22781586" [ref=e2013]
+                    - cell "2026-01-14 02:37:00" [ref=e2014]:
+                      - time [ref=e939]: 2026-01-14 02:37:00
+                    - cell "14 h 32 m 44 s" [ref=e2015]
+                    - cell "18 m 26 s" [ref=e2016]
+                    - cell "153" [ref=e2017]
+                    - cell "0.2" [ref=e2018]
+                    - cell "415.8 MB" [ref=e2019]
+                    - cell "3.4 GB" [ref=e2020]
+                    - cell "64.0 GB" [ref=e2021]
+                    - cell "47.3 GB" [ref=e2022]
+                    - cell "1,230,706" [ref=e2023]
+                    - cell "4,677" [ref=e2024]
+                  - row "󰐙 24 fasterq_dump 11958147cc388706b568fb1fd1b1a879 85/448c51 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781587 2026-01-14 02:37:00 14 h 43 m 23 s 29 m 6 s 153.8 0.2 413.2 MB 3.4 GB 106.3 GB 78.4 GB 2,081,496 11,647" [ref=e2025]:
+                    - cell "󰐙 24" [ref=e2026]:
+                      - button "󰐙" [ref=e2027] [cursor=pointer]
+                      - text: "24"
+                    - cell "fasterq_dump" [ref=e2028]
+                    - cell "11958147cc388706b568fb1fd1b1a879" [ref=e2029]
+                    - cell "85/448c51" [ref=e2030]
+                    - cell "󰗠 Succeeded" [ref=e2031]:
+                      - generic [ref=e958]:
+                        - generic [ref=e959]: 󰗠
+                        - generic [ref=e960]: Succeeded
+                    - cell "1" [ref=e2032]
+                    - cell "0" [ref=e2033]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e2034]
+                    - cell "22781587" [ref=e2035]
+                    - cell "2026-01-14 02:37:00" [ref=e2036]:
+                      - time [ref=e967]: 2026-01-14 02:37:00
+                    - cell "14 h 43 m 23 s" [ref=e2037]
+                    - cell "29 m 6 s" [ref=e2038]
+                    - cell "153.8" [ref=e2039]
+                    - cell "0.2" [ref=e2040]
+                    - cell "413.2 MB" [ref=e2041]
+                    - cell "3.4 GB" [ref=e2042]
+                    - cell "106.3 GB" [ref=e2043]
+                    - cell "78.4 GB" [ref=e2044]
+                    - cell "2,081,496" [ref=e2045]
+                    - cell "11,647" [ref=e2046]
+                  - row "󰐙 25 fasterq_dump 9c4717ba8bbe45b7bbf772748521dd46 4a/8d224a Failed 1 140 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781588 2026-01-14 02:37:00 17 h 18 m 4 s 2 h 59 m 6 s - - - - - - -" [ref=e2047]:
+                    - cell "󰐙 25" [ref=e2048]:
+                      - button "󰐙" [ref=e2049] [cursor=pointer]
+                      - text: "25"
+                    - cell "fasterq_dump" [ref=e2050]
+                    - cell "9c4717ba8bbe45b7bbf772748521dd46" [ref=e2051]
+                    - cell "4a/8d224a" [ref=e2052]
+                    - cell "Failed" [ref=e2053]:
+                      - generic [ref=e986]:
+                        - img [ref=e989]
+                        - generic [ref=e991]: Failed
+                    - cell "1" [ref=e2054]
+                    - cell "140" [ref=e2055]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e2056]
+                    - cell "22781588" [ref=e2057]
+                    - cell "2026-01-14 02:37:00" [ref=e2058]:
+                      - time [ref=e998]: 2026-01-14 02:37:00
+                    - cell "17 h 18 m 4 s" [ref=e2059]
+                    - cell "2 h 59 m 6 s" [ref=e2060]
+                    - cell "-" [ref=e2061]
+                    - cell [ref=e1002]
+                    - cell "-" [ref=e2062]
+                    - cell "-" [ref=e2063]
+                    - cell "-" [ref=e2064]
+                    - cell "-" [ref=e2065]
+                    - cell "-" [ref=e2066]
+                    - cell "-" [ref=e2067]
+                  - row "󰐙 26 fasterq_dump 204f14a667a0b668a4a776e3220ba391 eb/406f5a 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781589 2026-01-14 02:37:00 14 h 36 m 19 s 15 m 152.8 0.2 479.6 MB 3.4 GB 51.1 GB 37.8 GB 994,305 8,212" [ref=e2068]:
+                    - cell "󰐙 26" [ref=e2069]:
+                      - button "󰐙" [ref=e2070] [cursor=pointer]
+                      - text: "26"
+                    - cell "fasterq_dump" [ref=e2071]
+                    - cell "204f14a667a0b668a4a776e3220ba391" [ref=e2072]
+                    - cell "eb/406f5a" [ref=e2073]
+                    - cell "󰗠 Succeeded" [ref=e2074]:
+                      - generic [ref=e1017]:
+                        - generic [ref=e1018]: 󰗠
+                        - generic [ref=e1019]: Succeeded
+                    - cell "1" [ref=e2075]
+                    - cell "0" [ref=e2076]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e2077]
+                    - cell "22781589" [ref=e2078]
+                    - cell "2026-01-14 02:37:00" [ref=e2079]:
+                      - time [ref=e1026]: 2026-01-14 02:37:00
+                    - cell "14 h 36 m 19 s" [ref=e2080]
+                    - cell "15 m" [ref=e2081]
+                    - cell "152.8" [ref=e2082]
+                    - cell "0.2" [ref=e2083]
+                    - cell "479.6 MB" [ref=e2084]
+                    - cell "3.4 GB" [ref=e2085]
+                    - cell "51.1 GB" [ref=e2086]
+                    - cell "37.8 GB" [ref=e2087]
+                    - cell "994,305" [ref=e2088]
+                    - cell "8,212" [ref=e2089]
+                  - row "󰐙 27 fasterq_dump e8ee1fdceb82e50dd58f19666bf37c73 74/967594 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781590 2026-01-14 02:37:00 14 h 35 m 13 s 12 m 9 s 153.4 0.2 413.6 MB 3.4 GB 43.5 GB 32.1 GB 838,036 7,395" [ref=e2090]:
+                    - cell "󰐙 27" [ref=e2091]:
+                      - button "󰐙" [ref=e2092] [cursor=pointer]
+                      - text: "27"
+                    - cell "fasterq_dump" [ref=e2093]
+                    - cell "e8ee1fdceb82e50dd58f19666bf37c73" [ref=e2094]
+                    - cell "74/967594" [ref=e2095]
+                    - cell "󰗠 Succeeded" [ref=e2096]:
+                      - generic [ref=e1045]:
+                        - generic [ref=e1046]: 󰗠
+                        - generic [ref=e1047]: Succeeded
+                    - cell "1" [ref=e2097]
+                    - cell "0" [ref=e2098]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e2099]
+                    - cell "22781590" [ref=e2100]
+                    - cell "2026-01-14 02:37:00" [ref=e2101]:
+                      - time [ref=e1054]: 2026-01-14 02:37:00
+                    - cell "14 h 35 m 13 s" [ref=e2102]
+                    - cell "12 m 9 s" [ref=e2103]
+                    - cell "153.4" [ref=e2104]
+                    - cell "0.2" [ref=e2105]
+                    - cell "413.6 MB" [ref=e2106]
+                    - cell "3.4 GB" [ref=e2107]
+                    - cell "43.5 GB" [ref=e2108]
+                    - cell "32.1 GB" [ref=e2109]
+                    - cell "838,036" [ref=e2110]
+                    - cell "7,395" [ref=e2111]
+                  - row "󰐙 28 fasterq_dump 39ceddf93cf4ca72138d23f489e9e24a d9/64653e 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781591 2026-01-14 02:37:00 14 h 54 m 3 s 29 m 152.9 0.2 414.4 MB 3.4 GB 94.2 GB 69.6 GB 1,849,307 4,788" [ref=e2112]:
+                    - cell "󰐙 28" [ref=e2113]:
+                      - button "󰐙" [ref=e2114] [cursor=pointer]
+                      - text: "28"
+                    - cell "fasterq_dump" [ref=e2115]
+                    - cell "39ceddf93cf4ca72138d23f489e9e24a" [ref=e2116]
+                    - cell "d9/64653e" [ref=e2117]
+                    - cell "󰗠 Succeeded" [ref=e2118]:
+                      - generic [ref=e1073]:
+                        - generic [ref=e1074]: 󰗠
+                        - generic [ref=e1075]: Succeeded
+                    - cell "1" [ref=e2119]
+                    - cell "0" [ref=e2120]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e2121]
+                    - cell "22781591" [ref=e2122]
+                    - cell "2026-01-14 02:37:00" [ref=e2123]:
+                      - time [ref=e1082]: 2026-01-14 02:37:00
+                    - cell "14 h 54 m 3 s" [ref=e2124]
+                    - cell "29 m" [ref=e2125]
+                    - cell "152.9" [ref=e2126]
+                    - cell "0.2" [ref=e2127]
+                    - cell "414.4 MB" [ref=e2128]
+                    - cell "3.4 GB" [ref=e2129]
+                    - cell "94.2 GB" [ref=e2130]
+                    - cell "69.6 GB" [ref=e2131]
+                    - cell "1,849,307" [ref=e2132]
+                    - cell "4,788" [ref=e2133]
+                  - row "󰐙 29 fasterq_dump 6a4e177ce00593f0b49cef8657c71319 18/e368f6 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781592 2026-01-14 02:37:00 14 h 33 m 8 s 7 m 9 s 152.1 0.2 411.7 MB 3.4 GB 24.9 GB 18.4 GB 478,027 7,875" [ref=e2134]:
+                    - cell "󰐙 29" [ref=e2135]:
+                      - button "󰐙" [ref=e2136] [cursor=pointer]
+                      - text: "29"
+                    - cell "fasterq_dump" [ref=e2137]
+                    - cell "6a4e177ce00593f0b49cef8657c71319" [ref=e2138]
+                    - cell "18/e368f6" [ref=e2139]
+                    - cell "󰗠 Succeeded" [ref=e2140]:
+                      - generic [ref=e1101]:
+                        - generic [ref=e1102]: 󰗠
+                        - generic [ref=e1103]: Succeeded
+                    - cell "1" [ref=e2141]
+                    - cell "0" [ref=e2142]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e2143]
+                    - cell "22781592" [ref=e2144]
+                    - cell "2026-01-14 02:37:00" [ref=e2145]:
+                      - time [ref=e1110]: 2026-01-14 02:37:00
+                    - cell "14 h 33 m 8 s" [ref=e2146]
+                    - cell "7 m 9 s" [ref=e2147]
+                    - cell "152.1" [ref=e2148]
+                    - cell "0.2" [ref=e2149]
+                    - cell "411.7 MB" [ref=e2150]
+                    - cell "3.4 GB" [ref=e2151]
+                    - cell "24.9 GB" [ref=e2152]
+                    - cell "18.4 GB" [ref=e2153]
+                    - cell "478,027" [ref=e2154]
+                    - cell "7,875" [ref=e2155]
+                  - row "󰐙 30 fasterq_dump 7f49e04cd4cbaaaf72c01aaed7296e14 c6/8b5d0c 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781593 2026-01-14 02:37:00 14 h 55 m 43 s 27 m 21 s 152.7 0.2 499.0 MB 3.4 GB 93.3 GB 69.0 GB 1,763,860 4,763" [ref=e2156]:
+                    - cell "󰐙 30" [ref=e2157]:
+                      - button "󰐙" [ref=e2158] [cursor=pointer]
+                      - text: "30"
+                    - cell "fasterq_dump" [ref=e2159]
+                    - cell "7f49e04cd4cbaaaf72c01aaed7296e14" [ref=e2160]
+                    - cell "c6/8b5d0c" [ref=e2161]
+                    - cell "󰗠 Succeeded" [ref=e2162]:
+                      - generic [ref=e1129]:
+                        - generic [ref=e1130]: 󰗠
+                        - generic [ref=e1131]: Succeeded
+                    - cell "1" [ref=e2163]
+                    - cell "0" [ref=e2164]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e2165]
+                    - cell "22781593" [ref=e2166]
+                    - cell "2026-01-14 02:37:00" [ref=e2167]:
+                      - time [ref=e1138]: 2026-01-14 02:37:00
+                    - cell "14 h 55 m 43 s" [ref=e2168]
+                    - cell "27 m 21 s" [ref=e2169]
+                    - cell "152.7" [ref=e2170]
+                    - cell "0.2" [ref=e2171]
+                    - cell "499.0 MB" [ref=e2172]
+                    - cell "3.4 GB" [ref=e2173]
+                    - cell "93.3 GB" [ref=e2174]
+                    - cell "69.0 GB" [ref=e2175]
+                    - cell "1,763,860" [ref=e2176]
+                    - cell "4,763" [ref=e2177]
+                  - row "󰐙 31 fasterq_dump 8563a2b4a887444fb3d21ec88a5b7af1 b8/4dae5f 󰗠 Succeeded 1 0 /scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img 22781594 2026-01-14 02:37:00 14 h 54 m 48 s 24 m 56 s 151.7 0.2 411.0 MB 3.4 GB 88.8 GB 65.5 GB 1,741,315 4,784" [ref=e2178]:
+                    - cell "󰐙 31" [ref=e2179]:
+                      - button "󰐙" [ref=e2180] [cursor=pointer]
+                      - text: "31"
+                    - cell "fasterq_dump" [ref=e2181]
+                    - cell "8563a2b4a887444fb3d21ec88a5b7af1" [ref=e2182]
+                    - cell "b8/4dae5f" [ref=e2183]
+                    - cell "󰗠 Succeeded" [ref=e2184]:
+                      - generic [ref=e1157]:
+                        - generic [ref=e1158]: 󰗠
+                        - generic [ref=e1159]: Succeeded
+                    - cell "1" [ref=e2185]
+                    - cell "0" [ref=e2186]
+                    - cell "/scratch/alpine/seda0001_amc/apptainer_cache/seandavi-curatedmetagenomics-metaphlan4.2.2.img" [ref=e2187]
+                    - cell "22781594" [ref=e2188]
+                    - cell "2026-01-14 02:37:00" [ref=e2189]:
+                      - time [ref=e1166]: 2026-01-14 02:37:00
+                    - cell "14 h 54 m 48 s" [ref=e2190]
+                    - cell "24 m 56 s" [ref=e2191]
+                    - cell "151.7" [ref=e2192]
+                    - cell "0.2" [ref=e2193]
+                    - cell "411.0 MB" [ref=e2194]
+                    - cell "3.4 GB" [ref=e2195]
+                    - cell "88.8 GB" [ref=e2196]
+                    - cell "65.5 GB" [ref=e2197]
+                    - cell "1,741,315" [ref=e2198]
+                    - cell "4,784" [ref=e2199]
+              - generic [ref=e1178]:
+                - generic [ref=e1179]:
+                  - generic [ref=e1180]: Items per page
+                  - combobox "Items per page" [ref=e2200] [cursor=pointer]:
+                    - generic [ref=e1186]:
+                      - generic [ref=e1188]: "25"
+                      - img [ref=e1191]
+                - generic [ref=e1193]: Showing 1 – 25
+                - list [ref=e1196]:
+                  - listitem [ref=e1197]:
+                    - link "󰅁 Prev":
+                      - /url: ""
+                      - generic:
+                        - generic: 󰅁
+                        - text: Prev
+                  - listitem [ref=e1198]:
+                    - link "1" [ref=e2201] [cursor=pointer]:
+                      - /url: ""
+                  - listitem [ref=e1200]:
+                    - link "2" [ref=e2202] [cursor=pointer]:
+                      - /url: ""
+                  - listitem [ref=e1202]:
+                    - link "Next 󰅂" [ref=e2203] [cursor=pointer]:
+                      - /url: ""
+                      - generic [ref=e1204]:
+                        - text: Next
+                        - generic [ref=e1205]: 󰅂
+      - contentinfo [ref=e1206]:
+        - generic [ref=e1208]:
+          - list [ref=e1210]:
+            - listitem [ref=e1211]:
+              - text: © 2019-2026
+              - link "Seqera" [ref=e2204] [cursor=pointer]:
+                - /url: https://www.seqera.io
+            - listitem [ref=e1213]: Version 26.1.0-cycle52_4211b15
+          - img "Seqera Cloud Logo" [ref=e2205]
+          - list [ref=e1217]:
+            - listitem [ref=e1218]:
+              - link "Terms" [ref=e2206] [cursor=pointer]:
+                - /url: https://seqera.io/legal/terms-of-use
+            - listitem [ref=e1220]:
+              - link "Blog" [ref=e2207] [cursor=pointer]:
+                - /url: https://seqera.io/blog/
+            - listitem [ref=e1222]:
+              - link "Careers" [ref=e2208] [cursor=pointer]:
+                - /url: https://seqera.io/careers/
+            - listitem [ref=e1224]:
+              - link "Contact" [ref=e2209] [cursor=pointer]:
+                - /url: https://seqera.io/contact-us/

@@ -14,11 +14,17 @@ from __future__ import annotations
 
 import asyncio
 import re
+import socket
 import subprocess
 import time
 from pathlib import Path
 
 import typer
+try:
+    from importlib.metadata import version as _pkg_version
+    _NF_CLIENT_VERSION: str | None = _pkg_version("nf-client")
+except Exception:
+    _NF_CLIENT_VERSION = None
 
 from .client import JobClient
 from .config import ClientConfig
@@ -162,12 +168,16 @@ def daemon(
     config: Path = config_option,
     batch_size: int = typer.Option(0, "--batch-size", "-n", help="Samples per batch (0 = use config value)", min=0, max=500),
     poll_interval: float = typer.Option(5.0, "--poll-interval", help="Seconds to wait between polls when queue is empty or at concurrency limit"),
+    continuous: bool = typer.Option(False, "--continuous", help="Keep running when queue is empty, polling for new jobs (overrides config)"),
 ) -> None:
     """Claim and submit batches continuously until no pending jobs remain.
 
     In local mode: runs nextflow synchronously before claiming the next batch.
     In slurm mode: submits via sbatch (non-blocking) and immediately claims the
     next batch, subject to max_concurrent_runs from the config.
+
+    Pass --continuous (or set continuous: true in config) to keep running when
+    the queue is empty so new samples can be added without restarting the daemon.
     """
 
     async def _fetch(cfg: ClientConfig, limit: int) -> object:
@@ -178,15 +188,37 @@ def daemon(
         async with JobClient(cfg) as client:
             await client.report_submitted(run_name=run_name, sample_ids=sample_ids, executor_job_id=job_id)
 
+    async def _heartbeat(cfg: ClientConfig, agent_id: str, active_runs: int, status: str) -> None:
+        payload = {
+            "agent_id": agent_id,
+            "hostname": socket.gethostname(),
+            "workflow_id": cfg.dispatch.workflow_id,
+            "profile": cfg.profile,
+            "nf_client_version": _NF_CLIENT_VERSION,
+            "config_yaml": cfg.sanitized_config_yaml(),
+            "mode": cfg.submission.mode,
+            "batch_size": cfg.dispatch.batch_size,
+            "max_concurrent_runs": cfg.submission.max_concurrent_runs,
+            "active_runs": active_runs,
+            "status": status,
+        }
+        async with JobClient(cfg) as client:
+            await client.post_heartbeat(payload)
+
     cfg = ClientConfig.from_yaml(config)
     effective_batch_size = batch_size if batch_size > 0 else cfg.dispatch.batch_size
+    run_continuous = continuous or cfg.continuous
     mode = cfg.submission.mode
     max_concurrent = cfg.submission.max_concurrent_runs
     run_number = 0
 
+    hostname = socket.gethostname()
+    agent_id = f"{hostname}:{cfg.dispatch.workflow_id or 'all'}"
+
     typer.echo(
         f"Daemon started — mode={mode} batch_size={effective_batch_size}"
         + (f" max_concurrent_runs={max_concurrent}" if max_concurrent else "")
+        + (" continuous=true" if run_continuous else "")
     )
 
     while True:
@@ -196,12 +228,21 @@ def daemon(
             active = _count_active_slurm_jobs()
             if active >= max_concurrent:
                 typer.echo(f"  {active} SLURM jobs active (limit {max_concurrent}) — waiting {poll_interval}s")
+                asyncio.run(_heartbeat(cfg, agent_id, active, "running"))
                 time.sleep(poll_interval)
                 continue
+        else:
+            active = 0
+
+        asyncio.run(_heartbeat(cfg, agent_id, active, "running" if active > 0 else "idle"))
 
         batch = asyncio.run(_fetch(cfg, effective_batch_size))
 
         if batch is None:
+            if run_continuous:
+                typer.echo(f"No pending jobs — waiting {poll_interval}s")
+                time.sleep(poll_interval)
+                continue
             typer.echo("No pending jobs — daemon complete.")
             break
 

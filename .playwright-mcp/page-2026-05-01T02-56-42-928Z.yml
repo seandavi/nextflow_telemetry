@@ -1,0 +1,60 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]: "N"
+      - generic [ref=e8]:
+        - generic [ref=e9]: Nextflow
+        - generic [ref=e10]: Telemetry
+    - navigation [ref=e11]:
+      - button "◈ Overview Pipeline health" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: ◈
+        - generic [ref=e14]:
+          - generic [ref=e15]: Overview
+          - generic [ref=e16]: Pipeline health
+      - button "⬡ Process Metrics Failures & resources" [ref=e17] [cursor=pointer]:
+        - generic [ref=e18]: ⬡
+        - generic [ref=e19]:
+          - generic [ref=e20]: Process Metrics
+          - generic [ref=e21]: Failures & resources
+      - button "⬢ Workflows Registry" [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: ⬢
+        - generic [ref=e24]:
+          - generic [ref=e25]: Workflows
+          - generic [ref=e26]: Registry
+      - button "◉ Samples Catalog" [ref=e27] [cursor=pointer]:
+        - generic [ref=e28]: ◉
+        - generic [ref=e29]:
+          - generic [ref=e30]: Samples
+          - generic [ref=e31]: Catalog
+      - button "⟳ Dispatch & Admin" [active] [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: ⟳
+        - generic [ref=e34]:
+          - generic [ref=e35]: Dispatch
+          - generic [ref=e36]: "& Admin"
+    - generic [ref=e37]:
+      - generic [ref=e40]: Healthy
+      - generic [ref=e41]: v0.1.0
+  - main [ref=e42]:
+    - generic [ref=e171]:
+      - generic [ref=e172]:
+        - generic [ref=e173]: Dispatch & Admin
+        - generic [ref=e174]: Claim batches, confirm submissions, requeue expired claims, reconcile jobs
+      - generic [ref=e175]:
+        - button "Dispatch Batch" [ref=e176] [cursor=pointer]
+        - button "Confirm Submitted" [ref=e177] [cursor=pointer]
+        - button "Requeue Expired" [ref=e178] [cursor=pointer]
+        - button "Reconcile Jobs" [ref=e179] [cursor=pointer]
+      - generic [ref=e181]:
+        - generic [ref=e183]:
+          - generic [ref=e184]: POST /dispatch/batch
+          - generic [ref=e185]: Atomically claim a set of pending jobs and prepare a nextflow run command
+        - generic [ref=e186]:
+          - generic [ref=e187]:
+            - generic [ref=e188]: Workflow filter (optional)
+            - combobox [ref=e189] [cursor=pointer]:
+              - option "Any active workflow" [selected]
+              - option "testWF v1.0"
+          - generic [ref=e190]:
+            - generic [ref=e191]: Batch size (max 500)
+            - spinbutton [ref=e192]: "50"
+          - button "Claim Batch" [ref=e193] [cursor=pointer]

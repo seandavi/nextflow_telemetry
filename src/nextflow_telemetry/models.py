@@ -349,3 +349,36 @@ class WorkflowJobSummary(BaseModel):
     failed: int = Field(description="Jobs that exhausted retries and are marked failed.")
     dead_letter: int = Field(description="Jobs that were routed to the dead-letter queue.")
     completion_pct: float = Field(description="Percentage of jobs completed (0–100). Zero when total is 0.")
+
+
+class DaemonHeartbeat(BaseModel):
+    """Heartbeat payload sent by nf-client on every poll cycle."""
+    agent_id: str = Field(description="Unique agent identifier: '{hostname}:{workflow_id}'.")
+    hostname: str
+    workflow_id: str | None = None
+    profile: str | None = None
+    nf_client_version: str | None = None
+    config_yaml: str | None = Field(default=None, description="Sanitized client config (no credential paths) as YAML.")
+    mode: str = Field(description="Submission mode: local|slurm|pbs|lsf.")
+    batch_size: int
+    max_concurrent_runs: int | None = None
+    active_runs: int = 0
+    status: str = Field(default="idle", description="idle|running")
+
+
+class DaemonAgentResponse(BaseModel):
+    """Registered daemon agent as stored on the server."""
+    agent_id: str
+    hostname: str
+    workflow_id: str | None = None
+    profile: str | None = None
+    nf_client_version: str | None = None
+    config_yaml: str | None = None
+    mode: str
+    batch_size: int
+    max_concurrent_runs: int | None = None
+    active_runs: int
+    status: str
+    last_seen_at: datetime.datetime
+    started_at: datetime.datetime
+    is_active: bool = Field(description="True when last heartbeat was within the last 2 minutes.")

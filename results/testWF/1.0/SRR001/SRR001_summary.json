@@ -1,0 +1,7 @@
+{
+  "sample_id": "SRR001",
+  "workflow_id": "testWF",
+  "workflow_version": "1.0",
+  "run_name": "rtest-manual-abc",
+  "status": "success"
+}

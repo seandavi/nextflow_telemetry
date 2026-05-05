@@ -1,0 +1,89 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]: "N"
+      - generic [ref=e8]:
+        - generic [ref=e9]: Nextflow
+        - generic [ref=e10]: Telemetry
+    - navigation [ref=e11]:
+      - button "Overview Pipeline health" [ref=e12] [cursor=pointer]:
+        - img [ref=e13]
+        - generic [ref=e18]:
+          - generic [ref=e19]: Overview
+          - generic [ref=e20]: Pipeline health
+      - button "Process Metrics Failures & resources" [ref=e21] [cursor=pointer]:
+        - img [ref=e22]
+        - generic [ref=e23]:
+          - generic [ref=e24]: Process Metrics
+          - generic [ref=e25]: Failures & resources
+      - button "Workflows Registry" [active] [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+        - generic [ref=e31]:
+          - generic [ref=e32]: Workflows
+          - generic [ref=e33]: Registry
+      - button "Samples Catalog" [ref=e34] [cursor=pointer]:
+        - img [ref=e35]
+        - generic [ref=e37]:
+          - generic [ref=e38]: Samples
+          - generic [ref=e39]: Catalog
+      - button "Dispatch & Admin" [ref=e40] [cursor=pointer]:
+        - img [ref=e41]
+        - generic [ref=e43]:
+          - generic [ref=e44]: Dispatch
+          - generic [ref=e45]: "& Admin"
+    - generic [ref=e46]:
+      - generic [ref=e49]: Healthy
+      - generic [ref=e50]:
+        - generic [ref=e51]: Auto-refresh
+        - combobox [ref=e52] [cursor=pointer]:
+          - option "10s"
+          - option "30s" [selected]
+          - option "1 min"
+          - option "2 min"
+      - generic [ref=e53]: v0.1.0
+  - main [ref=e54]:
+    - generic [ref=e289]:
+      - generic [ref=e290]:
+        - generic [ref=e291]:
+          - generic [ref=e292]: Workflows
+          - generic [ref=e293]: 2 registered · 1 active · 0 paused · 1 retired
+        - generic [ref=e294]:
+          - generic [ref=e295]: Updated 01:18:27 PM
+          - button "↻" [ref=e296] [cursor=pointer]
+          - button "+ Register Workflow" [ref=e297] [cursor=pointer]
+      - generic [ref=e298]:
+        - button "All" [ref=e299] [cursor=pointer]
+        - button "Active" [ref=e300] [cursor=pointer]
+        - button "Paused" [ref=e301] [cursor=pointer]
+        - button "Retired" [ref=e302] [cursor=pointer]
+      - generic [ref=e303]:
+        - generic [ref=e305] [cursor=pointer]:
+          - generic [ref=e307]:
+            - generic [ref=e308]:
+              - generic [ref=e309]: cmgd_nextflow
+              - generic [ref=e310]: v1.6.0
+              - generic [ref=e311]: active
+            - generic [ref=e313]: Metaphlan 4.2.2, no humann.
+          - generic [ref=e314]:
+            - generic [ref=e315]:
+              - generic [ref=e316]: Jobs
+              - generic [ref=e317]:
+                - text: 0/69
+                - generic [ref=e318]: · 0.0%
+            - generic [ref=e322]: 69 pending
+          - generic [ref=e323]: ▾
+        - generic [ref=e325] [cursor=pointer]:
+          - generic [ref=e327]:
+            - generic [ref=e328]:
+              - generic [ref=e329]: nf_testing
+              - generic [ref=e330]: v0.1.0
+              - generic [ref=e331]: retired
+            - generic [ref=e333]: Stub metagenomics pipeline for E2E testing
+          - generic [ref=e334]:
+            - generic [ref=e335]:
+              - generic [ref=e336]: Jobs
+              - generic [ref=e337]:
+                - text: 0/69
+                - generic [ref=e338]: · 0.0%
+            - generic [ref=e342]: 69 pending
+          - generic [ref=e343]: ▾

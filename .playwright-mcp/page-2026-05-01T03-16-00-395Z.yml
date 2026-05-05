@@ -1,0 +1,100 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]: "N"
+      - generic [ref=e8]:
+        - generic [ref=e9]: Nextflow
+        - generic [ref=e10]: Telemetry
+    - navigation [ref=e11]:
+      - button "◈ Overview Pipeline health" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: ◈
+        - generic [ref=e14]:
+          - generic [ref=e15]: Overview
+          - generic [ref=e16]: Pipeline health
+      - button "⬡ Process Metrics Failures & resources" [active] [ref=e17] [cursor=pointer]:
+        - generic [ref=e18]: ⬡
+        - generic [ref=e19]:
+          - generic [ref=e20]: Process Metrics
+          - generic [ref=e21]: Failures & resources
+      - button "⬢ Workflows Registry" [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: ⬢
+        - generic [ref=e24]:
+          - generic [ref=e25]: Workflows
+          - generic [ref=e26]: Registry
+      - button "◉ Samples Catalog" [ref=e27] [cursor=pointer]:
+        - generic [ref=e28]: ◉
+        - generic [ref=e29]:
+          - generic [ref=e30]: Samples
+          - generic [ref=e31]: Catalog
+      - button "⟳ Dispatch & Admin" [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: ⟳
+        - generic [ref=e34]:
+          - generic [ref=e35]: Dispatch
+          - generic [ref=e36]: "& Admin"
+    - generic [ref=e37]:
+      - generic [ref=e40]: Healthy
+      - generic [ref=e41]: v0.1.0
+  - main [ref=e42]:
+    - generic [ref=e45]:
+      - generic [ref=e46]:
+        - generic [ref=e47]: Process Metrics
+        - generic [ref=e48]: Task-level telemetry across all Nextflow runs · last 30 days
+      - generic [ref=e49]:
+        - button "Failures" [ref=e50] [cursor=pointer]
+        - button "Retries" [ref=e51] [cursor=pointer]
+        - button "Resources" [ref=e52] [cursor=pointer]
+        - button "Signatures" [ref=e53] [cursor=pointer]
+      - generic [ref=e54]:
+        - generic [ref=e56]:
+          - generic [ref=e57]: Failure Rate by Process
+          - generic [ref=e58]: Ranked by total failures · min 50 samples
+        - table [ref=e60]:
+          - rowgroup [ref=e61]:
+            - row "Process Total Success Failed Failure Rate Modal Exit" [ref=e62]:
+              - columnheader "Process" [ref=e63]
+              - columnheader "Total" [ref=e64]
+              - columnheader "Success" [ref=e65]
+              - columnheader "Failed" [ref=e66]
+              - columnheader "Failure Rate" [ref=e67]
+              - columnheader "Modal Exit" [ref=e68]
+          - rowgroup [ref=e69]:
+            - row "QC_READS 70 70 0 0.0% —" [ref=e70]:
+              - cell "QC_READS" [ref=e71]
+              - cell "70" [ref=e72]
+              - cell "70" [ref=e73]
+              - cell "0" [ref=e74]
+              - cell "0.0%" [ref=e75]:
+                - generic [ref=e78]: 0.0%
+              - cell "—" [ref=e79]
+            - row "MARK_COMPLETE 70 70 0 0.0% —" [ref=e80]:
+              - cell "MARK_COMPLETE" [ref=e81]
+              - cell "70" [ref=e82]
+              - cell "70" [ref=e83]
+              - cell "0" [ref=e84]
+              - cell "0.0%" [ref=e85]:
+                - generic [ref=e88]: 0.0%
+              - cell "—" [ref=e89]
+            - row "AGGREGATE_RESULTS 70 70 0 0.0% —" [ref=e90]:
+              - cell "AGGREGATE_RESULTS" [ref=e91]
+              - cell "70" [ref=e92]
+              - cell "70" [ref=e93]
+              - cell "0" [ref=e94]
+              - cell "0.0%" [ref=e95]:
+                - generic [ref=e98]: 0.0%
+              - cell "—" [ref=e99]
+            - row "PROFILE_TAXA 70 70 0 0.0% —" [ref=e100]:
+              - cell "PROFILE_TAXA" [ref=e101]
+              - cell "70" [ref=e102]
+              - cell "70" [ref=e103]
+              - cell "0" [ref=e104]
+              - cell "0.0%" [ref=e105]:
+                - generic [ref=e108]: 0.0%
+              - cell "—" [ref=e109]
+            - row "FETCH_READS 70 70 0 0.0% —" [ref=e110]:
+              - cell "FETCH_READS" [ref=e111]
+              - cell "70" [ref=e112]
+              - cell "70" [ref=e113]
+              - cell "0" [ref=e114]
+              - cell "0.0%" [ref=e115]:
+                - generic [ref=e118]: 0.0%
+              - cell "—" [ref=e119]

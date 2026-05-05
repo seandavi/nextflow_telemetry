@@ -314,3 +314,20 @@ export interface WorkflowJobSummary {
   dead_letter: number
   completion_pct: number
 }
+
+export interface DaemonAgentResponse {
+  agent_id: string
+  hostname: string
+  workflow_id: string | null
+  profile: string | null
+  nf_client_version: string | null
+  config_yaml: string | null
+  mode: string
+  batch_size: number
+  max_concurrent_runs: number | null
+  active_runs: number
+  status: 'idle' | 'running'
+  last_seen_at: string
+  started_at: string
+  is_active: boolean
+}

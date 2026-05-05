@@ -164,3 +164,24 @@ dead_letter_tbl = Table(
     UniqueConstraint("job_id", name="uq_dlq_job_id"),
     Index("ix_dlq_resolved", "resolved_at"),
 )
+
+# ---------------------------------------------------------------------------
+# Daemon agent registry — upserted by nf-client on every heartbeat
+# ---------------------------------------------------------------------------
+daemon_agents_tbl = Table(
+    "daemon_agents",
+    metadata,
+    Column("agent_id", String, primary_key=True),   # "{hostname}:{workflow_id}"
+    Column("hostname", String, nullable=False),
+    Column("workflow_id", String, nullable=True),
+    Column("profile", String, nullable=True),
+    Column("nf_client_version", String, nullable=True),
+    Column("config_yaml", Text, nullable=True),      # sanitized — no credential paths
+    Column("mode", String, nullable=False),          # local|slurm|pbs|lsf
+    Column("batch_size", Integer, nullable=False),
+    Column("max_concurrent_runs", Integer, nullable=True),
+    Column("active_runs", Integer, nullable=False, default=0),
+    Column("status", String, nullable=False, default="idle"),  # idle|running
+    Column("last_seen_at", DateTime(timezone=True), nullable=False),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+)

@@ -1,0 +1,261 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]: "N"
+      - generic [ref=e8]:
+        - generic [ref=e9]: Nextflow
+        - generic [ref=e10]: Telemetry
+    - navigation [ref=e11]:
+      - button "◈ Overview Pipeline health" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: ◈
+        - generic [ref=e14]:
+          - generic [ref=e15]: Overview
+          - generic [ref=e16]: Pipeline health
+      - button "⬡ Process Metrics Failures & resources" [active] [ref=e17] [cursor=pointer]:
+        - generic [ref=e18]: ⬡
+        - generic [ref=e19]:
+          - generic [ref=e20]: Process Metrics
+          - generic [ref=e21]: Failures & resources
+      - button "⬢ Workflows Registry" [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: ⬢
+        - generic [ref=e24]:
+          - generic [ref=e25]: Workflows
+          - generic [ref=e26]: Registry
+      - button "◉ Samples Catalog" [ref=e27] [cursor=pointer]:
+        - generic [ref=e28]: ◉
+        - generic [ref=e29]:
+          - generic [ref=e30]: Samples
+          - generic [ref=e31]: Catalog
+      - button "⟳ Dispatch & Admin" [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: ⟳
+        - generic [ref=e34]:
+          - generic [ref=e35]: Dispatch
+          - generic [ref=e36]: "& Admin"
+    - generic [ref=e37]:
+      - generic [ref=e40]: Healthy
+      - generic [ref=e41]:
+        - generic [ref=e42]: Auto-refresh
+        - combobox [ref=e43] [cursor=pointer]:
+          - option "10s"
+          - option "30s" [selected]
+          - option "1 min"
+          - option "2 min"
+      - generic [ref=e44]: v0.1.0
+  - main [ref=e45]:
+    - generic [ref=e415]:
+      - generic [ref=e416]:
+        - generic [ref=e417]:
+          - generic [ref=e418]: Process Metrics
+          - generic [ref=e419]: Task-level telemetry across all Nextflow runs · last 30d
+        - generic [ref=e420]:
+          - generic [ref=e421]: Updated 07:45:33 PM
+          - button "↻" [ref=e422] [cursor=pointer]
+      - generic [ref=e423]:
+        - generic [ref=e425]:
+          - generic [ref=e426]: Window
+          - combobox [ref=e427] [cursor=pointer]:
+            - option "Last 30 min"
+            - option "Last 1 h"
+            - option "Last 6 h"
+            - option "Last 24 h"
+            - option "Last 7 d"
+            - option "Last 30 d" [selected]
+            - option "All time"
+        - generic [ref=e429]:
+          - generic [ref=e430]: Workflow
+          - combobox [ref=e431] [cursor=pointer]:
+            - option "All workflows" [selected]
+            - option "cmgd_nextflow"
+            - option "nf_testing"
+            - option "testWF"
+        - button "Clear filters" [ref=e432] [cursor=pointer]
+      - generic [ref=e433]:
+        - button "Failures" [ref=e434] [cursor=pointer]
+        - button "Retries" [ref=e435] [cursor=pointer]
+        - button "Resources" [ref=e436] [cursor=pointer]
+        - button "Signatures" [ref=e437] [cursor=pointer]
+        - button "Timeline" [ref=e438] [cursor=pointer]
+        - button "Tasks" [ref=e439] [cursor=pointer]
+      - generic [ref=e440]:
+        - generic [ref=e442]:
+          - generic [ref=e443]: Failure Rate by Process
+          - generic [ref=e444]: Ranked by total failures · error_action = what Nextflow did on failure
+        - table [ref=e446]:
+          - rowgroup [ref=e447]:
+            - row "Process Total Success Failed Failure Rate Modal Exit NF Action" [ref=e448]:
+              - columnheader "Process" [ref=e449]
+              - columnheader "Total" [ref=e450]
+              - columnheader "Success" [ref=e451]
+              - columnheader "Failed" [ref=e452]
+              - columnheader "Failure Rate" [ref=e453]
+              - columnheader "Modal Exit" [ref=e454]
+              - columnheader "NF Action" [ref=e455]
+          - rowgroup [ref=e456]:
+            - row "fasterq_dump 1.1K 714 423 37.2% exit 2147483647 TERMINATE" [ref=e457]:
+              - cell "fasterq_dump" [ref=e458]
+              - cell "1.1K" [ref=e459]
+              - cell "714" [ref=e460]
+              - cell "423" [ref=e461]
+              - cell "37.2%" [ref=e462]:
+                - generic [ref=e466]: 37.2%
+              - cell "exit 2147483647" [ref=e467]:
+                - generic [ref=e468]: exit 2147483647
+              - cell "TERMINATE" [ref=e469]:
+                - generic [ref=e470]: TERMINATE
+            - row "sample_to_markers 721 532 189 26.2% exit 137 RETRY" [ref=e471]:
+              - cell "sample_to_markers" [ref=e472]
+              - cell "721" [ref=e473]
+              - cell "532" [ref=e474]
+              - cell "189" [ref=e475]
+              - cell "26.2%" [ref=e476]:
+                - generic [ref=e480]: 26.2%
+              - cell "exit 137" [ref=e481]:
+                - generic [ref=e482]: exit 137
+              - cell "RETRY" [ref=e483]:
+                - generic [ref=e484]: RETRY
+            - row "install_metaphlan_db 68 6 62 91.2% exit 2147483647 TERMINATE" [ref=e485]:
+              - cell "install_metaphlan_db" [ref=e486]
+              - cell "68" [ref=e487]
+              - cell "6" [ref=e488]
+              - cell "62" [ref=e489]
+              - cell "91.2%" [ref=e490]:
+                - generic [ref=e494]: 91.2%
+              - cell "exit 2147483647" [ref=e495]:
+                - generic [ref=e496]: exit 2147483647
+              - cell "TERMINATE" [ref=e497]:
+                - generic [ref=e498]: TERMINATE
+            - row "kneaddata_human_database 57 3 54 94.7% exit 2147483647 TERMINATE" [ref=e499]:
+              - cell "kneaddata_human_database" [ref=e500]
+              - cell "57" [ref=e501]
+              - cell "3" [ref=e502]
+              - cell "54" [ref=e503]
+              - cell "94.7%" [ref=e504]:
+                - generic [ref=e508]: 94.7%
+              - cell "exit 2147483647" [ref=e509]:
+                - generic [ref=e510]: exit 2147483647
+              - cell "TERMINATE" [ref=e511]:
+                - generic [ref=e512]: TERMINATE
+            - row "kneaddata_mouse_database 55 3 52 94.5% exit 2147483647 TERMINATE" [ref=e513]:
+              - cell "kneaddata_mouse_database" [ref=e514]
+              - cell "55" [ref=e515]
+              - cell "3" [ref=e516]
+              - cell "52" [ref=e517]
+              - cell "94.5%" [ref=e518]:
+                - generic [ref=e522]: 94.5%
+              - cell "exit 2147483647" [ref=e523]:
+                - generic [ref=e524]: exit 2147483647
+              - cell "TERMINATE" [ref=e525]:
+                - generic [ref=e526]: TERMINATE
+            - row "uniref_db 53 3 50 94.3% exit 2147483647 TERMINATE" [ref=e527]:
+              - cell "uniref_db" [ref=e528]
+              - cell "53" [ref=e529]
+              - cell "3" [ref=e530]
+              - cell "50" [ref=e531]
+              - cell "94.3%" [ref=e532]:
+                - generic [ref=e536]: 94.3%
+              - cell "exit 2147483647" [ref=e537]:
+                - generic [ref=e538]: exit 2147483647
+              - cell "TERMINATE" [ref=e539]:
+                - generic [ref=e540]: TERMINATE
+            - row "chocophlan_db 52 3 49 94.2% exit 2147483647 TERMINATE" [ref=e541]:
+              - cell "chocophlan_db" [ref=e542]
+              - cell "52" [ref=e543]
+              - cell "3" [ref=e544]
+              - cell "49" [ref=e545]
+              - cell "94.2%" [ref=e546]:
+                - generic [ref=e550]: 94.2%
+              - cell "exit 2147483647" [ref=e551]:
+                - generic [ref=e552]: exit 2147483647
+              - cell "TERMINATE" [ref=e553]:
+                - generic [ref=e554]: TERMINATE
+            - row "STOCHASTIC_STEP 142 95 47 33.1% exit 42 RETRY" [ref=e555]:
+              - cell "STOCHASTIC_STEP" [ref=e556]
+              - cell "142" [ref=e557]
+              - cell "95" [ref=e558]
+              - cell "47" [ref=e559]
+              - cell "33.1%" [ref=e560]:
+                - generic [ref=e564]: 33.1%
+              - cell "exit 42" [ref=e565]:
+                - generic [ref=e566]: exit 42
+              - cell "RETRY" [ref=e567]:
+                - generic [ref=e568]: RETRY
+            - row "metaphlan_unknown_viruses_lists 622 591 31 5.0% exit 2147483647 TERMINATE" [ref=e569]:
+              - cell "metaphlan_unknown_viruses_lists" [ref=e570]
+              - cell "622" [ref=e571]
+              - cell "591" [ref=e572]
+              - cell "31" [ref=e573]
+              - cell "5.0%" [ref=e574]:
+                - generic [ref=e578]: 5.0%
+              - cell "exit 2147483647" [ref=e579]:
+                - generic [ref=e580]: exit 2147483647
+              - cell "TERMINATE" [ref=e581]:
+                - generic [ref=e582]: TERMINATE
+            - row "kneaddata 671 650 21 3.1% exit 2147483647 TERMINATE" [ref=e583]:
+              - cell "kneaddata" [ref=e584]
+              - cell "671" [ref=e585]
+              - cell "650" [ref=e586]
+              - cell "21" [ref=e587]
+              - cell "3.1%" [ref=e588]:
+                - generic [ref=e592]: 3.1%
+              - cell "exit 2147483647" [ref=e593]:
+                - generic [ref=e594]: exit 2147483647
+              - cell "TERMINATE" [ref=e595]:
+                - generic [ref=e596]: TERMINATE
+            - row "MARK_COMPLETE 664 645 19 2.9% exit 2147483647 TERMINATE" [ref=e597]:
+              - cell "MARK_COMPLETE" [ref=e598]
+              - cell "664" [ref=e599]
+              - cell "645" [ref=e600]
+              - cell "19" [ref=e601]
+              - cell "2.9%" [ref=e602]:
+                - generic [ref=e606]: 2.9%
+              - cell "exit 2147483647" [ref=e607]:
+                - generic [ref=e608]: exit 2147483647
+              - cell "TERMINATE" [ref=e609]:
+                - generic [ref=e610]: TERMINATE
+            - row "metaphlan_markers 590 572 18 3.0% exit 2147483647 —" [ref=e611]:
+              - cell "metaphlan_markers" [ref=e612]
+              - cell "590" [ref=e613]
+              - cell "572" [ref=e614]
+              - cell "18" [ref=e615]
+              - cell "3.0%" [ref=e616]:
+                - generic [ref=e620]: 3.0%
+              - cell "exit 2147483647" [ref=e621]:
+                - generic [ref=e622]: exit 2147483647
+              - cell "—" [ref=e623]
+            - row "AGGREGATE_RESULTS 162 150 12 7.4% exit 2147483647 —" [ref=e624]:
+              - cell "AGGREGATE_RESULTS" [ref=e625]
+              - cell "162" [ref=e626]
+              - cell "150" [ref=e627]
+              - cell "12" [ref=e628]
+              - cell "7.4%" [ref=e629]:
+                - generic [ref=e633]: 7.4%
+              - cell "exit 2147483647" [ref=e634]:
+                - generic [ref=e635]: exit 2147483647
+              - cell "—" [ref=e636]
+            - row "FETCH_READS 174 174 0 0.0% — —" [ref=e637]:
+              - cell "FETCH_READS" [ref=e638]
+              - cell "174" [ref=e639]
+              - cell "174" [ref=e640]
+              - cell "0" [ref=e641]
+              - cell "0.0%" [ref=e642]:
+                - generic [ref=e645]: 0.0%
+              - cell "—" [ref=e646]
+              - cell "—" [ref=e647]
+            - row "PROFILE_TAXA 174 174 0 0.0% — —" [ref=e648]:
+              - cell "PROFILE_TAXA" [ref=e649]
+              - cell "174" [ref=e650]
+              - cell "174" [ref=e651]
+              - cell "0" [ref=e652]
+              - cell "0.0%" [ref=e653]:
+                - generic [ref=e656]: 0.0%
+              - cell "—" [ref=e657]
+              - cell "—" [ref=e658]
+            - row "QC_READS 174 174 0 0.0% — —" [ref=e659]:
+              - cell "QC_READS" [ref=e660]
+              - cell "174" [ref=e661]
+              - cell "174" [ref=e662]
+              - cell "0" [ref=e663]
+              - cell "0.0%" [ref=e664]:
+                - generic [ref=e667]: 0.0%
+              - cell "—" [ref=e668]
+              - cell "—" [ref=e669]

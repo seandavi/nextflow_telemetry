@@ -1,0 +1,83 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]: "N"
+      - generic [ref=e8]:
+        - generic [ref=e9]: Nextflow
+        - generic [ref=e10]: Telemetry
+    - navigation [ref=e11]:
+      - button "◈ Overview Pipeline health" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: ◈
+        - generic [ref=e14]:
+          - generic [ref=e15]: Overview
+          - generic [ref=e16]: Pipeline health
+      - button "⬡ Process Metrics Failures & resources" [ref=e17] [cursor=pointer]:
+        - generic [ref=e18]: ⬡
+        - generic [ref=e19]:
+          - generic [ref=e20]: Process Metrics
+          - generic [ref=e21]: Failures & resources
+      - button "⬢ Workflows Registry" [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: ⬢
+        - generic [ref=e24]:
+          - generic [ref=e25]: Workflows
+          - generic [ref=e26]: Registry
+      - button "◉ Samples Catalog" [active] [ref=e27] [cursor=pointer]:
+        - generic [ref=e28]: ◉
+        - generic [ref=e29]:
+          - generic [ref=e30]: Samples
+          - generic [ref=e31]: Catalog
+      - button "⟳ Dispatch & Admin" [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: ⟳
+        - generic [ref=e34]:
+          - generic [ref=e35]: Dispatch
+          - generic [ref=e36]: "& Admin"
+    - generic [ref=e37]:
+      - generic [ref=e40]: Healthy
+      - generic [ref=e41]: v0.1.0
+  - main [ref=e42]:
+    - generic [ref=e122]:
+      - generic [ref=e123]:
+        - generic [ref=e124]:
+          - generic [ref=e125]: Sample Catalog
+          - generic [ref=e126]: 1 total samples registered
+        - button "+ Register Sample" [ref=e127] [cursor=pointer]
+      - button "TestCohort 1" [ref=e129] [cursor=pointer]:
+        - generic [ref=e130]: TestCohort
+        - generic [ref=e131]: "1"
+      - generic [ref=e134]:
+        - generic [ref=e135]: Search by sample ID
+        - textbox "SRR…" [ref=e136]
+      - generic [ref=e137]:
+        - table [ref=e139]:
+          - rowgroup [ref=e140]:
+            - row "# Sample ID Cohort Phenotype Source Reads Registered Updated" [ref=e141]:
+              - columnheader "#" [ref=e142]
+              - columnheader "Sample ID" [ref=e143]
+              - columnheader "Cohort" [ref=e144]
+              - columnheader "Phenotype" [ref=e145]
+              - columnheader "Source" [ref=e146]
+              - columnheader "Reads" [ref=e147]
+              - columnheader "Registered" [ref=e148]
+              - columnheader "Updated" [ref=e149]
+          - rowgroup [ref=e150]:
+            - row "1 SRR001 TestCohort Healthy — 0 Apr 30, 2026 9h ago" [ref=e151]:
+              - cell "1" [ref=e152]
+              - cell "SRR001" [ref=e153]
+              - cell "TestCohort" [ref=e154]:
+                - generic [ref=e155]: TestCohort
+              - cell "Healthy" [ref=e157]
+              - cell "—" [ref=e158]
+              - cell "0" [ref=e159]
+              - cell "Apr 30, 2026" [ref=e160]
+              - cell "9h ago" [ref=e161]
+        - generic [ref=e162]:
+          - generic [ref=e163]:
+            - text: Showing
+            - generic [ref=e164]: 1–1
+            - text: of 1
+          - generic [ref=e165]:
+            - button "«" [disabled] [ref=e166]
+            - button "‹ Prev" [disabled] [ref=e167]
+            - generic [ref=e168]: 1 / 1
+            - button "Next ›" [disabled] [ref=e169]
+            - button "»" [disabled] [ref=e170]

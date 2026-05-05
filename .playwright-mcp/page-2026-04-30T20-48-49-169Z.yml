@@ -1,0 +1,123 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]: "N"
+      - generic [ref=e8]:
+        - generic [ref=e9]: Nextflow
+        - generic [ref=e10]: Telemetry
+    - navigation [ref=e11]:
+      - button "◈ Overview Pipeline health" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: ◈
+        - generic [ref=e14]:
+          - generic [ref=e15]: Overview
+          - generic [ref=e16]: Pipeline health
+      - button "⬡ Process Metrics Failures & resources" [ref=e17] [cursor=pointer]:
+        - generic [ref=e18]: ⬡
+        - generic [ref=e19]:
+          - generic [ref=e20]: Process Metrics
+          - generic [ref=e21]: Failures & resources
+      - button "⬢ Workflows Registry" [active] [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: ⬢
+        - generic [ref=e24]:
+          - generic [ref=e25]: Workflows
+          - generic [ref=e26]: Registry
+      - button "◉ Samples Catalog" [ref=e27] [cursor=pointer]:
+        - generic [ref=e28]: ◉
+        - generic [ref=e29]:
+          - generic [ref=e30]: Samples
+          - generic [ref=e31]: Catalog
+      - button "⟳ Dispatch & Admin" [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: ⟳
+        - generic [ref=e34]:
+          - generic [ref=e35]: Dispatch
+          - generic [ref=e36]: "& Admin"
+    - generic [ref=e37]:
+      - generic [ref=e40]: Healthy
+      - generic [ref=e41]: v0.1.0
+  - main [ref=e42]:
+    - generic [ref=e626]:
+      - generic [ref=e627]:
+        - generic [ref=e628]:
+          - generic [ref=e629]: Workflows
+          - generic [ref=e630]: 5 registered · 3 active · 1 paused · 1 retired
+        - button "+ Register Workflow" [ref=e631] [cursor=pointer]
+      - generic [ref=e632]:
+        - button "All" [ref=e633] [cursor=pointer]
+        - button "Active" [ref=e634] [cursor=pointer]
+        - button "Paused" [ref=e635] [cursor=pointer]
+        - button "Retired" [ref=e636] [cursor=pointer]
+      - generic [ref=e637]:
+        - generic [ref=e639] [cursor=pointer]:
+          - generic [ref=e641]:
+            - generic [ref=e642]:
+              - generic [ref=e643]: curatedMetagenomics
+              - generic [ref=e644]: v3.2.1
+              - generic [ref=e645]: active
+            - generic [ref=e647]: Metagenomic profiling with Kraken2, Bracken, MetaPhlAn, and HUMAnN.
+          - generic [ref=e648]:
+            - generic [ref=e649]:
+              - generic [ref=e650]: Jobs
+              - generic [ref=e651]: 94.1K/98.2K
+            - generic [ref=e657]:
+              - generic [ref=e658]: 1.8K pending
+              - generic [ref=e659]: 420 running
+              - generic [ref=e660]: 1.8K failed
+          - generic [ref=e661]: ▾
+        - generic [ref=e663] [cursor=pointer]:
+          - generic [ref=e665]:
+            - generic [ref=e666]:
+              - generic [ref=e667]: rnaseqAnalysis
+              - generic [ref=e668]: v2.1.0
+              - generic [ref=e669]: active
+            - generic [ref=e671]: RNA-seq alignment and quantification with STAR and Salmon.
+          - generic [ref=e672]:
+            - generic [ref=e673]:
+              - generic [ref=e674]: Jobs
+              - generic [ref=e675]: 92.6K/96.4K
+            - generic [ref=e681]:
+              - generic [ref=e682]: 2.1K pending
+              - generic [ref=e683]: 380 running
+              - generic [ref=e684]: 1.3K failed
+          - generic [ref=e685]: ▾
+        - generic [ref=e687] [cursor=pointer]:
+          - generic [ref=e689]:
+            - generic [ref=e690]:
+              - generic [ref=e691]: variantCalling
+              - generic [ref=e692]: v4.0.0
+              - generic [ref=e693]: active
+            - generic [ref=e695]: Germline and somatic variant calling with GATK4.
+          - generic [ref=e696]:
+            - generic [ref=e697]:
+              - generic [ref=e698]: Jobs
+              - generic [ref=e699]: 43.2K/45.0K
+            - generic [ref=e705]:
+              - generic [ref=e706]: 800 pending
+              - generic [ref=e707]: 240 running
+              - generic [ref=e708]: 760 failed
+          - generic [ref=e709]: ▾
+        - generic [ref=e711] [cursor=pointer]:
+          - generic [ref=e713]:
+            - generic [ref=e714]:
+              - generic [ref=e715]: rnaseqAnalysis
+              - generic [ref=e716]: v2.0.1
+              - generic [ref=e717]: paused
+            - generic [ref=e719]: RNA-seq v2.0 (superseded by 2.1.0).
+          - generic [ref=e720]:
+            - generic [ref=e721]:
+              - generic [ref=e722]: Jobs
+              - generic [ref=e723]: 85.2K/88.0K
+            - generic [ref=e729]: 2.8K failed
+          - generic [ref=e730]: ▾
+        - generic [ref=e732] [cursor=pointer]:
+          - generic [ref=e734]:
+            - generic [ref=e735]:
+              - generic [ref=e736]: amplicon16S
+              - generic [ref=e737]: v1.0.0
+              - generic [ref=e738]: retired
+            - generic [ref=e740]: 16S rRNA amplicon analysis with DADA2 and QIIME2.
+          - generic [ref=e741]:
+            - generic [ref=e742]:
+              - generic [ref=e743]: Jobs
+              - generic [ref=e744]: 11.4K/12.0K
+            - generic [ref=e750]: 600 failed
+          - generic [ref=e751]: ▾

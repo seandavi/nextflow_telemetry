@@ -18,6 +18,7 @@ import type {
   SampleResponse,
   SampleRegisterRequest,
   SubmittedRequest,
+  DaemonAgentResponse,
 } from '../types'
 
 export interface MetricsFilters {
@@ -113,5 +114,10 @@ export const api = {
 
   admin: {
     reconcile: () => post<ReconcileResult>('/admin/reconcile-jobs'),
+  },
+
+  daemons: {
+    list: (activeOnly = false) =>
+      get<DaemonAgentResponse[]>(`/daemons/${activeOnly ? '?active_only=true' : ''}`),
   },
 }

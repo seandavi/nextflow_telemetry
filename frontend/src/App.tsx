@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { LayoutDashboard, BarChart2, GitBranch, FlaskConical, SendHorizonal, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, BarChart2, GitBranch, FlaskConical, SendHorizonal, Server, type LucideIcon } from 'lucide-react'
 import { T } from './tokens'
 import { MOCK_HEALTH } from './lib/mock-data'
 import OverviewPage from './pages/OverviewPage'
@@ -7,8 +7,9 @@ import MetricsPage from './pages/MetricsPage'
 import WorkflowsPage from './pages/WorkflowsPage'
 import SamplesPage from './pages/SamplesPage'
 import DispatchPage from './pages/DispatchPage'
+import InfraPage from './pages/InfraPage'
 
-type NavId = 'overview' | 'metrics' | 'workflows' | 'samples' | 'dispatch'
+type NavId = 'overview' | 'metrics' | 'workflows' | 'samples' | 'dispatch' | 'infra'
 
 const NAV: Array<{ id: NavId; label: string; icon: LucideIcon; sub: string }> = [
   { id: 'overview',  label: 'Overview',        icon: LayoutDashboard, sub: 'Pipeline health'      },
@@ -16,6 +17,7 @@ const NAV: Array<{ id: NavId; label: string; icon: LucideIcon; sub: string }> = 
   { id: 'workflows', label: 'Workflows',        icon: GitBranch,       sub: 'Registry'             },
   { id: 'samples',   label: 'Samples',          icon: FlaskConical,    sub: 'Catalog'              },
   { id: 'dispatch',  label: 'Dispatch',         icon: SendHorizonal,   sub: '& Admin'              },
+  { id: 'infra',     label: 'Infrastructure',   icon: Server,          sub: 'Daemon fleet'         },
 ]
 
 function HealthDot() {
@@ -135,6 +137,7 @@ export default function App() {
     workflows: <WorkflowsPage pollInterval={pollInterval} />,
     samples:   <SamplesPage   pollInterval={pollInterval} />,
     dispatch:  <DispatchPage />,
+    infra:     <InfraPage     pollInterval={pollInterval} />,
   }
 
   return (

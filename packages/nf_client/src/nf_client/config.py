@@ -40,6 +40,14 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+def _redact_defaults(d: dict) -> dict:
+    """Strip submission.defaults from a config dict (may contain credential paths)."""
+    out = dict(d)
+    if "submission" in out:
+        out["submission"] = {k: v for k, v in out["submission"].items() if k != "defaults"}
+    return out
+
+
 class DispatchConfig(BaseModel):
     batch_size: int = Field(default=50, ge=1, le=500)
     # Optional filters: if set, this client only pulls jobs for this workflow
@@ -59,6 +67,7 @@ class ClientConfig(BaseModel):
     server_url: str
     weblog_url: str
     profile: str = Field(default="standard", description="Nextflow profile passed as -profile to nextflow run. HPC-specific (e.g. 'anvil', 'alpine').")
+    continuous: bool = Field(default=False, description="Keep daemon running when queue is empty, polling for new jobs.")
     dispatch: DispatchConfig = Field(default_factory=DispatchConfig)
     submission: SubmissionConfig = Field(default_factory=SubmissionConfig)
 
@@ -67,3 +76,8 @@ class ClientConfig(BaseModel):
         path = Path(path)
         raw = yaml.safe_load(path.read_text())
         return cls.model_validate(raw)
+
+    def sanitized_config_yaml(self) -> str:
+        """Return config as YAML with submission.defaults stripped (may contain credential paths)."""
+        d = self.model_dump(mode="json")
+        return yaml.dump(_redact_defaults(d), default_flow_style=False, sort_keys=False)
