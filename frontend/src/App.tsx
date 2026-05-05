@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LayoutDashboard, BarChart2, GitBranch, FlaskConical, SendHorizonal, type LucideIcon } from 'lucide-react'
 import { T } from './tokens'
 import { MOCK_HEALTH } from './lib/mock-data'
 import OverviewPage from './pages/OverviewPage'
@@ -9,12 +10,12 @@ import DispatchPage from './pages/DispatchPage'
 
 type NavId = 'overview' | 'metrics' | 'workflows' | 'samples' | 'dispatch'
 
-const NAV: Array<{ id: NavId; label: string; icon: string; sub: string }> = [
-  { id: 'overview',  label: 'Overview',        icon: '◈', sub: 'Pipeline health'      },
-  { id: 'metrics',   label: 'Process Metrics', icon: '⬡', sub: 'Failures & resources' },
-  { id: 'workflows', label: 'Workflows',        icon: '⬢', sub: 'Registry'             },
-  { id: 'samples',   label: 'Samples',          icon: '◉', sub: 'Catalog'              },
-  { id: 'dispatch',  label: 'Dispatch',         icon: '⟳', sub: '& Admin'              },
+const NAV: Array<{ id: NavId; label: string; icon: LucideIcon; sub: string }> = [
+  { id: 'overview',  label: 'Overview',        icon: LayoutDashboard, sub: 'Pipeline health'      },
+  { id: 'metrics',   label: 'Process Metrics', icon: BarChart2,       sub: 'Failures & resources' },
+  { id: 'workflows', label: 'Workflows',        icon: GitBranch,       sub: 'Registry'             },
+  { id: 'samples',   label: 'Samples',          icon: FlaskConical,    sub: 'Catalog'              },
+  { id: 'dispatch',  label: 'Dispatch',         icon: SendHorizonal,   sub: '& Admin'              },
 ]
 
 function HealthDot() {
@@ -82,10 +83,9 @@ function Sidebar({ active, onNav, pollInterval, onPollInterval }: {
               onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
               onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
             >
-              <span style={{
-                fontSize: 16, width: 20, textAlign: 'center',
+              <item.icon size={16} style={{
                 color: isActive ? T.accent : T.muted, flexShrink: 0,
-              }}>{item.icon}</span>
+              }} />
               <div>
                 <div style={{ fontSize: 13, fontWeight: isActive ? 600 : 500, color: isActive ? T.text : T.muted }}>
                   {item.label}
