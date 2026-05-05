@@ -98,6 +98,13 @@ class ProcessMetricsService:
             workflow_id=workflow_id, workflow_version=workflow_version,
             run_name=run_name, sample_id=sample_id,
         )
+        fc2, _ = self._filter_clause(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+            workflow_id=workflow_id, workflow_version=workflow_version,
+            run_name=run_name, sample_id=sample_id,
+            table_alias="t2",
+        )
         params = {**params, "min_samples": min_samples, "limit": limit}
 
         cards_sql = text(
@@ -119,12 +126,14 @@ class ProcessMetricsService:
             select
               count(*) as process_completed_rows,
               count(distinct run_id) as distinct_runs,
-              (select count(distinct trace->>'process')
+              (select count(distinct t2.trace->>'process')
                from telemetry t2
                where t2.event in ('process_submitted','process_started','process_completed')
                  and t2.trace is not null
                  and t2.trace->>'process' is not null
-                 {fc}) as distinct_processes,
+                 and t2.trace->>'process' not like '%MARK_COMPLETE'
+                 and t2.trace->>'process' not like '%FINISHED'
+                 {fc2}) as distinct_processes,
               count(*) filter (where status = 'COMPLETED') as success_rows,
               count(*) filter (where status in ('FAILED', 'ABORTED')) as failure_rows,
               coalesce(round(100.0 * count(*) filter (where status in ('FAILED', 'ABORTED'))::numeric / nullif(count(*), 0), 2), 0) as failure_pct,
