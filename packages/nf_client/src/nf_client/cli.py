@@ -34,7 +34,8 @@ from .submission import (
 app = typer.Typer(help="nf-client: claim and submit Nextflow telemetry jobs")
 
 
-_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
+# run_name format: "r" + uuid7, e.g. r069fa00c-f146-74a9-8000-99ccb39f2d7e
+_RUN_NAME_RE = re.compile(r'^r[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
 
 
 def _count_active_slurm_jobs() -> int:
@@ -49,7 +50,7 @@ def _count_active_slurm_jobs() -> int:
         capture_output=True,
         text=True,
     )
-    return len([l for l in result.stdout.splitlines() if _UUID_RE.match(l.strip())])
+    return len([l for l in result.stdout.splitlines() if _RUN_NAME_RE.match(l.strip())])
 
 config_option = typer.Option(..., "--config", "-c", help="Path to client YAML config")
 dry_run_option = typer.Option(False, "--dry-run", help="Print what would be submitted without executing")
