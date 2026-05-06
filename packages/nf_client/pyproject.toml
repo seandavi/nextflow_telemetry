@@ -1,6 +1,6 @@
 [project]
 name = "nf-client"
-version = "0.1.0"
+version = "1.0.0"
 description = "Client library for fetching and reporting Nextflow telemetry jobs"
 readme = "README.md"
 requires-python = ">=3.11"
