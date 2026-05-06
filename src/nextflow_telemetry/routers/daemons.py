@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -99,5 +99,21 @@ def create_daemons_router(engine: AsyncEngine) -> APIRouter:
         if active_only:
             agents = [a for a in agents if a.is_active]
         return agents
+
+    @router.delete(
+        "/{agent_id:path}",
+        summary="Remove a daemon agent record",
+        description="Deletes a daemon agent record by agent_id. Use to clean up stale or ghost entries.",
+    )
+    async def delete_daemon(agent_id: str) -> dict:
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                delete(daemon_agents_tbl)
+                .where(daemon_agents_tbl.c.agent_id == agent_id)
+                .returning(daemon_agents_tbl.c.agent_id)
+            )
+            if not result.fetchone():
+                raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
+        return {"deleted": agent_id}
 
     return router

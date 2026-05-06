@@ -294,10 +294,14 @@ def daemon(
             }
             script = render_submission_script(cfg.submission.template_path, context)
 
-            if mode == "slurm":
-                executor_job_id = submit_slurm(script, export_none=cfg.submission.slurm_export_none)
-            elif mode == "pbs":
-                executor_job_id = submit_pbs(script)
+            try:
+                if mode == "slurm":
+                    executor_job_id = submit_slurm(script, export_none=cfg.submission.slurm_export_none)
+                elif mode == "pbs":
+                    executor_job_id = submit_pbs(script)
+            except Exception as e:
+                typer.echo(f"  ERROR: scheduler submission failed, skipping batch (will requeue via TTL): {e}", err=True)
+                continue
 
             typer.echo(f"  Submitted {mode.upper()} job {executor_job_id}")
 
