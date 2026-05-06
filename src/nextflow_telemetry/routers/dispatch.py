@@ -25,7 +25,7 @@ CLAIM_TTL_MINUTES = 5
 class DispatchBatchRequest(BaseModel):
     """Request body for claiming a batch of pending jobs."""
     limit: int = Field(default=50, ge=1, le=500, description="Maximum number of jobs to claim in this batch. All claimed jobs will be for the same workflow and version.")
-    workflow_id: str | None = Field(default=None, description="Optional: restrict the claim to a specific workflow. If omitted, the oldest pending jobs across any workflow are returned.")
+    workflow_id: list[str] | None = Field(default=None, description="Optional: restrict the claim to one or more workflows. If omitted, the oldest pending jobs across any workflow are returned.")
     workflow_version: str | None = Field(default=None, description="Optional: restrict the claim to a specific version of `workflow_id`.")
 
 
@@ -88,7 +88,7 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
                 )
             )
             if req.workflow_id:
-                q = q.where(jobs_tbl.c.workflow_id == req.workflow_id)
+                q = q.where(jobs_tbl.c.workflow_id.in_(req.workflow_id))
             if req.workflow_version:
                 q = q.where(jobs_tbl.c.workflow_version == req.workflow_version)
 

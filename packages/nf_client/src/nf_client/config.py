@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _redact_defaults(d: dict) -> dict:
@@ -27,9 +27,21 @@ def _redact_defaults(d: dict) -> dict:
 
 class DispatchConfig(BaseModel):
     batch_size: int = Field(default=50, ge=1, le=500)
-    # Optional filters: if set, this client only pulls jobs for this workflow
-    workflow_id: str | None = None
+    # Optional filters: if set, this client only pulls jobs for these workflows.
+    # Accepts a single string or a list. Omit (or set to null) to claim any workflow.
+    workflow_id: list[str] | None = None
     workflow_version: str | None = None
+
+    @field_validator("workflow_id", mode="before")
+    @classmethod
+    def _coerce_workflow_id(cls, v: object) -> list[str] | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return [v]
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        raise ValueError(f"workflow_id must be a string or list of strings, got {type(v)}")
 
 
 class SubmissionConfig(BaseModel):

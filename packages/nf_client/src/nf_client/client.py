@@ -60,7 +60,7 @@ class JobClient:
         batch_size = limit or self._config.dispatch.batch_size
         payload: dict = {"limit": batch_size}
         if self._config.dispatch.workflow_id:
-            payload["workflow_id"] = self._config.dispatch.workflow_id
+            payload["workflow_id"] = self._config.dispatch.workflow_id  # list[str]
         if self._config.dispatch.workflow_version:
             payload["workflow_version"] = self._config.dispatch.workflow_version
 
