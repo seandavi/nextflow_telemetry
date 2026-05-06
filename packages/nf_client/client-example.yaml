@@ -1,0 +1,62 @@
+# nf-client configuration file
+#
+# Copy this file and edit for your cluster. Keep the file outside the repo so
+# credentials and site-specific paths are never committed.
+#
+# The daemon reloads this file on every poll cycle, so edits take effect
+# within one poll interval without restarting the process.
+
+# URL of the telemetry API server (no trailing slash).
+server_url: "https://nf-telemetry-example.run.app/api"
+
+# URL that Nextflow sends weblog events to (-with-weblog).
+weblog_url: "https://nf-telemetry-example.run.app/telemetry"
+
+# Nextflow -profile value passed to every run on this cluster.
+# Must match a profile defined in the pipeline's nextflow.config.
+profile: "myprofile"
+
+# Keep the daemon running when the job queue is empty, polling for new work.
+# Set to false (or omit) if you want the daemon to exit when the queue drains.
+continuous: true
+
+dispatch:
+  # Number of samples bundled into a single Nextflow run.
+  batch_size: 10
+
+  # Optional: restrict this daemon to jobs for a specific workflow.
+  # Omit (or set to null) to claim jobs for any registered workflow.
+  # Useful when multiple workflows are registered and you want dedicated
+  # daemons per pipeline or cluster.
+  workflow_id: "my_workflow"
+
+submission:
+  # Execution backend: local | slurm | pbs | lsf
+  mode: slurm
+
+  # Path to the Jinja2 submit script template (absolute path recommended).
+  template_path: "/path/to/nextflow_telemetry/templates/submit_mycluster.sh.j2"
+
+  # Maximum number of wrapper SLURM jobs (one per batch) allowed to run
+  # concurrently. The daemon checks squeue before each fetch and waits if
+  # at the limit. Omit to submit without a concurrency cap.
+  max_concurrent_runs: 5
+
+  # Pass --export=NONE to sbatch. Required on clusters that leak the login-node
+  # environment to compute nodes (e.g. Alpine). Set to false on clusters where
+  # the environment is clean (e.g. Anvil).
+  slurm_export_none: false
+
+  # Variables injected into the submit script template. Exact keys depend on
+  # the template; add or remove as needed for your cluster.
+  defaults:
+    mem: "4G"
+    cpus: 2
+    time: "96:00:00"
+    account: "my_allocation"
+    partition: "shared"
+    log_dir: "/scratch/myuser/logs"
+    singularity_cache: "/scratch/myuser/singularity_cache"
+    nxf_home: "/scratch/myuser/nxf_home"
+    nextflow_bin: "nextflow"                          # or absolute path if not on PATH
+    google_credentials: "/home/myuser/gcp-key.json"  # omit if not using GCS

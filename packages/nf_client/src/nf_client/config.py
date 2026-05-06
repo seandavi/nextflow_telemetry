@@ -6,30 +6,7 @@ Workflow details (repository, revision) come from the server's dispatch response
 The profile is execution-environment-specific and lives here in the client config
 so the same workflow definition can run on different HPC systems (e.g. anvil vs alpine).
 
-Example config file (client-hpc.yaml):
-
-    server_url: "http://telemetry.example.com"
-    weblog_url: "http://telemetry.example.com/telemetry"
-
-    profile: "anvil"         # Nextflow profile passed as -profile to nextflow run
-
-    dispatch:
-      batch_size: 200
-      # Optional: pin this client to a specific workflow/version queue
-      workflow_id: "curatedMetagenomics"
-      workflow_version: "1.0.0"
-
-    submission:
-      mode: "slurm"          # local | slurm | pbs | lsf
-      template_path: "templates/slurm.sh.j2"
-
-      # Default template variables — overridden per-job if needed
-      defaults:
-        walltime: "48:00:00"
-        memory: "16G"
-        cpus: 4
-        log_dir: "logs"
-        outdir: "results"
+See packages/nf_client/client-example.yaml for a fully annotated reference config.
 """
 from __future__ import annotations
 
