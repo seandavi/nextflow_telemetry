@@ -192,7 +192,7 @@ def daemon(
         payload = {
             "agent_id": agent_id,
             "hostname": socket.gethostname(),
-            "workflow_id": cfg.dispatch.workflow_id,
+            "workflow_id": ",".join(cfg.dispatch.workflow_id) if cfg.dispatch.workflow_id else None,
             "profile": cfg.profile,
             "nf_client_version": _NF_CLIENT_VERSION,
             "config_yaml": cfg.sanitized_config_yaml(),
