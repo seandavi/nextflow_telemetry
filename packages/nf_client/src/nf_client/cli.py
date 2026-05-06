@@ -206,22 +206,29 @@ def daemon(
             await client.post_heartbeat(payload)
 
     cfg = ClientConfig.from_yaml(config)
-    effective_batch_size = batch_size if batch_size > 0 else cfg.dispatch.batch_size
-    run_continuous = continuous or cfg.continuous
-    mode = cfg.submission.mode
-    max_concurrent = cfg.submission.max_concurrent_runs
     run_number = 0
 
     hostname = socket.gethostname()
     agent_id = f"{hostname}:{cfg.dispatch.workflow_id or 'all'}"
 
     typer.echo(
-        f"Daemon started — mode={mode} batch_size={effective_batch_size}"
-        + (f" max_concurrent_runs={max_concurrent}" if max_concurrent else "")
-        + (" continuous=true" if run_continuous else "")
+        f"Daemon started — mode={cfg.submission.mode} batch_size={batch_size if batch_size > 0 else cfg.dispatch.batch_size}"
+        + (f" max_concurrent_runs={cfg.submission.max_concurrent_runs}" if cfg.submission.max_concurrent_runs else "")
+        + (" continuous=true" if (continuous or cfg.continuous) else "")
     )
 
     while True:
+        # Reload config each iteration so edits take effect without restart.
+        try:
+            cfg = ClientConfig.from_yaml(config)
+        except Exception as e:
+            typer.echo(f"WARN: failed to reload config, using previous: {e}", err=True)
+
+        effective_batch_size = batch_size if batch_size > 0 else cfg.dispatch.batch_size
+        run_continuous = continuous or cfg.continuous
+        mode = cfg.submission.mode
+        max_concurrent = cfg.submission.max_concurrent_runs
+
         # For SLURM mode, check concurrency before fetching so we don't grab
         # jobs and then stall while holding a claim.
         if mode == "slurm" and max_concurrent is not None:
