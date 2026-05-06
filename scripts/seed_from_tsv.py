@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Seed the telemetry DB from a curation TSV file.
 
-Registers samples (sample_id + ncbi_accession + cohort metadata), registers the
-nf_testing stub workflow, then calls reconcile to create pending jobs.
+Registers samples using content-addressed sample_ids (md5 of SRR accessions),
+registers the nf_testing stub workflow, then calls reconcile to create pending jobs.
 
 Usage:
     uv run python scripts/seed_from_tsv.py [--tsv PATH] [--server URL]
@@ -37,6 +37,10 @@ def main() -> None:
     parser.add_argument("--server", default=DEFAULT_SERVER)
     args = parser.parse_args()
 
+    # Import here so the script works without installing the package
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+    from nextflow_telemetry.utils import srrs_to_sample_id, parse_srrs
+
     server = args.server.rstrip("/")
     client = httpx.Client(base_url=f"{server}/api/", timeout=30)
 
@@ -53,20 +57,23 @@ def main() -> None:
 
     registered = skipped = 0
     for row in rows:
-        sample_id = row["sample_id"].strip()
-        ncbi_accession = row["ncbi_accession"].strip()
-        cohort = row["study_name"].strip()
+        ncbi_accession = row.get("ncbi_accession", "").strip()
+        cohort = row.get("study_name", "").strip()
 
-        if not sample_id:
+        if not ncbi_accession:
             skipped += 1
             continue
 
+        srrs = parse_srrs(ncbi_accession)
+        sample_id = srrs_to_sample_id(srrs)
+
         resp = client.post("samples", json={
             "sample_id": sample_id,
-            "metadata": {"ncbi_accession": ncbi_accession, "cohort": cohort},
+            "ncbi_accession": ncbi_accession,
+            "metadata": {"cohort": cohort},
         })
         if resp.status_code not in (200, 201):
-            print(f"  WARN: {sample_id}: {resp.status_code} {resp.text}", file=sys.stderr)
+            print(f"  WARN: {sample_id} ({ncbi_accession}): {resp.status_code} {resp.text}", file=sys.stderr)
         else:
             registered += 1
 

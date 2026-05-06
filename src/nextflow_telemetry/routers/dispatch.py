@@ -32,7 +32,8 @@ class DispatchBatchRequest(BaseModel):
 class DispatchedJob(BaseModel):
     """A single job included in a dispatch batch."""
     sample_id: str = Field(description="The sample identifier to be processed in this run.")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Sample metadata (e.g. ncbi_accession). Sourced from the samples table.")
+    ncbi_accession: str | None = Field(default=None, description="Canonical semicolon-separated SRR accessions for this sample.")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional sample metadata.")
 
 
 class DispatchBatchResponse(BaseModel):
@@ -132,15 +133,19 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
                 .values(run_name=run_name, status="claimed")
             )
 
-            # Fetch sample metadata in a separate query to avoid JOIN conflicts
+            # Fetch sample fields in a separate query to avoid JOIN conflicts
             # with the FOR UPDATE SKIP LOCKED above.
             sample_ids = [r["sample_id"] for r in rows]
             meta_result = await conn.execute(
-                select(samples_tbl.c.sample_id, samples_tbl.c.metadata_)
+                select(
+                    samples_tbl.c.sample_id,
+                    samples_tbl.c.ncbi_accession,
+                    samples_tbl.c.metadata_,
+                )
                 .where(samples_tbl.c.sample_id.in_(sample_ids))
             )
-            metadata_map: dict[str, Any] = {
-                r["sample_id"]: r["metadata_"] or {}
+            sample_map: dict[str, Any] = {
+                r["sample_id"]: r
                 for r in meta_result.mappings().all()
             }
 
@@ -154,7 +159,8 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
             jobs=[
                 DispatchedJob(
                     sample_id=r["sample_id"],
-                    metadata=metadata_map.get(r["sample_id"], {}),
+                    ncbi_accession=sample_map.get(r["sample_id"], {}).get("ncbi_accession"),
+                    metadata=sample_map.get(r["sample_id"], {}).get("metadata_") or {},
                 )
                 for r in rows
             ],

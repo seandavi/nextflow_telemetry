@@ -44,16 +44,47 @@ telemetry_tbl = Table(
 
 # ---------------------------------------------------------------------------
 # Sample catalog — one row per known sample
+# sample_id is the md5 hex of the sorted, deduplicated SRR accession list,
+# or a researcher-supplied opaque ID for non-SRA samples.
+# ncbi_accession stores the canonical sorted;deduped;semicolon-separated SRRs.
+# biosample_id is the NCBI BioSample accession (annotation only, not identity).
 # ---------------------------------------------------------------------------
 samples_tbl = Table(
     "samples",
     metadata,
     Column("id", Integer, primary_key=True),
     Column("sample_id", String, nullable=False, unique=True),
+    Column("ncbi_accession", Text, nullable=True),
+    Column("biosample_id", String, nullable=True),
     Column("metadata_", JSONB, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
     Index("ix_samples_sample_id", "sample_id"),
+    Index("ix_samples_biosample_id", "biosample_id"),
+)
+
+# ---------------------------------------------------------------------------
+# Collections — named groups of samples (e.g. a BioProject, a cohort)
+# ---------------------------------------------------------------------------
+collections_tbl = Table(
+    "collections",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("collection_id", String, nullable=False, unique=True),
+    Column("source", String, nullable=False),   # "bioproject" | "sra_study" | "manual"
+    Column("label", String, nullable=True),
+    Column("metadata_", JSONB, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Index("ix_collections_collection_id", "collection_id"),
+)
+
+collection_samples_tbl = Table(
+    "collection_samples",
+    metadata,
+    Column("collection_id", String, ForeignKey("collections.collection_id"), nullable=False),
+    Column("sample_id", String, ForeignKey("samples.sample_id"), nullable=False),
+    UniqueConstraint("collection_id", "sample_id", name="uq_collection_sample"),
 )
 
 # ---------------------------------------------------------------------------

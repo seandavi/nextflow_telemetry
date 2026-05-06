@@ -32,12 +32,12 @@ def generate_run_name() -> str:
 def generate_metadata_tsv(jobs: list[DispatchedJob]) -> str:
     """Return TSV content with header sample_id\\tNCBI_accession.
 
-    Each row maps a biosample ID to its semicolon-separated SRR accessions
-    sourced from job.metadata['ncbi_accession'].
+    Uses the top-level ncbi_accession field; falls back to metadata dict
+    for compatibility with older server responses.
     """
     lines = ["sample_id\tNCBI_accession"]
     for job in jobs:
-        accession = job.metadata.get("ncbi_accession", "")
+        accession = job.ncbi_accession or job.metadata.get("ncbi_accession", "")
         lines.append(f"{job.sample_id}\t{accession}")
     return "\n".join(lines)
 

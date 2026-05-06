@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 class DispatchedJob(BaseModel):
     sample_id: str
+    ncbi_accession: str | None = None
     metadata: dict[str, Any] = {}
 
 
