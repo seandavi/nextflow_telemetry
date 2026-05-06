@@ -209,8 +209,7 @@ def daemon(
     run_number = 0
 
     hostname = socket.gethostname()
-    _wf_label = ",".join(cfg.dispatch.workflow_id) if cfg.dispatch.workflow_id else "all"
-    agent_id = f"{hostname}:{_wf_label}"
+    agent_id = hostname
 
     typer.echo(
         f"Daemon started — mode={cfg.submission.mode} batch_size={batch_size if batch_size > 0 else cfg.dispatch.batch_size}"
