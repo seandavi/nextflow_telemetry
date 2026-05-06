@@ -42,6 +42,7 @@ nextflow run {{ workflow_repository }} \
   -profile {{ profile }} \
   -c nextflow_alpine_override.config \
   --metadata_tsv metadata.tsv \
+  --run_name {{ run_name }} \
   -with-weblog {{ weblog_url }}
 
 NF_EXIT=$?

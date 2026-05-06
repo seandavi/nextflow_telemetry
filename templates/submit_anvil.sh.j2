@@ -43,6 +43,7 @@ $NEXTFLOW run {{ workflow_repository }} \
   -profile anvil \
   -c nextflow_anvil_override.config \
   --metadata_tsv metadata.tsv \
+  --run_name {{ run_name }} \
   -with-weblog {{ weblog_url }}
 
 NF_EXIT=$?
