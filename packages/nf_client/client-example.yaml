@@ -52,7 +52,7 @@ submission:
   defaults:
     mem: "4G"
     cpus: 2
-    time: "96:00:00"
+    time: "48:00:00"   # must be within your QOS wall-time limit; check with `sacctmgr show qos`
     account: "my_allocation"
     partition: "shared"
     log_dir: "/scratch/myuser/logs"
