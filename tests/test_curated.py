@@ -77,23 +77,40 @@ def test_import_creates_study(integration_client):
 # ---------------------------------------------------------------------------
 
 def test_import_idempotent(integration_client):
+    """Re-importing the same study is idempotent and preserves existing metadata."""
     client, _ = integration_client
     study_name = _make_study_name()
 
     tsv = _make_tsv([{"ncbi_accession": "SRR222222", "subject_id": "B", "disease": "healthy"}])
-    resp1 = _import(client, study_name, tsv)
-    resp2 = _import(client, study_name, tsv)
 
+    # First import includes pubmed_id and doi so study metadata is persisted.
+    resp1 = _import(client, study_name, tsv, pubmed_id="11111111", doi="10.1234/idempotent")
     assert resp1.status_code == 200
-    assert resp2.status_code == 200
-    # Both calls report 1 row loaded (upsert)
-    assert resp1.json()["rows_loaded"] == 1
-    assert resp2.json()["rows_loaded"] == 1
+    data1 = resp1.json()
+    assert data1["rows_loaded"] == 1
+    assert data1["rows_updated"] == 0  # no pre-existing rows on first import
+    assert data1["study_name"] == study_name
 
-    # Only one annotation row should exist
+    # Re-import the same TSV WITHOUT pubmed_id/doi — metadata must NOT be cleared.
+    resp2 = _import(client, study_name, tsv)
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    # rows_loaded should stay the same (not doubled)
+    assert data2["rows_loaded"] == 1
+    # rows_updated should reflect that the row already existed
+    assert data2["rows_updated"] > 0
+
+    # Only one annotation row should exist (upsert, not insert)
     resp = client.get(f"/api/curated/studies/{study_name}/samples")
     assert resp.status_code == 200
     assert len(resp.json()) == 1
+
+    # Study metadata must still be present after re-import without pubmed_id/doi
+    study_resp = client.get(f"/api/curated/studies/{study_name}")
+    assert study_resp.status_code == 200
+    study_data = study_resp.json()
+    assert study_data["metadata"]["pubmed_id"] == "11111111"
+    assert study_data["metadata"]["doi"] == "10.1234/idempotent"
 
 
 # ---------------------------------------------------------------------------

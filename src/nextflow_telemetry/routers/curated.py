@@ -26,6 +26,7 @@ class DroppedRowResponse(BaseModel):
 
 class ImportSummaryResponse(BaseModel):
     """Summary of a TSV import operation."""
+    study_name: str
     rows_loaded: int
     rows_updated: int
     rows_dropped: int
@@ -100,6 +101,7 @@ def create_curated_router(engine: AsyncEngine) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return ImportSummaryResponse(
+            study_name=summary.study_name,
             rows_loaded=summary.rows_loaded,
             rows_updated=summary.rows_updated,
             rows_dropped=summary.rows_dropped,

@@ -34,6 +34,7 @@ class DroppedRow:
 @dataclass
 class ImportSummary:
     """Summary returned by CuratedService.import_tsv()."""
+    study_name: str
     rows_loaded: int
     rows_updated: int
     rows_dropped: int
@@ -86,16 +87,24 @@ class CuratedService:
         2. Locate the ncbi_accession column case-insensitively; raise ValueError if absent.
         3. For each row:
            - If ncbi_accession is null/empty → record as a dropped row.
+           - If parse_srrs() returns an empty list → record as a dropped row.
            - Otherwise compute sample_id = srrs_to_sample_id(parse_srrs(ncbi_accession))
-             and build a metadata_ JSONB from all columns except ncbi_accession.
-        4. Upsert curated_studies first, then upsert each annotation row.
+             and build a metadata_ JSONB from all columns except ncbi_accession
+             (None and empty-string keys are excluded to avoid JSONB errors).
+        4. Upsert curated_studies first (preserving existing metadata_ when new
+           import has no pubmed_id/doi), then bulk-upsert all annotation rows.
         5. Return an ImportSummary.
         """
         text = tsv_content.decode("utf-8")
         reader = csv.DictReader(io.StringIO(text), delimiter="\t")
 
         if reader.fieldnames is None:
-            return ImportSummary(rows_loaded=0, rows_updated=0, rows_dropped=0)
+            return ImportSummary(
+                study_name=study_name,
+                rows_loaded=0,
+                rows_updated=0,
+                rows_dropped=0,
+            )
 
         # Case-insensitive lookup for the ncbi_accession column
         fieldnames: list[str] = list(reader.fieldnames)
@@ -135,10 +144,27 @@ class CuratedService:
                 dropped.append(DroppedRow(row_index=row_index, subject_id=subject_id))
                 continue
 
-            sample_id = srrs_to_sample_id(parse_srrs(raw_accession))
+            # Fix #2: treat rows where parse_srrs yields no valid SRRs as dropped.
+            srrs = parse_srrs(raw_accession)
+            if not srrs:
+                dropped.append(
+                    DroppedRow(
+                        row_index=row_index,
+                        subject_id=subject_id,
+                    )
+                )
+                continue
 
-            # All columns except the accession column become metadata_
-            meta: dict[str, Any] = {k: v for k, v in row.items() if k != accession_col}
+            sample_id = srrs_to_sample_id(srrs)
+
+            # Fix #3: exclude None keys (csv.DictReader overflow columns) and the
+            # accession column itself from the metadata_ dict to avoid JSONB errors.
+            acol = accession_col
+            meta: dict[str, Any] = {
+                k: v
+                for k, v in row.items()
+                if k is not None and k != "" and k != acol
+            }
 
             annotation_rows.append({
                 "sample_id": sample_id,
@@ -148,51 +174,67 @@ class CuratedService:
                 "loaded_at": now,
             })
 
-        rows_updated = 0
-
         async with self.engine.begin() as conn:
-            # 1. Upsert the study record
+            # 1. Upsert the study record.
+            # Fix #1: only update metadata_ when the new import provides non-empty
+            # study_meta — this prevents overwriting previously stored pubmed_id/doi
+            # with NULL when re-importing without those fields.
+            study_values: dict[str, Any] = {
+                "study_name": study_name,
+                "source_file": source_file,
+                "metadata_": study_meta or None,
+                "loaded_at": now,
+            }
+            conflict_set: dict[str, Any] = {
+                "source_file": source_file,
+                "loaded_at": now,
+            }
+            if study_meta:
+                conflict_set["metadata_"] = study_meta
+
             study_stmt = (
                 pg_insert(curated_studies_tbl)
-                .values(
-                    study_name=study_name,
-                    source_file=source_file,
-                    metadata_=study_meta or None,
-                    loaded_at=now,
-                )
+                .values(**study_values)
                 .on_conflict_do_update(
                     index_elements=["study_name"],
-                    set_={
-                        "source_file": source_file,
-                        "metadata_": study_meta or None,
-                        "loaded_at": now,
-                    },
+                    set_=conflict_set,
                 )
             )
             await conn.execute(study_stmt)
 
-            # 2. Upsert annotation rows and count conflicts (updates)
-            for ann in annotation_rows:
-                ann_stmt = (
-                    pg_insert(curated_sample_annotations_tbl)
-                    .values(**ann)
-                    .on_conflict_do_update(
-                        constraint="uq_csa_sample_study",
-                        set_={
-                            "ncbi_accession": ann["ncbi_accession"],
-                            "metadata_": ann["metadata_"],
-                            "loaded_at": ann["loaded_at"],
-                        },
+            # Fix #4: count pre-existing annotation rows for this study to compute
+            # rows_updated accurately.
+            existing_sample_ids: set[str] = set()
+            if annotation_rows:
+                candidate_ids = [r["sample_id"] for r in annotation_rows]
+                existing_result = await conn.execute(
+                    select(curated_sample_annotations_tbl.c.sample_id).where(
+                        curated_sample_annotations_tbl.c.study_name == study_name,
+                        curated_sample_annotations_tbl.c.sample_id.in_(candidate_ids),
                     )
-                    .returning(curated_sample_annotations_tbl.c.id)
                 )
-                # PostgreSQL returns the row whether it was inserted or updated.
-                # Use xmax to detect updates: xmax != 0 means it was an UPDATE.
-                # Simpler approach: track by counting conflicts via advisory or just
-                # return 0 for updates (idempotent re-imports are expected).
+                existing_sample_ids = {row[0] for row in existing_result}
+
+            rows_updated = len(existing_sample_ids)
+
+            # Fix #5: bulk-upsert all annotation rows in a single round-trip instead
+            # of one execute() call per row.
+            if annotation_rows:
+                ann_insert = pg_insert(curated_sample_annotations_tbl).values(
+                    annotation_rows
+                )
+                ann_stmt = ann_insert.on_conflict_do_update(
+                    constraint="uq_csa_sample_study",
+                    set_={
+                        "ncbi_accession": ann_insert.excluded.ncbi_accession,
+                        "metadata_": ann_insert.excluded.metadata_,
+                        "loaded_at": ann_insert.excluded.loaded_at,
+                    },
+                )
                 await conn.execute(ann_stmt)
 
         return ImportSummary(
+            study_name=study_name,
             rows_loaded=len(annotation_rows),
             rows_updated=rows_updated,
             rows_dropped=len(dropped),
