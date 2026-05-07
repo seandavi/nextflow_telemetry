@@ -197,6 +197,36 @@ dead_letter_tbl = Table(
 )
 
 # ---------------------------------------------------------------------------
+# Curated studies — one row per imported curatedMetagenomicData study
+# ---------------------------------------------------------------------------
+curated_studies_tbl = Table(
+    "curated_studies",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("study_name", Text, nullable=False, unique=True),
+    Column("source_file", Text, nullable=True),
+    Column("metadata_", JSONB, nullable=True),   # pubmed_id, doi, etc.
+    Column("loaded_at", DateTime(timezone=True), nullable=False),
+)
+
+# ---------------------------------------------------------------------------
+# Curated sample annotations — one row per (sample_id, study_name) pair
+# ---------------------------------------------------------------------------
+curated_sample_annotations_tbl = Table(
+    "curated_sample_annotations",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("sample_id", Text, nullable=False),       # md5 join key
+    Column("study_name", Text, ForeignKey("curated_studies.study_name"), nullable=False),
+    Column("ncbi_accession", Text, nullable=True),   # raw SRR string from TSV
+    Column("metadata_", JSONB, nullable=False),
+    Column("loaded_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("sample_id", "study_name", name="uq_csa_sample_study"),
+    Index("ix_csa_sample_id", "sample_id"),
+    Index("ix_csa_study_name", "study_name"),
+)
+
+# ---------------------------------------------------------------------------
 # Daemon agent registry — upserted by nf-client on every heartbeat
 # ---------------------------------------------------------------------------
 daemon_agents_tbl = Table(

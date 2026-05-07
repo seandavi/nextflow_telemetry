@@ -9,6 +9,7 @@ from .config import settings
 from .log import logger
 from . import models
 from .routers.admin import create_admin_router
+from .routers.curated import create_curated_router
 from .routers.daemons import create_daemons_router
 from .routers.dispatch import create_dispatch_router
 from .routers.process_metrics import create_process_metrics_router
@@ -59,6 +60,7 @@ app.include_router(create_workflows_router(engine), prefix="/api")
 app.include_router(create_admin_router(engine), prefix="/api")
 app.include_router(create_task_logs_router(engine), prefix="/api")
 app.include_router(create_daemons_router(engine), prefix="/api")
+app.include_router(create_curated_router(engine), prefix="/api")
 
 
 @app.get(
