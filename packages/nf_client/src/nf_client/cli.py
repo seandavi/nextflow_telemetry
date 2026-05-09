@@ -318,6 +318,38 @@ def daemon(
     typer.echo(f"\nDaemon finished after {run_number} run(s).")
 
 
+@app.command()
+def stats(
+    config: Path = config_option,
+) -> None:
+    """Print a summary of system state: samples, workflows, jobs/runs by status, DLQ."""
+
+    async def _run() -> dict:
+        cfg = ClientConfig.from_yaml(config)
+        async with JobClient(cfg) as client:
+            return await client.get_stats()
+
+    payload = asyncio.run(_run())
+
+    typer.echo(f"samples:   {payload['samples']}")
+    typer.echo(f"workflows: {payload['workflows']}")
+    typer.echo(f"dead-letter (unresolved): {payload['dead_letter_unresolved']}")
+
+    typer.echo("\njobs by status:")
+    if payload["jobs_by_status"]:
+        for status, count in sorted(payload["jobs_by_status"].items()):
+            typer.echo(f"  {status:<10} {count}")
+    else:
+        typer.echo("  (none)")
+
+    typer.echo("\nruns by status:")
+    if payload["runs_by_status"]:
+        for status, count in sorted(payload["runs_by_status"].items()):
+            typer.echo(f"  {status:<10} {count}")
+    else:
+        typer.echo("  (none)")
+
+
 @app.command(name="upload-logs")
 def upload_logs(
     config: Path = config_option,

@@ -33,7 +33,11 @@ class JobClient:
     # ------------------------------------------------------------------
 
     async def __aenter__(self) -> "JobClient":
-        self._http = httpx.AsyncClient(base_url=self._config.server_url, timeout=30)
+        # httpx resolves relative paths against base_url per RFC 3986: without a
+        # trailing slash, the last segment of base_url is replaced. Force a trailing
+        # slash so callers can pass `.../api` or `.../api/` interchangeably.
+        base_url = self._config.server_url.rstrip("/") + "/"
+        self._http = httpx.AsyncClient(base_url=base_url, timeout=30)
         return self
 
     async def __aexit__(self, *_) -> None:
@@ -96,6 +100,12 @@ class JobClient:
             await self._client.put("daemons/heartbeat", json=payload, timeout=5)
         except Exception:
             pass
+
+    async def get_stats(self) -> dict:
+        """Return the server's summary stats payload (samples, workflows, jobs/runs by status, DLQ)."""
+        response = await self._client.get("admin/stats")
+        response.raise_for_status()
+        return response.json()
 
     async def report_submitted(
         self,

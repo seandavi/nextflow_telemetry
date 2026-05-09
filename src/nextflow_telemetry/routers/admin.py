@@ -4,10 +4,10 @@ from __future__ import annotations
 import datetime
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import dead_letter_tbl, jobs_tbl, workflow_runs_tbl
+from ..db import dead_letter_tbl, jobs_tbl, samples_tbl, workflow_runs_tbl, workflows_tbl
 from ..services.reconcile import ReconcileService, sweep_run_incomplete
 
 
@@ -179,5 +179,44 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
             )
 
         return {"requeued": len(job_ids)}
+
+    @router.get(
+        "/stats",
+        summary="Summary counts across the catalog and dispatch tables",
+        description=(
+            "Returns total sample/workflow counts, jobs grouped by status, "
+            "workflow runs grouped by status, and the count of unresolved "
+            "dead-letter entries. Lightweight — used by `nf-client stats` "
+            "to give operators a one-shot system overview."
+        ),
+    )
+    async def stats():
+        async with engine.begin() as conn:
+            samples_total = (await conn.execute(
+                select(func.count()).select_from(samples_tbl)
+            )).scalar_one()
+            workflows_total = (await conn.execute(
+                select(func.count()).select_from(workflows_tbl)
+            )).scalar_one()
+            jobs_rows = (await conn.execute(
+                select(jobs_tbl.c.status, func.count())
+                .group_by(jobs_tbl.c.status)
+            )).all()
+            runs_rows = (await conn.execute(
+                select(workflow_runs_tbl.c.status, func.count())
+                .group_by(workflow_runs_tbl.c.status)
+            )).all()
+            dlq_unresolved = (await conn.execute(
+                select(func.count()).select_from(dead_letter_tbl)
+                .where(dead_letter_tbl.c.resolved_at.is_(None))
+            )).scalar_one()
+
+        return {
+            "samples": samples_total,
+            "workflows": workflows_total,
+            "jobs_by_status": {status: count for status, count in jobs_rows},
+            "runs_by_status": {status: count for status, count in runs_rows},
+            "dead_letter_unresolved": dlq_unresolved,
+        }
 
     return router
