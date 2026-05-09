@@ -142,13 +142,20 @@ def test_get_sample_not_found(integration_client):
     assert resp.status_code == 404
 
 
-@pytest.mark.parametrize("bad_value", [None, "", "   ", ";", " ; ; "])
+_MISSING = object()  # sentinel: omit ncbi_accession from the payload entirely
+
+
+@pytest.mark.parametrize("bad_value", [_MISSING, None, "", "   ", ";", " ; ; "])
 def test_register_sample_rejects_empty_ncbi_accession(integration_client, bad_value):
-    """Samples with no SRRs cause fasterq_dump to fail; reject at the API."""
+    """Samples with no SRRs cause fasterq_dump to fail; reject at the API.
+
+    Covers field-omitted, explicit JSON null, empty/whitespace strings, and
+    semicolon-only strings — every input shape that parse_srrs() reduces to [].
+    """
     client, _ = integration_client
     sample_id = f"SRR-{uuid.uuid4().hex[:8]}"
     payload: dict = {"sample_id": sample_id}
-    if bad_value is not None:
+    if bad_value is not _MISSING:
         payload["ncbi_accession"] = bad_value
     resp = client.post("/api/samples", json=payload)
     assert resp.status_code == 422, resp.text

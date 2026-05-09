@@ -44,10 +44,11 @@ from nextflow_telemetry.db import (  # noqa: E402
 
 
 def _orphan_predicate():
-    """samples.ncbi_accession IS NULL OR trim(ncbi_accession) = ''."""
-    return (samples_tbl.c.ncbi_accession.is_(None)) | (
-        func.trim(samples_tbl.c.ncbi_accession) == ""
-    )
+    """Match API validation: parse_srrs() returns [] iff after stripping whitespace
+    and semicolon delimiters nothing is left.
+    """
+    stripped = func.regexp_replace(samples_tbl.c.ncbi_accession, r"[\s;]", "", "g")
+    return (samples_tbl.c.ncbi_accession.is_(None)) | (func.length(stripped) == 0)
 
 
 async def _run(commit: bool) -> int:
