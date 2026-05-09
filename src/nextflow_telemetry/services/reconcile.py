@@ -19,7 +19,7 @@ from sqlalchemy import case, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 
-from ..db import dead_letter_tbl, jobs_tbl, samples_tbl, workflows_tbl
+from ..db import dead_letter_tbl, jobs_tbl, workflows_tbl
 
 # Arbitrary but stable lock id — must not collide with other advisory locks
 _RECONCILE_LOCK_ID = 0x4A4F425F5245434F  # "JOB_RECO" in hex
@@ -102,6 +102,11 @@ class ReconcileService:
 
         Returns the number of new jobs created.
         Uses a Postgres advisory transaction lock to prevent concurrent runs.
+
+        The cross-product is computed in Postgres via INSERT...SELECT so that
+        the wire payload binds a single parameter regardless of sample count.
+        Materialising the cross-product client-side hits asyncpg's 32767
+        bound-parameter cap once samples × workflows × 7 columns exceeds it.
         """
         now = datetime.now(timezone.utc)
         async with self.engine.begin() as conn:
@@ -111,45 +116,20 @@ class ReconcileService:
                 {"lock_id": _RECONCILE_LOCK_ID},
             )
 
-            # Fetch all sample IDs
-            samples_result = await conn.execute(
-                select(samples_tbl.c.sample_id)
-            )
-            sample_ids = [r[0] for r in samples_result]
-
-            # Fetch all active workflows
-            workflows_result = await conn.execute(
-                select(
-                    workflows_tbl.c.id,
-                    workflows_tbl.c.workflow_id,
-                    workflows_tbl.c.version,
-                ).where(workflows_tbl.c.status == "active")
-            )
-            workflows = workflows_result.mappings().all()
-
-            if not sample_ids or not workflows:
-                return 0
-
-            # Build cross-product rows
-            rows = [
-                {
-                    "sample_id": sid,
-                    "workflow_pk": wf["id"],
-                    "workflow_id": wf["workflow_id"],
-                    "workflow_version": wf["version"],
-                    "status": "pending",
-                    "retry_count": 0,
-                    "created_at": now,
-                }
-                for sid in sample_ids
-                for wf in workflows
-            ]
-
-            # Upsert: skip pairs that already have a job
             result = await conn.execute(
-                pg_insert(jobs_tbl)
-                .values(rows)
-                .on_conflict_do_nothing(constraint="uq_job_composite")
-                .returning(jobs_tbl.c.id)
+                text(
+                    """
+                    INSERT INTO jobs (
+                        sample_id, workflow_pk, workflow_id, workflow_version,
+                        status, retry_count, created_at
+                    )
+                    SELECT s.sample_id, w.id, w.workflow_id, w.version,
+                           'pending', 0, :now
+                    FROM samples s CROSS JOIN workflows w
+                    WHERE w.status = 'active'
+                    ON CONFLICT ON CONSTRAINT uq_job_composite DO NOTHING
+                    """
+                ),
+                {"now": now},
             )
-            return len(result.fetchall())
+            return result.rowcount or 0
