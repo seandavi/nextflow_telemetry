@@ -50,11 +50,11 @@ COLUMNS = ["ncbi_accession", "sra_sample", "biosample", "bioproject", "sra_study
 
 
 def fetch_rows(bioproject: str) -> list[dict[str, str]]:
-    con = duckdb.connect(":memory:")
-    con.execute("SET enable_progress_bar = false")
-    cur = con.execute(QUERY, [PARQUET_URL, bioproject])
-    rows = cur.fetchall()
-    fields = [d[0] for d in cur.description]
+    with duckdb.connect(":memory:") as con:
+        con.execute("SET enable_progress_bar = false")
+        cur = con.execute(QUERY, [PARQUET_URL, bioproject])
+        rows = cur.fetchall()
+        fields = [d[0] for d in cur.description]
     return [dict(zip(fields, r)) for r in rows]
 
 
@@ -75,44 +75,44 @@ def upload_rows(rows: list[dict[str, str]], server: str, cohort: str | None) -> 
     from nextflow_telemetry.utils import parse_srrs, srrs_to_sample_id
 
     server = server.rstrip("/")
-    client = httpx.Client(base_url=f"{server}/api/", timeout=30)
 
-    try:
-        httpx.get(f"{server}/health", timeout=10).raise_for_status()
-    except Exception as e:
-        raise click.ClickException(f"cannot reach {server}: {e}")
+    with httpx.Client(base_url=server, timeout=30) as client:
+        try:
+            client.get("/health", timeout=10).raise_for_status()
+        except Exception as e:
+            raise click.ClickException(f"cannot reach {server}: {e}")
 
-    registered = failed = 0
-    for row in rows:
-        srrs = parse_srrs(row["ncbi_accession"])
-        if not srrs:
-            continue
-        sample_id = srrs_to_sample_id(srrs)
-        metadata = {
-            "bioproject": row["bioproject"],
-            "sra_study": row["sra_study"],
-            "sra_sample": row["sra_sample"],
-        }
-        if cohort:
-            metadata["cohort"] = cohort
+        registered = failed = 0
+        for row in rows:
+            srrs = parse_srrs(row["ncbi_accession"])
+            if not srrs:
+                continue
+            sample_id = srrs_to_sample_id(srrs)
+            metadata = {
+                "bioproject": row["bioproject"],
+                "sra_study": row["sra_study"],
+                "sra_sample": row["sra_sample"],
+            }
+            if cohort:
+                metadata["cohort"] = cohort
 
-        resp = client.post(
-            "samples",
-            json={
-                "sample_id": sample_id,
-                "ncbi_accession": row["ncbi_accession"],
-                "biosample_id": row["biosample"],
-                "metadata": metadata,
-            },
-        )
-        if resp.status_code in (200, 201):
-            registered += 1
-        else:
-            failed += 1
-            click.echo(
-                f"  WARN: {sample_id} ({row['sra_sample']}): {resp.status_code} {resp.text}",
-                err=True,
+            resp = client.post(
+                "/api/samples",
+                json={
+                    "sample_id": sample_id,
+                    "ncbi_accession": row["ncbi_accession"],
+                    "biosample_id": row["biosample"],
+                    "metadata": metadata,
+                },
             )
+            if resp.status_code in (200, 201):
+                registered += 1
+            else:
+                failed += 1
+                click.echo(
+                    f"  WARN: {sample_id} ({row['sra_sample']}): {resp.status_code} {resp.text}",
+                    err=True,
+                )
 
     click.echo(f"Uploaded: {registered} registered, {failed} failed")
 
