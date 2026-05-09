@@ -101,7 +101,7 @@ def test_register_sample_creates_row(integration_client, db_url):
     client, _ = integration_client
     sample_id = f"SRR-{uuid.uuid4().hex[:8]}"
 
-    resp = client.post("/samples", json={"sample_id": sample_id, "metadata": {"source": "gut"}})
+    resp = client.post("/api/samples", json={"sample_id": sample_id, "metadata": {"source": "gut"}})
     assert resp.status_code == 201
     data = resp.json()
     assert data["sample_id"] == sample_id
@@ -117,8 +117,8 @@ def test_register_sample_idempotent(integration_client):
     client, _ = integration_client
     sample_id = f"SRR-{uuid.uuid4().hex[:8]}"
 
-    resp1 = client.post("/samples", json={"sample_id": sample_id, "metadata": {"v": 1}})
-    resp2 = client.post("/samples", json={"sample_id": sample_id, "metadata": {"v": 2}})
+    resp1 = client.post("/api/samples", json={"sample_id": sample_id, "metadata": {"v": 1}})
+    resp2 = client.post("/api/samples", json={"sample_id": sample_id, "metadata": {"v": 2}})
     assert resp1.status_code == 201
     assert resp2.status_code == 201
     # Second upsert updates metadata
@@ -128,9 +128,9 @@ def test_register_sample_idempotent(integration_client):
 def test_list_samples(integration_client):
     client, _ = integration_client
     sample_id = f"SRR-{uuid.uuid4().hex[:8]}"
-    client.post("/samples", json={"sample_id": sample_id})
+    client.post("/api/samples", json={"sample_id": sample_id})
 
-    resp = client.get("/samples")
+    resp = client.get("/api/samples")
     assert resp.status_code == 200
     ids = [r["sample_id"] for r in resp.json()]
     assert sample_id in ids
@@ -138,7 +138,7 @@ def test_list_samples(integration_client):
 
 def test_get_sample_not_found(integration_client):
     client, _ = integration_client
-    resp = client.get("/samples/DOES_NOT_EXIST")
+    resp = client.get("/api/samples/DOES_NOT_EXIST")
     assert resp.status_code == 404
 
 
@@ -163,7 +163,7 @@ def test_register_workflow(integration_client, db_url):
     client, _ = integration_client
     payload = _wf_payload()
 
-    resp = client.post("/workflows", json=payload)
+    resp = client.post("/api/workflows", json=payload)
     assert resp.status_code == 201
     data = resp.json()
     assert data["workflow_id"] == payload["workflow_id"]
@@ -178,33 +178,33 @@ def test_register_workflow(integration_client, db_url):
 
 def test_workflow_status_lifecycle(integration_client):
     client, _ = integration_client
-    resp = client.post("/workflows", json=_wf_payload())
+    resp = client.post("/api/workflows", json=_wf_payload())
     wf_id = resp.json()["id"]
 
-    resp = client.patch(f"/workflows/{wf_id}/status", json={"status": "paused"})
+    resp = client.patch(f"/api/workflows/{wf_id}/status", json={"status": "paused"})
     assert resp.status_code == 200
     assert resp.json()["status"] == "paused"
 
-    resp = client.patch(f"/workflows/{wf_id}/status", json={"status": "retired"})
+    resp = client.patch(f"/api/workflows/{wf_id}/status", json={"status": "retired"})
     assert resp.status_code == 200
     assert resp.json()["status"] == "retired"
 
 
 def test_workflow_invalid_status_rejected(integration_client):
     client, _ = integration_client
-    resp = client.post("/workflows", json=_wf_payload())
+    resp = client.post("/api/workflows", json=_wf_payload())
     wf_id = resp.json()["id"]
 
-    resp = client.patch(f"/workflows/{wf_id}/status", json={"status": "deleted"})
+    resp = client.patch(f"/api/workflows/{wf_id}/status", json={"status": "deleted"})
     assert resp.status_code == 422
 
 
 def test_workflow_revision_update(integration_client):
     client, _ = integration_client
-    resp = client.post("/workflows", json=_wf_payload(revision="v1.0"))
+    resp = client.post("/api/workflows", json=_wf_payload(revision="v1.0"))
     wf_id = resp.json()["id"]
 
-    resp = client.patch(f"/workflows/{wf_id}/revision", json={"revision": "v1.1-fix"})
+    resp = client.patch(f"/api/workflows/{wf_id}/revision", json={"revision": "v1.1-fix"})
     assert resp.status_code == 200
     assert resp.json()["revision"] == "v1.1-fix"
 
@@ -212,12 +212,12 @@ def test_workflow_revision_update(integration_client):
 def test_list_workflows_with_status_filter(integration_client):
     client, _ = integration_client
     wf_id_str = f"wf-filter-{uuid.uuid4().hex[:6]}"
-    resp = client.post("/workflows", json=_wf_payload(workflow_id=wf_id_str))
+    resp = client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id_str))
     wf_pk = resp.json()["id"]
-    client.patch(f"/workflows/{wf_pk}/status", json={"status": "paused"})
+    client.patch(f"/api/workflows/{wf_pk}/status", json={"status": "paused"})
 
-    active = client.get("/workflows?status=active").json()
-    paused = client.get("/workflows?status=paused").json()
+    active = client.get("/api/workflows?status=active").json()
+    paused = client.get("/api/workflows?status=paused").json()
     assert not any(w["id"] == wf_pk for w in active)
     assert any(w["id"] == wf_pk for w in paused)
 
@@ -233,11 +233,11 @@ def test_reconcile_creates_jobs(integration_client, db_url):
     sample_id = f"SRR-recon-{uuid.uuid4().hex[:6]}"
     wf_payload = _wf_payload()
 
-    client.post("/samples", json={"sample_id": sample_id})
-    wf_resp = client.post("/workflows", json=wf_payload)
+    client.post("/api/samples", json={"sample_id": sample_id})
+    wf_resp = client.post("/api/workflows", json=wf_payload)
     wf_pk = wf_resp.json()["id"]
 
-    resp = client.post("/admin/reconcile-jobs")
+    resp = client.post("/api/admin/reconcile-jobs")
     assert resp.status_code == 200
     created = resp.json()["jobs_created"]
     assert created >= 1
@@ -253,11 +253,11 @@ def test_reconcile_creates_jobs(integration_client, db_url):
 def test_reconcile_is_idempotent(integration_client):
     client, _ = integration_client
     sample_id = f"SRR-idemp-{uuid.uuid4().hex[:6]}"
-    client.post("/samples", json={"sample_id": sample_id})
-    client.post("/workflows", json=_wf_payload(workflow_id=f"idemp-{uuid.uuid4().hex[:6]}"))
+    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/workflows", json=_wf_payload(workflow_id=f"idemp-{uuid.uuid4().hex[:6]}"))
 
-    r1 = client.post("/admin/reconcile-jobs").json()["jobs_created"]
-    r2 = client.post("/admin/reconcile-jobs").json()["jobs_created"]
+    r1 = client.post("/api/admin/reconcile-jobs").json()["jobs_created"]
+    r2 = client.post("/api/admin/reconcile-jobs").json()["jobs_created"]
     # Second call creates zero new jobs for existing pairs
     assert r2 == 0 or r2 < r1
 
@@ -269,12 +269,12 @@ def test_reconcile_skips_paused_workflows(integration_client, db_url):
     sample_id = f"SRR-paused-{uuid.uuid4().hex[:6]}"
     wf_payload = _wf_payload(workflow_id=f"paused-{uuid.uuid4().hex[:6]}")
 
-    client.post("/samples", json={"sample_id": sample_id})
-    wf_resp = client.post("/workflows", json=wf_payload)
+    client.post("/api/samples", json={"sample_id": sample_id})
+    wf_resp = client.post("/api/workflows", json=wf_payload)
     wf_pk = wf_resp.json()["id"]
-    client.patch(f"/workflows/{wf_pk}/status", json={"status": "paused"})
+    client.patch(f"/api/workflows/{wf_pk}/status", json={"status": "paused"})
 
-    client.post("/admin/reconcile-jobs")
+    client.post("/api/admin/reconcile-jobs")
 
     rows = _run(_query(db_url, select(jobs_tbl).where(
         jobs_tbl.c.sample_id == sample_id,
@@ -291,17 +291,17 @@ def _seed_job(client, *, workflow_id: str | None = None, sample_suffix: str = ""
     """Register a sample + active workflow + reconcile. Returns (sample_id, workflow_id, wf_pk)."""
     sample_id = f"SRR-disp-{uuid.uuid4().hex[:6]}{sample_suffix}"
     wf_id = workflow_id or f"wf-disp-{uuid.uuid4().hex[:6]}"
-    wf_resp = client.post("/workflows", json=_wf_payload(workflow_id=wf_id))
+    wf_resp = client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id))
     wf_pk = wf_resp.json()["id"]
-    client.post("/samples", json={"sample_id": sample_id})
-    client.post("/admin/reconcile-jobs")
+    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/admin/reconcile-jobs")
     return sample_id, wf_id, wf_pk
 
 
 def test_dispatch_batch_no_pending_returns_204(integration_client):
     client, _ = integration_client
     # Request a workflow_id that has no jobs
-    resp = client.post("/dispatch/batch", json={"workflow_id": "no-such-wf", "limit": 5})
+    resp = client.post("/api/dispatch/batch", json={"workflow_id": ["no-such-wf"], "limit": 5})
     assert resp.status_code == 204
 
 
@@ -311,7 +311,7 @@ def test_dispatch_batch_claims_pending_jobs(integration_client, db_url):
     client, _ = integration_client
     sample_id, wf_id, wf_pk = _seed_job(client)
 
-    resp = client.post("/dispatch/batch", json={"workflow_id": wf_id, "limit": 10})
+    resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_id], "limit": 10})
     assert resp.status_code == 200
     data = resp.json()
 
@@ -343,12 +343,12 @@ def test_dispatch_submitted_transitions(integration_client, db_url):
     client, _ = integration_client
     sample_id, wf_id, wf_pk = _seed_job(client)
 
-    batch_resp = client.post("/dispatch/batch", json={"workflow_id": wf_id, "limit": 10})
+    batch_resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_id], "limit": 10})
     assert batch_resp.status_code == 200
     run_name = batch_resp.json()["run_name"]
     sample_ids = [j["sample_id"] for j in batch_resp.json()["jobs"]]
 
-    resp = client.post("/dispatch/submitted", json={
+    resp = client.post("/api/dispatch/submitted", json={
         "run_name": run_name,
         "executor_job_id": "SLURM_42",
         "sample_ids": sample_ids,
@@ -438,20 +438,20 @@ def test_full_lifecycle(integration_client, db_url):
     sample_ids_all = [f"SRR-lc-{uuid.uuid4().hex[:6]}" for _ in range(3)]
 
     # Register workflow + samples
-    wf_resp = client.post("/workflows", json=_wf_payload(
+    wf_resp = client.post("/api/workflows", json=_wf_payload(
         workflow_id=wf_id, version=wf_version, max_retries=0,
     ))
     assert wf_resp.status_code == 201
     wf_pk = wf_resp.json()["id"]
 
     for sid in sample_ids_all:
-        client.post("/samples", json={"sample_id": sid})
-    client.post("/admin/reconcile-jobs")
+        client.post("/api/samples", json={"sample_id": sid})
+    client.post("/api/admin/reconcile-jobs")
 
     # Dispatch — use a large limit; filter by both workflow_id AND version so
     # only this test's 3 jobs are returned (shared DB has samples from prior tests).
-    batch_resp = client.post("/dispatch/batch", json={
-        "workflow_id": wf_id,
+    batch_resp = client.post("/api/dispatch/batch", json={
+        "workflow_id": [wf_id],
         "workflow_version": wf_version,
         "limit": 500,
     })
@@ -465,7 +465,7 @@ def test_full_lifecycle(integration_client, db_url):
     assert set(sample_ids_all).issubset(set(dispatched_ids))
 
     # Submit
-    client.post("/dispatch/submitted", json={
+    client.post("/api/dispatch/submitted", json={
         "run_name": run_name,
         "executor_job_id": "SLURM_77",
         "sample_ids": dispatched_ids,
@@ -537,20 +537,20 @@ def test_failed_job_requeued_when_retries_remain(integration_client, db_url):
     wf_version = f"rv-{uuid.uuid4().hex[:6]}"
     sample_id = f"SRR-retry-{uuid.uuid4().hex[:6]}"
 
-    client.post("/workflows", json=_wf_payload(
+    client.post("/api/workflows", json=_wf_payload(
         workflow_id=wf_id, version=wf_version, max_retries=2,
     ))
-    client.post("/samples", json={"sample_id": sample_id})
-    client.post("/admin/reconcile-jobs")
+    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/admin/reconcile-jobs")
 
     # First run — dispatch, submit, start, complete with no MARK_COMPLETE
     # limit=500: shared DB has many samples from prior tests; ensure our target is included
-    b = client.post("/dispatch/batch", json={"workflow_id": wf_id, "workflow_version": wf_version, "limit": 500})
+    b = client.post("/api/dispatch/batch", json={"workflow_id": [wf_id], "workflow_version": wf_version, "limit": 500})
     assert b.status_code == 200
     run_name = b.json()["run_name"]
     run_id = str(uuid.uuid4())
 
-    client.post("/dispatch/submitted", json={"run_name": run_name, "sample_ids": [sample_id]})
+    client.post("/api/dispatch/submitted", json={"run_name": run_name, "sample_ids": [sample_id]})
     _run_until_completed(client, run_id, run_name, wf_id, wf_version)
 
     job_rows = _run(_query(db_url, select(jobs_tbl).where(
@@ -572,20 +572,20 @@ def test_job_fails_permanently_when_retries_exhausted(integration_client, db_url
     wf_version = f"ev-{uuid.uuid4().hex[:6]}"
     sample_id = f"SRR-exhaust-{uuid.uuid4().hex[:6]}"
 
-    client.post("/workflows", json=_wf_payload(
+    client.post("/api/workflows", json=_wf_payload(
         workflow_id=wf_id, version=wf_version, max_retries=1,
     ))
-    client.post("/samples", json={"sample_id": sample_id})
-    client.post("/admin/reconcile-jobs")
+    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/admin/reconcile-jobs")
 
     # Exhaust 1 retry — two failed runs; large limit so our sample is always dispatched
     for _ in range(2):
-        b = client.post("/dispatch/batch", json={"workflow_id": wf_id, "workflow_version": wf_version, "limit": 500})
+        b = client.post("/api/dispatch/batch", json={"workflow_id": [wf_id], "workflow_version": wf_version, "limit": 500})
         if b.status_code == 204:
             break
         run_name = b.json()["run_name"]
         run_id = str(uuid.uuid4())
-        client.post("/dispatch/submitted", json={"run_name": run_name, "sample_ids": [sample_id]})
+        client.post("/api/dispatch/submitted", json={"run_name": run_name, "sample_ids": [sample_id]})
         _run_until_completed(client, run_id, run_name, wf_id, wf_version)
 
     job_rows = _run(_query(db_url, select(jobs_tbl).where(
@@ -611,25 +611,25 @@ def test_retry_then_success(integration_client, db_url):
     wf_version = f"rs-{uuid.uuid4().hex[:6]}"
     sample_id = f"SRR-retrysuc-{uuid.uuid4().hex[:6]}"
 
-    client.post("/workflows", json=_wf_payload(
+    client.post("/api/workflows", json=_wf_payload(
         workflow_id=wf_id, version=wf_version, max_retries=2,
     ))
-    client.post("/samples", json={"sample_id": sample_id})
-    client.post("/admin/reconcile-jobs")
+    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/admin/reconcile-jobs")
 
     # First attempt: fail without MARK_COMPLETE → re-enqueued
-    b = client.post("/dispatch/batch", json={"workflow_id": wf_id, "workflow_version": wf_version, "limit": 500})
+    b = client.post("/api/dispatch/batch", json={"workflow_id": [wf_id], "workflow_version": wf_version, "limit": 500})
     run1_name = b.json()["run_name"]
     run1_id = str(uuid.uuid4())
-    client.post("/dispatch/submitted", json={"run_name": run1_name, "sample_ids": [sample_id]})
+    client.post("/api/dispatch/submitted", json={"run_name": run1_name, "sample_ids": [sample_id]})
     _run_until_completed(client, run1_id, run1_name, wf_id, wf_version)
 
     # Second attempt: succeed with MARK_COMPLETE
-    b = client.post("/dispatch/batch", json={"workflow_id": wf_id, "workflow_version": wf_version, "limit": 500})
+    b = client.post("/api/dispatch/batch", json={"workflow_id": [wf_id], "workflow_version": wf_version, "limit": 500})
     assert b.status_code == 200, "job should be back in pending for retry"
     run2_name = b.json()["run_name"]
     run2_id = str(uuid.uuid4())
-    client.post("/dispatch/submitted", json={"run_name": run2_name, "sample_ids": [sample_id]})
+    client.post("/api/dispatch/submitted", json={"run_name": run2_name, "sample_ids": [sample_id]})
 
     client.post("/telemetry", json=_weblog_payload(
         run_id=run2_id, run_name=run2_name, event="started",
