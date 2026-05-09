@@ -655,3 +655,32 @@ def test_retry_then_success(integration_client, db_url):
         dead_letter_tbl.c.sample_id == sample_id,
     )))
     assert len(dlq) == 0, "no DLQ entry — job eventually succeeded"
+
+
+# ---------------------------------------------------------------------------
+# Admin stats
+# ---------------------------------------------------------------------------
+
+def test_admin_stats_shape_and_increments(integration_client):
+    client, _ = integration_client
+
+    before = client.get("/api/admin/stats")
+    assert before.status_code == 200
+    pre = before.json()
+    for key in ("samples", "workflows", "jobs_by_status", "runs_by_status", "dead_letter_unresolved"):
+        assert key in pre
+    assert isinstance(pre["jobs_by_status"], dict)
+    assert isinstance(pre["runs_by_status"], dict)
+
+    sample_id = f"SRR-stats-{uuid.uuid4().hex[:6]}"
+    wf_id = f"stats-{uuid.uuid4().hex[:6]}"
+    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id))
+    client.post("/api/admin/reconcile-jobs")
+
+    after = client.get("/api/admin/stats").json()
+    assert after["samples"] >= pre["samples"] + 1
+    assert after["workflows"] >= pre["workflows"] + 1
+    pending_before = pre["jobs_by_status"].get("pending", 0)
+    pending_after = after["jobs_by_status"].get("pending", 0)
+    assert pending_after >= pending_before + 1

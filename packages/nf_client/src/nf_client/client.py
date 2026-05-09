@@ -97,6 +97,12 @@ class JobClient:
         except Exception:
             pass
 
+    async def get_stats(self) -> dict:
+        """Return the server's summary stats payload (samples, workflows, jobs/runs by status, DLQ)."""
+        response = await self._client.get("admin/stats")
+        response.raise_for_status()
+        return response.json()
+
     async def report_submitted(
         self,
         run_name: str,
