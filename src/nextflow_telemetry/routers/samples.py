@@ -4,18 +4,26 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ..services.sample import SampleService
+from ..utils import parse_srrs
 
 
 class SampleRegisterRequest(BaseModel):
     """Request body for registering or updating a sample."""
     sample_id: str = Field(description="Unique identifier. For SRA samples derive via srrs_to_sample_id().")
-    ncbi_accession: str | None = Field(default=None, description="Semicolon-separated SRR accessions (e.g. 'SRR001;SRR002'). Normalised to sorted, deduplicated form on write.")
+    ncbi_accession: str = Field(description="Semicolon-separated SRR accessions (e.g. 'SRR001;SRR002'). Must contain at least one non-empty accession. Normalised to sorted, deduplicated form on write.")
     biosample_id: str | None = Field(default=None, description="NCBI BioSample accession (e.g. 'SAMN12345678'). Annotation only — not used as identity.")
     metadata: dict[str, Any] | None = Field(default=None, description="Optional arbitrary JSON metadata. Replaced on upsert.")
+
+    @field_validator("ncbi_accession")
+    @classmethod
+    def _ncbi_accession_non_empty(cls, v: str) -> str:
+        if not parse_srrs(v):
+            raise ValueError("must contain at least one non-empty SRR accession")
+        return v
 
 
 class SampleResponse(BaseModel):

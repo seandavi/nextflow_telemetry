@@ -101,7 +101,7 @@ def test_register_sample_creates_row(integration_client, db_url):
     client, _ = integration_client
     sample_id = f"SRR-{uuid.uuid4().hex[:8]}"
 
-    resp = client.post("/api/samples", json={"sample_id": sample_id, "metadata": {"source": "gut"}})
+    resp = client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001", "metadata": {"source": "gut"}})
     assert resp.status_code == 201
     data = resp.json()
     assert data["sample_id"] == sample_id
@@ -117,8 +117,8 @@ def test_register_sample_idempotent(integration_client):
     client, _ = integration_client
     sample_id = f"SRR-{uuid.uuid4().hex[:8]}"
 
-    resp1 = client.post("/api/samples", json={"sample_id": sample_id, "metadata": {"v": 1}})
-    resp2 = client.post("/api/samples", json={"sample_id": sample_id, "metadata": {"v": 2}})
+    resp1 = client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001", "metadata": {"v": 1}})
+    resp2 = client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001", "metadata": {"v": 2}})
     assert resp1.status_code == 201
     assert resp2.status_code == 201
     # Second upsert updates metadata
@@ -128,7 +128,7 @@ def test_register_sample_idempotent(integration_client):
 def test_list_samples(integration_client):
     client, _ = integration_client
     sample_id = f"SRR-{uuid.uuid4().hex[:8]}"
-    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"})
 
     resp = client.get("/api/samples")
     assert resp.status_code == 200
@@ -140,6 +140,18 @@ def test_get_sample_not_found(integration_client):
     client, _ = integration_client
     resp = client.get("/api/samples/DOES_NOT_EXIST")
     assert resp.status_code == 404
+
+
+@pytest.mark.parametrize("bad_value", [None, "", "   ", ";", " ; ; "])
+def test_register_sample_rejects_empty_ncbi_accession(integration_client, bad_value):
+    """Samples with no SRRs cause fasterq_dump to fail; reject at the API."""
+    client, _ = integration_client
+    sample_id = f"SRR-{uuid.uuid4().hex[:8]}"
+    payload: dict = {"sample_id": sample_id}
+    if bad_value is not None:
+        payload["ncbi_accession"] = bad_value
+    resp = client.post("/api/samples", json=payload)
+    assert resp.status_code == 422, resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +245,7 @@ def test_reconcile_creates_jobs(integration_client, db_url):
     sample_id = f"SRR-recon-{uuid.uuid4().hex[:6]}"
     wf_payload = _wf_payload()
 
-    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"})
     wf_resp = client.post("/api/workflows", json=wf_payload)
     wf_pk = wf_resp.json()["id"]
 
@@ -253,7 +265,7 @@ def test_reconcile_creates_jobs(integration_client, db_url):
 def test_reconcile_is_idempotent(integration_client):
     client, _ = integration_client
     sample_id = f"SRR-idemp-{uuid.uuid4().hex[:6]}"
-    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"})
     client.post("/api/workflows", json=_wf_payload(workflow_id=f"idemp-{uuid.uuid4().hex[:6]}"))
 
     r1 = client.post("/api/admin/reconcile-jobs").json()["jobs_created"]
@@ -269,7 +281,7 @@ def test_reconcile_skips_paused_workflows(integration_client, db_url):
     sample_id = f"SRR-paused-{uuid.uuid4().hex[:6]}"
     wf_payload = _wf_payload(workflow_id=f"paused-{uuid.uuid4().hex[:6]}")
 
-    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"})
     wf_resp = client.post("/api/workflows", json=wf_payload)
     wf_pk = wf_resp.json()["id"]
     client.patch(f"/api/workflows/{wf_pk}/status", json={"status": "paused"})
@@ -293,7 +305,7 @@ def _seed_job(client, *, workflow_id: str | None = None, sample_suffix: str = ""
     wf_id = workflow_id or f"wf-disp-{uuid.uuid4().hex[:6]}"
     wf_resp = client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id))
     wf_pk = wf_resp.json()["id"]
-    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"})
     client.post("/api/admin/reconcile-jobs")
     return sample_id, wf_id, wf_pk
 
@@ -445,7 +457,7 @@ def test_full_lifecycle(integration_client, db_url):
     wf_pk = wf_resp.json()["id"]
 
     for sid in sample_ids_all:
-        client.post("/api/samples", json={"sample_id": sid})
+        client.post("/api/samples", json={"sample_id": sid, "ncbi_accession": "SRR000001"})
     client.post("/api/admin/reconcile-jobs")
 
     # Dispatch — use a large limit; filter by both workflow_id AND version so
@@ -540,7 +552,7 @@ def test_failed_job_requeued_when_retries_remain(integration_client, db_url):
     client.post("/api/workflows", json=_wf_payload(
         workflow_id=wf_id, version=wf_version, max_retries=2,
     ))
-    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"})
     client.post("/api/admin/reconcile-jobs")
 
     # First run — dispatch, submit, start, complete with no MARK_COMPLETE
@@ -575,7 +587,7 @@ def test_job_fails_permanently_when_retries_exhausted(integration_client, db_url
     client.post("/api/workflows", json=_wf_payload(
         workflow_id=wf_id, version=wf_version, max_retries=1,
     ))
-    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"})
     client.post("/api/admin/reconcile-jobs")
 
     # Exhaust 1 retry — two failed runs; large limit so our sample is always dispatched
@@ -614,7 +626,7 @@ def test_retry_then_success(integration_client, db_url):
     client.post("/api/workflows", json=_wf_payload(
         workflow_id=wf_id, version=wf_version, max_retries=2,
     ))
-    client.post("/api/samples", json={"sample_id": sample_id})
+    client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"})
     client.post("/api/admin/reconcile-jobs")
 
     # First attempt: fail without MARK_COMPLETE → re-enqueued
@@ -674,7 +686,7 @@ def test_admin_stats_shape_and_increments(integration_client):
 
     sample_id = f"SRR-stats-{uuid.uuid4().hex[:6]}"
     wf_id = f"stats-{uuid.uuid4().hex[:6]}"
-    assert client.post("/api/samples", json={"sample_id": sample_id}).status_code == 201
+    assert client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"}).status_code == 201
     assert client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id)).status_code in (200, 201)
     assert client.post("/api/admin/reconcile-jobs").status_code == 200
 

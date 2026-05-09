@@ -297,7 +297,7 @@ def test_e2e_happy_path(live_server: LiveServer, db_asyncpg_url, tmp_path):
     with _api(live_server) as client:
         _register_workflow(client, wf_id, wf_version, max_retries=0)
         for sid in sample_ids:
-            client.post("/samples", json={"sample_id": sid})
+            client.post("/samples", json={"sample_id": sid, "ncbi_accession": "SRR000001"})
         client.post("/admin/reconcile-jobs")
 
         batch = client.post("/dispatch/batch", json={
@@ -444,8 +444,8 @@ def test_artacho_cohort_full_loop(live_server: LiveServer, db_asyncpg_url: str, 
         for sid in ARTACHO_SAMPLE_IDS:
             resp = client.post("/samples", json={
                 "sample_id": sid,
+                "ncbi_accession": ARTACHO_NCBI[sid],
                 "metadata": {
-                    "ncbi_accession": ARTACHO_NCBI[sid],
                     "cohort": "ArtachoA_2021",
                 },
             })
@@ -554,7 +554,7 @@ def test_e2e_retry_on_failure(live_server: LiveServer, db_asyncpg_url, tmp_path)
 
     with _api(live_server) as client:
         _register_workflow(client, wf_id, wf_version, max_retries=2)
-        client.post("/samples", json={"sample_id": sample_id})
+        client.post("/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"})
         client.post("/admin/reconcile-jobs")
 
         b1 = client.post("/dispatch/batch", json={
