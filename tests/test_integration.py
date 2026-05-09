@@ -674,9 +674,9 @@ def test_admin_stats_shape_and_increments(integration_client):
 
     sample_id = f"SRR-stats-{uuid.uuid4().hex[:6]}"
     wf_id = f"stats-{uuid.uuid4().hex[:6]}"
-    client.post("/api/samples", json={"sample_id": sample_id})
-    client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id))
-    client.post("/api/admin/reconcile-jobs")
+    assert client.post("/api/samples", json={"sample_id": sample_id}).status_code == 201
+    assert client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id)).status_code in (200, 201)
+    assert client.post("/api/admin/reconcile-jobs").status_code == 200
 
     after = client.get("/api/admin/stats").json()
     assert after["samples"] >= pre["samples"] + 1
