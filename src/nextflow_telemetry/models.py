@@ -132,7 +132,7 @@ class TopFailureExitCodeRow(BaseModel):
 class ProcessSummaryResponse(BaseModel):
     """Response from GET /metrics/processes/summary."""
     generated_at_utc: datetime.datetime = Field(description="Server time when the query ran.")
-    window_days: Optional[int] = Field(description="Query window in days; null means all-time.")
+    window_days: Optional[int] = Field(description="Effective time window applied (default 7 days when no time filter is supplied; null only when since/until or window_hours was used instead).")
     cards: ProcessSummaryCards
     event_mix: list[EventMixRow]
     top_failures: list[TopFailureRow]
@@ -172,7 +172,7 @@ class RetryByProcessRow(BaseModel):
 class ProcessRetriesResponse(BaseModel):
     """Response from GET /metrics/processes/retries."""
     generated_at_utc: datetime.datetime
-    window_days: Optional[int]
+    window_days: Optional[int] = Field(description="Effective time window applied (default 7 days when no time filter is supplied; null only when since/until or window_hours was used instead).")
     summary: RetrySummary
     by_attempt: list[RetryByAttemptRow]
     by_process: list[RetryByProcessRow]
@@ -203,7 +203,7 @@ class ResourceByAttemptRow(BaseModel):
 class ProcessResourcesByAttemptResponse(BaseModel):
     """Response from GET /metrics/processes/resources-by-attempt."""
     generated_at_utc: datetime.datetime
-    window_days: Optional[int]
+    window_days: Optional[int] = Field(description="Effective time window applied (default 7 days when no time filter is supplied; null only when since/until or window_hours was used instead).")
     rows: list[ResourceByAttemptRow]
 
 
@@ -221,7 +221,7 @@ class ProcessFailuresRow(BaseModel):
 class ProcessFailuresResponse(BaseModel):
     """Response from GET /metrics/processes/failures."""
     generated_at_utc: datetime.datetime
-    window_days: Optional[int]
+    window_days: Optional[int] = Field(description="Effective time window applied (default 7 days when no time filter is supplied; null only when since/until or window_hours was used instead).")
     rows: list[ProcessFailuresRow]
 
 
@@ -236,7 +236,7 @@ class FailureSignatureRow(BaseModel):
 class ProcessFailureSignaturesResponse(BaseModel):
     """Response from GET /metrics/processes/failure-signatures."""
     generated_at_utc: datetime.datetime
-    window_days: Optional[int]
+    window_days: Optional[int] = Field(description="Effective time window applied (default 7 days when no time filter is supplied; null only when since/until or window_hours was used instead).")
     rows: list[FailureSignatureRow]
 
 
