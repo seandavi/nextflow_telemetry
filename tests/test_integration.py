@@ -317,16 +317,6 @@ def _seed_job(client, *, workflow_id: str | None = None, sample_suffix: str = ""
     return sample_id, wf_id, wf_pk
 
 
-def _pause_workflow(client, wf_id: str) -> None:
-    """Test cleanup: flip a workflow to paused so subsequent reconcile-jobs
-    calls in later tests don't keep cross-producting it with new samples.
-    """
-    listing = client.get("/api/workflows", params={"status": "active"}).json()
-    matches = [w for w in listing if w["workflow_id"] == wf_id]
-    if matches:
-        client.patch(f"/api/workflows/{matches[0]['id']}/status", json={"status": "paused"})
-
-
 def _purge_test_dispatch_state(db_url: str, wf_ids: list[str], sample_ids: list[str]) -> None:
     """Delete jobs / workflow_runs / samples / workflows so subsequent
     reconcile-jobs calls don't see this test's leftovers.
@@ -358,30 +348,39 @@ async def _exec_with_params(db_url, stmts, params):
         await engine.dispose()
 
 
-def test_dispatch_disjoint_workflows_dont_block_each_other(integration_client, db_url):
-    """A real concurrency test for the #74 contract.
+def test_dispatch_skips_locked_workflow_and_picks_an_unlocked_one(integration_client, db_url):
+    """The #74 contract: a workflow whose rows are entirely locked must NOT
+    starve dispatchers that could otherwise have claimed a different one.
 
-    Spawns a background thread that opens its own async transaction,
-    `SELECT … FOR UPDATE` over every pending job for workflow A, and
-    holds those locks until the main thread releases it. While the
-    locks are held, the main thread calls /api/dispatch/batch for
-    workflow B — which should complete near-instantly since B's
-    rows are untouched.
+    Setup makes wf_a sort before wf_b alphabetically by workflow_id, so
+    the pick step's `ORDER BY workflow_id, workflow_version, created_at`
+    *would* pick wf_a if it ignored locks. We:
 
-    Pre-#74 this would have blocked: the original FOR UPDATE SKIP
-    LOCKED query scanned across both workflows in workflow_id order
-    before narrowing to one, and could land on rows the holder had
-    locked before SKIP LOCKED kicked in. The pick-then-lock pattern
-    plus SKIP LOCKED on the pick step makes the two paths
-    independent.
+      1. Spawn a background thread that locks every pending wf_a row
+         (`SELECT … FOR UPDATE`) in its own async transaction.
+      2. Filter the dispatch to `[wf_a, wf_b]` (both candidates) — so
+         the dispatcher is forced to choose between them. The naive
+         pick (no SKIP LOCKED) would land on wf_a, then claim_q would
+         find every wf_a row locked, return 0 rows, and 204.
+      3. Assert the response is 200 with workflow_id=wf_b — proving
+         the pick step skipped the entirely-locked wf_a and steered
+         to the unlocked wf_b.
+
+    Without `SKIP LOCKED` on the pick step (the round-2 fix in this
+    PR), this test would 204-and-spin under contention.
     """
     import asyncio
     import threading
     import time
 
     client, _ = integration_client
-    sample_a, wf_a, _ = _seed_job(client)
-    sample_b, wf_b, _ = _seed_job(client)
+    # Force alphabetical ordering: wf_a sorts before wf_b. The pick step
+    # default ORDER BY would land on wf_a if not for SKIP LOCKED.
+    aaa_id = "wf-aaaa-" + uuid.uuid4().hex[:6]
+    zzz_id = "wf-zzzz-" + uuid.uuid4().hex[:6]
+    sample_a, wf_a, _ = _seed_job(client, workflow_id=aaa_id)
+    sample_b, wf_b, _ = _seed_job(client, workflow_id=zzz_id)
+    assert wf_a < wf_b, "test setup invariant: wf_a must sort before wf_b"
 
     locked = threading.Event()
     proceed = threading.Event()
@@ -400,7 +399,6 @@ def test_dispatch_disjoint_workflows_dont_block_each_other(integration_client, d
                         {"w": wf_a},
                     )
                     locked.set()
-                    # Hold the transaction open until the main thread releases.
                     while not proceed.is_set():
                         await asyncio.sleep(0.05)
             finally:
@@ -414,9 +412,12 @@ def test_dispatch_disjoint_workflows_dont_block_each_other(integration_client, d
     assert locked.wait(timeout=5.0), "holder thread didn't acquire lock"
     try:
         t0 = time.time()
+        # Both workflows in the filter. Pre-fix: pick lands on wf_a
+        # (alphabetically first), claim_q finds it all locked, 204.
+        # Post-fix: pick SKIP LOCKED skips wf_a, picks wf_b, succeeds.
         resp = client.post(
             "/api/dispatch/batch",
-            json={"workflow_id": [wf_b], "limit": 100},
+            json={"workflow_id": [wf_a, wf_b], "limit": 100},
         )
         elapsed = time.time() - t0
     finally:
@@ -425,10 +426,10 @@ def test_dispatch_disjoint_workflows_dont_block_each_other(integration_client, d
         _purge_test_dispatch_state(db_url, [wf_a, wf_b], [sample_a, sample_b])
 
     assert resp.status_code == 200, resp.text
-    assert resp.json()["workflow_id"] == wf_b
-    # 2s ceiling is generous; should be milliseconds. If we ever block on
-    # the wf_a locks this assertion catches it.
-    assert elapsed < 2.0, f"dispatch blocked for {elapsed:.2f}s while wf_a was locked"
+    assert resp.json()["workflow_id"] == wf_b, (
+        f"expected dispatcher to pick the unlocked wf_b, got {resp.json()['workflow_id']}"
+    )
+    assert elapsed < 2.0, f"dispatch blocked for {elapsed:.2f}s under wf_a contention"
 
 
 def test_dispatch_batch_two_disjoint_workflow_filters_each_get_their_own(integration_client, db_url):
