@@ -21,9 +21,12 @@ def _normalize_window(
 ) -> tuple[int | None, int | None]:
     """Apply the default 7-day window when no time filter was supplied.
 
-    Public service methods call this at entry so the effective value flows
-    into both the SQL filter and the response payload — clients see the
-    actual window the query used, not None.
+    Public service methods call this at entry and pass the effective
+    `window_days` into the response payload (where the response model
+    has a `window_days` field). Today every metrics endpoint surfaces
+    the field, so a client that doesn't pass a time filter sees
+    `window_days: 7` rather than `null`. `window_hours` / `since` /
+    `until` are echoed only on endpoints that already accepted them.
 
     Callers that explicitly want all-time data should pass
     `window_days=10000` or similar; the default only applies when every
@@ -687,6 +690,7 @@ class ProcessMetricsService:
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "window_days": window_days,
             "bucket": bucket,
             "rows": rows,
         }
@@ -839,6 +843,7 @@ class ProcessMetricsService:
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "window_days": window_days,
             "total": total,
             "limit": limit,
             "offset": offset,

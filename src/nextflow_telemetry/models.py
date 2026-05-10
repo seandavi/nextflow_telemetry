@@ -252,6 +252,7 @@ class TimelineRow(BaseModel):
 class ProcessTimelineResponse(BaseModel):
     """Response from GET /metrics/processes/timeline."""
     generated_at_utc: datetime.datetime
+    window_days: Optional[int] = Field(default=None, description="Effective time window applied (default 7 days when no time filter is supplied).")
     bucket: str
     rows: list[TimelineRow]
 
@@ -285,6 +286,7 @@ class TaskRow(BaseModel):
 class TasksResponse(BaseModel):
     """Response from GET /metrics/processes/tasks."""
     generated_at_utc: datetime.datetime
+    window_days: Optional[int] = Field(default=None, description="Effective time window applied (default 7 days when no time filter is supplied).")
     total: int = Field(description="Total matching rows (before pagination).")
     limit: int
     offset: int
