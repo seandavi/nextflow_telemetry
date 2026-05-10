@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from nextflow_telemetry.services.process_metrics import (

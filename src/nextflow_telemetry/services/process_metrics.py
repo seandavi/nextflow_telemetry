@@ -21,12 +21,12 @@ def _normalize_window(
 ) -> tuple[int | None, int | None]:
     """Apply the default 7-day window when no time filter was supplied.
 
-    Public service methods call this at entry and pass the effective
-    `window_days` into the response payload (where the response model
-    has a `window_days` field). Today every metrics endpoint surfaces
-    the field, so a client that doesn't pass a time filter sees
-    `window_days: 7` rather than `null`. `window_hours` / `since` /
-    `until` are echoed only on endpoints that already accepted them.
+    Public methods that accept a time filter (summary/retries/failures/
+    failure_signatures/timeline/tasks/resources_by_attempt) call this at
+    entry and pass the effective `window_days` into the response payload,
+    so a client that doesn't supply a time filter sees `window_days: 7`
+    rather than `null`. `running()` does not accept time filters and is
+    not affected.
 
     Callers that explicitly want all-time data should pass
     `window_days=10000` or similar; the default only applies when every
