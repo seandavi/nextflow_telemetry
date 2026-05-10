@@ -317,6 +317,39 @@ def _seed_job(client, *, workflow_id: str | None = None, sample_suffix: str = ""
     return sample_id, wf_id, wf_pk
 
 
+def test_dispatch_batch_two_disjoint_workflow_filters_each_get_their_own(integration_client):
+    """Each dispatch response is scoped to its requested workflow_id (#74).
+
+    Pre-#74, FOR UPDATE locks could span multiple workflows before being
+    narrowed in Python — the pick-then-lock pattern in this PR locks
+    only the batch corresponding to the picked (workflow_id, version),
+    so disjoint workflow filters land in independent locked sets.
+
+    This test isn't a true concurrency stress test (TestClient runs
+    sequentially), but it does verify the contract: requesting workflow A
+    then workflow B in succession produces claims whose top-level
+    workflow_id matches the request, and the run_names are distinct.
+    Reconcile cross-products samples × workflows so both samples have
+    jobs for both workflows, which is fine — what matters is each
+    response is scoped correctly.
+    """
+    client, _ = integration_client
+    _, wf_a, _ = _seed_job(client)
+    _, wf_b, _ = _seed_job(client)
+
+    a_resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_a], "limit": 100})
+    assert a_resp.status_code == 200, a_resp.text
+    a_data = a_resp.json()
+    assert a_data["workflow_id"] == wf_a
+
+    b_resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_b], "limit": 100})
+    assert b_resp.status_code == 200, b_resp.text
+    b_data = b_resp.json()
+    assert b_data["workflow_id"] == wf_b
+
+    assert a_data["run_name"] != b_data["run_name"]
+
+
 def test_dispatch_batch_no_pending_returns_204(integration_client):
     client, _ = integration_client
     # Request a workflow_id that has no jobs
