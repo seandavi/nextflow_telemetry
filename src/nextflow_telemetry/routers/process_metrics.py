@@ -9,10 +9,20 @@ from fastapi import APIRouter, HTTPException, Query
 from .. import models
 from ..services.process_metrics import ProcessMetricsService
 
-_WINDOW_DAYS_DESC = "Limit results to events in the last N days. Cannot be combined with window_hours, since, or until."
-_WINDOW_HOURS_DESC = "Limit results to events in the last N hours. Cannot be combined with window_days."
-_SINCE_DESC = "Inclusive lower bound (UTC ISO-8601). Can be combined with until."
-_UNTIL_DESC = "Inclusive upper bound (UTC ISO-8601). Can be combined with since."
+_WINDOW_DAYS_DESC = (
+    "Limit results to events in the last N days. Cannot be combined with "
+    "window_hours, since, or until. **When none of window_days, window_hours, "
+    "since, or until is supplied, the server applies a default 7-day look-back** "
+    "to keep the query bounded as event volume grows. Pass an explicit large "
+    "value (e.g. 10000) for an effectively all-time window. The effective "
+    "value is echoed back in the response's `window_days` field."
+)
+_WINDOW_HOURS_DESC = (
+    "Limit results to events in the last N hours. Cannot be combined with window_days. "
+    "See window_days for the default-window behaviour when no time filter is supplied."
+)
+_SINCE_DESC = "Inclusive lower bound (UTC ISO-8601). Can be combined with until. See window_days for the default-window behaviour when no time filter is supplied."
+_UNTIL_DESC = "Inclusive upper bound (UTC ISO-8601). Can be combined with since. See window_days for the default-window behaviour when no time filter is supplied."
 _WORKFLOW_ID_DESC = "Filter to a specific workflow (e.g. 'cmgd_nextflow')."
 _WORKFLOW_VERSION_DESC = "Filter to a specific workflow version. Only meaningful with workflow_id."
 _RUN_NAME_DESC = "Filter to a single Nextflow run_name."
