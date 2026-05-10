@@ -395,14 +395,17 @@ def test_weblog_started_advances_submitted_jobs_to_running(integration_client, d
     client, _ = integration_client
     _, wf_id, _ = _seed_job(client)
 
-    batch = client.post("/api/dispatch/batch", json={"workflow_id": [wf_id], "limit": 10}).json()
+    batch_resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_id], "limit": 10})
+    assert batch_resp.status_code == 200, batch_resp.text
+    batch = batch_resp.json()
     run_name = batch["run_name"]
     sample_ids = [j["sample_id"] for j in batch["jobs"]]
 
     # claimed → submitted
-    client.post("/api/dispatch/submitted", json={
+    submitted_resp = client.post("/api/dispatch/submitted", json={
         "run_name": run_name, "executor_job_id": "SLURM_99", "sample_ids": sample_ids,
     })
+    assert submitted_resp.status_code == 200, submitted_resp.text
 
     # submitted → running (via weblog started event)
     run_id = str(uuid.uuid4())
