@@ -50,6 +50,15 @@ Two packages in one repo:
 - **`services/`** — Business logic as `@dataclass` classes holding an `AsyncEngine`. All DB work is done with `async with engine.begin() as conn`.
 - **`migrations/`** — Alembic async migrations. Name format: `YYYYMMDD_<hash>_<description>.py`.
 
+### SQL style: SQLAlchemy Core vs raw `text()`
+
+Both styles are used and that's deliberate. Pick by the SQL, not by file:
+
+- **Core constructs** (`insert(tbl)`, `select(tbl.c.x)`, `update(tbl)`) for simple typed CRUD where you want column references and `.returning(*tbl.c)`. See `services/telemetry.py`, `routers/dispatch.py`.
+- **Raw `text()`** when the query leans on Postgres-specific shapes Core handles awkwardly: `ON CONFLICT ON CONSTRAINT`, JSONB operators (`trace->>'process'`), `INSERT…SELECT` with cross joins, conditional WHERE chunks built by f-string, multi-aggregate analytical queries. See `services/process_metrics.py`, `services/cohort.py`, `services/reconcile.py`, `routers/task_logs.py`.
+
+When using raw `text()`, **always pass user-derived values as `:name` bind parameters** — never f-string interpolation. F-strings are fine for static SQL fragments (e.g. optionally appending `AND foo = :foo` based on whether `foo` was supplied), but the values themselves go through bind params.
+
 ### Job lifecycle
 
 ```
