@@ -199,6 +199,7 @@ export interface TimelineRow {
 
 export interface ProcessTimelineResponse {
   generated_at_utc: string
+  window_days: number | null
   bucket: string
   rows: TimelineRow[]
 }
@@ -296,6 +297,7 @@ export interface TaskRow {
 
 export interface TasksResponse {
   generated_at_utc: string
+  window_days: number | null
   total: number
   limit: number
   offset: number

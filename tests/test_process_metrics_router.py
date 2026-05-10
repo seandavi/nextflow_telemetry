@@ -125,6 +125,7 @@ class FakeProcessMetricsService:
     async def timeline(self, *, bucket="hour", **kwargs):
         return {
             "generated_at_utc": "2026-01-01T00:00:00Z",
+            "window_days": kwargs.get("window_days"),
             "bucket": bucket,
             "rows": [
                 {"bucket_start": "2026-01-01T00:00:00Z", "total": 10, "success": 8, "failed": 2, "failure_pct": 20.0}
@@ -134,6 +135,7 @@ class FakeProcessMetricsService:
     async def tasks(self, *, limit=50, offset=0, **kwargs):
         return {
             "generated_at_utc": "2026-01-01T00:00:00Z",
+            "window_days": kwargs.get("window_days"),
             "total": 1,
             "limit": limit,
             "offset": offset,
