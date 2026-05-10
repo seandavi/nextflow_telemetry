@@ -19,6 +19,9 @@ import type {
   SampleRegisterRequest,
   SubmittedRequest,
   DaemonAgentResponse,
+  CohortListItem,
+  CohortSummaryResponse,
+  CohortFailuresResponse,
 } from '../types'
 
 export interface MetricsFilters {
@@ -119,5 +122,23 @@ export const api = {
   daemons: {
     list: (activeOnly = false) =>
       get<DaemonAgentResponse[]>(`/daemons/${activeOnly ? '?active_only=true' : ''}`),
+  },
+
+  cohorts: {
+    list: () => get<CohortListItem[]>('/cohorts'),
+    summary: (collectionId: string, opts: { workflowId?: string; workflowVersion?: string } = {}) => {
+      const p = new URLSearchParams()
+      if (opts.workflowId)      p.set('workflow_id',      opts.workflowId)
+      if (opts.workflowVersion) p.set('workflow_version', opts.workflowVersion)
+      const q = p.toString()
+      return get<CohortSummaryResponse>(`/cohorts/${encodeURIComponent(collectionId)}/summary${q ? `?${q}` : ''}`)
+    },
+    failures: (collectionId: string, process: string, opts: { workflowId?: string; workflowVersion?: string; limit?: number } = {}) => {
+      const p = new URLSearchParams({ process })
+      if (opts.workflowId)      p.set('workflow_id',      opts.workflowId)
+      if (opts.workflowVersion) p.set('workflow_version', opts.workflowVersion)
+      if (opts.limit != null)   p.set('limit',            String(opts.limit))
+      return get<CohortFailuresResponse>(`/cohorts/${encodeURIComponent(collectionId)}/failures?${p}`)
+    },
   },
 }
