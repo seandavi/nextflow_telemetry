@@ -153,21 +153,45 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
     return { workflowId, workflowVersion }
   }, [workflowKey])
 
+  // Reset selection AND clear the previously-shown summary whenever the
+  // user changes cohort or workflow filter. Clearing summary prevents
+  // flashing stale data (counts/failure_by_process from the old cohort)
+  // during the brief window between selection change and the new fetch
+  // resolving. We deliberately do NOT depend on `tick` here — that would
+  // wipe a user's drill-down every poll interval.
   useEffect(() => {
-    if (!selectedCohort) return
     setSummary(null)
     setSelectedProcess('')
     setFailures([])
-    api.cohorts.summary(selectedCohort, wfFilter).then(setSummary).catch(console.error)
+  }, [selectedCohort, workflowKey])
+
+  // Refresh the summary on every relevant change, including poll ticks.
+  // Each invocation owns an `ignore` flag so a slow response from a
+  // previous cohort/workflow can't repopulate `summary` after the user
+  // has switched (the cleanup on the next render flips ignore=true,
+  // and the resolved promise no-ops).
+  useEffect(() => {
+    if (!selectedCohort) return
+    let ignore = false
+    api.cohorts.summary(selectedCohort, wfFilter).then(s => {
+      if (!ignore) setSummary(s)
+    }).catch(console.error)
+    return () => { ignore = true }
   }, [selectedCohort, workflowKey, tick])
 
+  // Same pattern for the failed-task drill-down: refresh on poll, but
+  // never lose the user's selectedProcess just because the timer fired,
+  // and never let a stale response repopulate failures after the user
+  // has changed cohort/process.
   useEffect(() => {
     if (!selectedCohort || !selectedProcess) return
+    let ignore = false
     setLoadingFailures(true)
     api.cohorts.failures(selectedCohort, selectedProcess, wfFilter)
-      .then(r => setFailures(r.rows))
+      .then(r => { if (!ignore) setFailures(r.rows) })
       .catch(console.error)
-      .finally(() => setLoadingFailures(false))
+      .finally(() => { if (!ignore) setLoadingFailures(false) })
+    return () => { ignore = true }
   }, [selectedCohort, selectedProcess, workflowKey, tick])
 
   const totalFailedAcrossProcesses = summary?.failure_by_process.reduce((s, r) => s + r.failed_count, 0) ?? 0
