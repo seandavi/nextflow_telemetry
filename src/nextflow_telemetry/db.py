@@ -157,6 +157,13 @@ workflow_runs_tbl = Table(
     Column("submitted_at", DateTime(timezone=True), nullable=True),
     Column("started_at", DateTime(timezone=True), nullable=True),
     Column("completed_at", DateTime(timezone=True), nullable=True),
+    # Run-lifecycle observability (issue #63 / meta #62)
+    Column("last_heartbeat_at", DateTime(timezone=True), nullable=True),
+    Column("last_known_slurm_state", Text, nullable=True),
+    Column("slurm_reason", Text, nullable=True),
+    Column("wrapper_exit_code", Integer, nullable=True),
+    Column("wait_seconds", Integer, nullable=True),
+    Column("nextflow_log_uploaded_at", DateTime(timezone=True), nullable=True),
     Index("ix_workflow_runs_status", "status"),
     Index("ix_workflow_runs_claimed_at", "claimed_at"),
 )
