@@ -331,3 +331,62 @@ export interface DaemonAgentResponse {
   started_at: string
   is_active: boolean
 }
+
+// ---------------------------------------------------------------------------
+// Cohorts (issue #36)
+// ---------------------------------------------------------------------------
+
+export interface CohortListItem {
+  collection_id: string
+  source: string
+  label: string | null
+  sample_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CohortJobStatusCounts {
+  pending: number
+  claimed: number
+  running: number
+  completed: number
+  failed: number
+}
+
+export interface CohortFailureByProcessRow {
+  process: string
+  failed_count: number
+  sample_count: number
+}
+
+export interface CohortSummaryResponse {
+  collection_id: string
+  source: string
+  label: string | null
+  workflow_id: string | null
+  workflow_version: string | null
+  sample_count: number
+  total_jobs: number
+  job_status_counts: CohortJobStatusCounts
+  completion_pct: number
+  failure_by_process: CohortFailureByProcessRow[]
+  generated_at_utc: string
+}
+
+export interface CohortFailureRow {
+  telemetry_id: number
+  sample_id: string | null
+  run_name: string
+  utc_time: string
+  task_name: string | null
+  task_hash: string | null
+  status: string
+  exit_code: string | null
+  attempt: number
+}
+
+export interface CohortFailuresResponse {
+  collection_id: string
+  process: string
+  rows: CohortFailureRow[]
+}
