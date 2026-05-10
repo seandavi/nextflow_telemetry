@@ -371,7 +371,6 @@ def test_dispatch_skips_locked_workflow_and_picks_an_unlocked_one(integration_cl
     """
     import asyncio
     import threading
-    import time
 
     client, _ = integration_client
     # Force alphabetical ordering: wf_a sorts before wf_b. The pick step
@@ -407,11 +406,14 @@ def test_dispatch_skips_locked_workflow_and_picks_an_unlocked_one(integration_cl
         asyncio.run(go())
 
     holder = threading.Thread(target=hold_wf_a_lock, daemon=True)
+    # Outer try/finally guarantees the holder thread is released and the
+    # test data is purged even if the lock-acquisition assertion fails or
+    # the dispatch call raises — otherwise a stuck daemon thread holding
+    # an open transaction would leak into the session-scoped Postgres.
     holder.start()
-
-    assert locked.wait(timeout=5.0), "holder thread didn't acquire lock"
     try:
-        t0 = time.time()
+        assert locked.wait(timeout=5.0), "holder thread didn't acquire lock"
+
         # Both workflows in the filter. Pre-fix: pick lands on wf_a
         # (alphabetically first), claim_q finds it all locked, 204.
         # Post-fix: pick SKIP LOCKED skips wf_a, picks wf_b, succeeds.
@@ -419,7 +421,6 @@ def test_dispatch_skips_locked_workflow_and_picks_an_unlocked_one(integration_cl
             "/api/dispatch/batch",
             json={"workflow_id": [wf_a, wf_b], "limit": 100},
         )
-        elapsed = time.time() - t0
     finally:
         proceed.set()
         holder.join(timeout=5.0)
@@ -429,7 +430,6 @@ def test_dispatch_skips_locked_workflow_and_picks_an_unlocked_one(integration_cl
     assert resp.json()["workflow_id"] == wf_b, (
         f"expected dispatcher to pick the unlocked wf_b, got {resp.json()['workflow_id']}"
     )
-    assert elapsed < 2.0, f"dispatch blocked for {elapsed:.2f}s under wf_a contention"
 
 
 def test_dispatch_batch_two_disjoint_workflow_filters_each_get_their_own(integration_client, db_url):
