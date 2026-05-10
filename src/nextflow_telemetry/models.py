@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional, Union
 import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -349,6 +349,116 @@ class WorkflowJobSummary(BaseModel):
     failed: int = Field(description="Jobs that exhausted retries and are marked failed.")
     dead_letter: int = Field(description="Jobs that were routed to the dead-letter queue.")
     completion_pct: float = Field(description="Percentage of jobs completed (0–100). Zero when total is 0.")
+
+
+# ---------------------------------------------------------------------------
+# Run-lifecycle event union (issue #62 / #63)
+#
+# These events are POSTed to /api/runs/{run_name}/event by the wrapper, the
+# pipeline (workflow.onComplete/onError), and the daemon (sacct polling).
+# Together with weblog they make the lifecycle of a Nextflow run observable
+# end-to-end: queue → wrapper start → nextflow start → tasks → wrapper exit.
+#
+# Every variant carries a `type` discriminator and a `utc_time` timestamp.
+# All other fields are variant-specific.
+# ---------------------------------------------------------------------------
+
+
+class _RunEventBase(BaseModel):
+    """Common fields on every run-lifecycle event."""
+    utc_time: datetime.datetime = Field(description="UTC timestamp when the event was emitted by the client.")
+
+
+class WrapperStartedEvent(_RunEventBase):
+    """Emitted by the bash wrapper / Python wrapper as the very first action.
+
+    Tells the server that something *began* the run, even before nextflow itself
+    starts. Useful when the run dies before any weblog event is sent.
+    """
+    type: Literal["wrapper_started"]
+    hostname: Optional[str] = Field(default=None, description="Hostname of the compute node executing the wrapper.")
+    slurm_job_id: Optional[str] = Field(default=None, description="SLURM job id, if running under SLURM.")
+
+
+class PreNextflowEvent(_RunEventBase):
+    """Emitted just before exec'ing nextflow, after the scheduler awarded a node.
+
+    `wait_seconds` is queue-wait (submit → start), useful for scheduler health.
+    """
+    type: Literal["pre_nextflow"]
+    hostname: Optional[str] = None
+    wait_seconds: Optional[int] = Field(default=None, description="Submit→start time on the scheduler, in seconds.")
+
+
+class WrapperExitedEvent(_RunEventBase):
+    """Emitted by the wrapper after nextflow has returned (any exit code).
+
+    `exit_code` is nextflow's own exit status. The wrapper should also upload
+    the .nextflow.log file as the multipart attachment named `nextflow_log`.
+    """
+    type: Literal["wrapper_exited"]
+    exit_code: Optional[int] = Field(default=None, description="Exit code from `nextflow run`.")
+    duration_seconds: Optional[int] = Field(default=None, description="Wall-clock seconds the wrapper ran.")
+
+
+class HeartbeatEvent(_RunEventBase):
+    """Emitted on a timer (e.g. every 60 s) while the wrapper is alive."""
+    type: Literal["heartbeat"]
+
+
+class SlurmStateEvent(_RunEventBase):
+    """Emitted by the daemon after polling `sacct -j <jobid>`.
+
+    Carries the latest scheduler-observed state: RUNNING, COMPLETED, FAILED,
+    TIMEOUT, OUT_OF_MEMORY, NODE_FAIL, PREEMPTED, etc.
+    """
+    type: Literal["slurm_state"]
+    state: str = Field(description="sacct State (e.g. RUNNING, COMPLETED, FAILED, TIMEOUT, OUT_OF_MEMORY).")
+    reason: Optional[str] = Field(default=None, description="sacct Reason field, if any.")
+
+
+class WorkflowOnCompleteEvent(_RunEventBase):
+    """Emitted by Nextflow's `workflow.onComplete` hook (Phase 2)."""
+    type: Literal["workflow_oncomplete"]
+    success: bool = Field(description="True if Nextflow considered the run successful.")
+    exit_status: Optional[int] = Field(default=None, description="Nextflow's reported exit status.")
+    duration_ms: Optional[int] = Field(default=None, description="Total wall-clock duration in milliseconds.")
+    error_message: Optional[str] = Field(default=None, description="Top-level error message, if any.")
+
+
+class WorkflowOnErrorEvent(_RunEventBase):
+    """Emitted by Nextflow's `workflow.onError` hook (Phase 2)."""
+    type: Literal["workflow_onerror"]
+    error_message: Optional[str] = None
+
+
+class WrapperLogEvent(_RunEventBase):
+    """A chunk of the wrapper's stdout/stderr (free-form text)."""
+    type: Literal["wrapper_log"]
+    stream: Literal["stdout", "stderr"]
+    text: str
+
+
+RunEvent = Annotated[
+    Union[
+        WrapperStartedEvent,
+        PreNextflowEvent,
+        WrapperExitedEvent,
+        HeartbeatEvent,
+        SlurmStateEvent,
+        WorkflowOnCompleteEvent,
+        WorkflowOnErrorEvent,
+        WrapperLogEvent,
+    ],
+    Field(discriminator="type"),
+]
+
+
+class RunEventResponse(BaseModel):
+    """Response from POST /api/runs/{run_name}/event."""
+    run_name: str
+    type: str
+    nextflow_log_uploaded: bool = Field(description="True if a .nextflow.log file was attached and stored.")
 
 
 class DaemonHeartbeat(BaseModel):

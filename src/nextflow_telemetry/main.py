@@ -13,6 +13,7 @@ from .routers.curated import create_curated_router
 from .routers.daemons import create_daemons_router
 from .routers.dispatch import create_dispatch_router
 from .routers.process_metrics import create_process_metrics_router
+from .routers.runs import create_runs_router
 from .routers.samples import create_samples_router
 from .routers.task_logs import create_task_logs_router
 from .routers.workflows import create_workflows_router
@@ -61,6 +62,7 @@ app.include_router(create_admin_router(engine), prefix="/api")
 app.include_router(create_task_logs_router(engine), prefix="/api")
 app.include_router(create_daemons_router(engine), prefix="/api")
 app.include_router(create_curated_router(engine), prefix="/api")
+app.include_router(create_runs_router(engine), prefix="/api")
 
 
 @app.get(
