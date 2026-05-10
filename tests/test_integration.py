@@ -393,7 +393,7 @@ def test_weblog_started_advances_submitted_jobs_to_running(integration_client, d
     from nextflow_telemetry.db import jobs_tbl, workflow_runs_tbl
 
     client, _ = integration_client
-    sample_id, wf_id, _ = _seed_job(client)
+    _, wf_id, _ = _seed_job(client)
 
     batch = client.post("/api/dispatch/batch", json={"workflow_id": [wf_id], "limit": 10}).json()
     run_name = batch["run_name"]
