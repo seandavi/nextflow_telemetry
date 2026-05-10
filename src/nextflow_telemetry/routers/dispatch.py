@@ -198,13 +198,17 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
                     detail=f"No claimed run with name '{req.run_name}' found",
                 )
 
+            # Advance jobs from `claimed` to `submitted` — distinct from
+            # `running`, which is set only when the weblog `started` event
+            # arrives. The gap between the two is the scheduler queue wait,
+            # which the dashboard surfaces separately.
             await conn.execute(
                 update(jobs_tbl)
                 .where(
                     jobs_tbl.c.run_name == req.run_name,
                     jobs_tbl.c.status == "claimed",
                 )
-                .values(status="running")
+                .values(status="submitted")
             )
 
         return {"run_name": req.run_name, "status": "submitted"}

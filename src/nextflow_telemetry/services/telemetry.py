@@ -74,11 +74,15 @@ class TelemetryService:
                     .where(workflow_runs_tbl.c.run_name == event.run_name)
                     .values(run_id=event.run_id, status="running", started_at=now)
                 )
+                # Jobs reach `running` from either `submitted` (the
+                # normal flow once /dispatch/submitted has fired) or
+                # `claimed` (defensive: events out of order, or pre-#73
+                # jobs that haven't transitioned through submitted yet).
                 await conn.execute(
                     update(jobs_tbl)
                     .where(
                         jobs_tbl.c.run_name == event.run_name,
-                        jobs_tbl.c.status == "claimed",
+                        jobs_tbl.c.status.in_(["claimed", "submitted"]),
                     )
                     .values(status="running")
                 )

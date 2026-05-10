@@ -21,7 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 
-_JOB_STATUSES = ("pending", "claimed", "running", "completed", "failed")
+_JOB_STATUSES = ("pending", "claimed", "submitted", "running", "completed", "failed")
 
 
 @dataclass

@@ -383,6 +383,39 @@ def test_dispatch_submitted_transitions(integration_client, db_url):
     job_rows = _run(_query(db_url, select(jobs_tbl).where(
         jobs_tbl.c.run_name == run_name,
     )))
+    # Issue #73: jobs go to `submitted` here, not `running`. The transition to
+    # `running` happens later, on the weblog `started` event.
+    assert all(r["status"] == "submitted" for r in job_rows)
+
+
+def test_weblog_started_advances_submitted_jobs_to_running(integration_client, db_url):
+    """The full state machine: pending → claimed → submitted → running."""
+    from nextflow_telemetry.db import jobs_tbl, workflow_runs_tbl
+
+    client, _ = integration_client
+    sample_id, wf_id, _ = _seed_job(client)
+
+    batch = client.post("/api/dispatch/batch", json={"workflow_id": [wf_id], "limit": 10}).json()
+    run_name = batch["run_name"]
+    sample_ids = [j["sample_id"] for j in batch["jobs"]]
+
+    # claimed → submitted
+    client.post("/api/dispatch/submitted", json={
+        "run_name": run_name, "executor_job_id": "SLURM_99", "sample_ids": sample_ids,
+    })
+
+    # submitted → running (via weblog started event)
+    run_id = str(uuid.uuid4())
+    resp = client.post("/telemetry",
+                       json=_weblog_payload(run_id=run_id, run_name=run_name, event="started"))
+    assert resp.status_code == 200
+
+    run_rows = _run(_query(db_url, select(workflow_runs_tbl).where(
+        workflow_runs_tbl.c.run_name == run_name
+    )))
+    assert run_rows[0]["status"] == "running"
+
+    job_rows = _run(_query(db_url, select(jobs_tbl).where(jobs_tbl.c.run_name == run_name)))
     assert all(r["status"] == "running" for r in job_rows)
 
 
