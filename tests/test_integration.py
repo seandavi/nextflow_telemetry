@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
@@ -317,7 +317,121 @@ def _seed_job(client, *, workflow_id: str | None = None, sample_suffix: str = ""
     return sample_id, wf_id, wf_pk
 
 
-def test_dispatch_batch_two_disjoint_workflow_filters_each_get_their_own(integration_client):
+def _pause_workflow(client, wf_id: str) -> None:
+    """Test cleanup: flip a workflow to paused so subsequent reconcile-jobs
+    calls in later tests don't keep cross-producting it with new samples.
+    """
+    listing = client.get("/api/workflows", params={"status": "active"}).json()
+    matches = [w for w in listing if w["workflow_id"] == wf_id]
+    if matches:
+        client.patch(f"/api/workflows/{matches[0]['id']}/status", json={"status": "paused"})
+
+
+def _purge_test_dispatch_state(db_url: str, wf_ids: list[str], sample_ids: list[str]) -> None:
+    """Delete jobs / workflow_runs / samples / workflows so subsequent
+    reconcile-jobs calls don't see this test's leftovers.
+
+    Without this, samples accumulate in the shared testcontainers DB and
+    every subsequent reconcile cross-products them × the next test's
+    fresh workflow. The dispatcher's `LIMIT N` then returns N rows out of
+    a pile of rows-with-tied-created_at and the test's expected sample
+    may not be in the slice.
+    """
+    statements = [
+        text("DELETE FROM dead_letter WHERE sample_id = ANY(:s)"),
+        text("DELETE FROM jobs WHERE sample_id = ANY(:s) OR workflow_id = ANY(:w)"),
+        text("DELETE FROM workflow_runs WHERE workflow_id = ANY(:w)"),
+        text("DELETE FROM telemetry WHERE sample_id = ANY(:s)"),
+        text("DELETE FROM samples WHERE sample_id = ANY(:s)"),
+        text("DELETE FROM workflows WHERE workflow_id = ANY(:w)"),
+    ]
+    _run(_exec_with_params(db_url, statements, {"s": sample_ids, "w": wf_ids}))
+
+
+async def _exec_with_params(db_url, stmts, params):
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.begin() as conn:
+            for stmt in stmts:
+                await conn.execute(stmt, params)
+    finally:
+        await engine.dispose()
+
+
+def test_dispatch_disjoint_workflows_dont_block_each_other(integration_client, db_url):
+    """A real concurrency test for the #74 contract.
+
+    Spawns a background thread that opens its own async transaction,
+    `SELECT … FOR UPDATE` over every pending job for workflow A, and
+    holds those locks until the main thread releases it. While the
+    locks are held, the main thread calls /api/dispatch/batch for
+    workflow B — which should complete near-instantly since B's
+    rows are untouched.
+
+    Pre-#74 this would have blocked: the original FOR UPDATE SKIP
+    LOCKED query scanned across both workflows in workflow_id order
+    before narrowing to one, and could land on rows the holder had
+    locked before SKIP LOCKED kicked in. The pick-then-lock pattern
+    plus SKIP LOCKED on the pick step makes the two paths
+    independent.
+    """
+    import asyncio
+    import threading
+    import time
+
+    client, _ = integration_client
+    sample_a, wf_a, _ = _seed_job(client)
+    sample_b, wf_b, _ = _seed_job(client)
+
+    locked = threading.Event()
+    proceed = threading.Event()
+
+    def hold_wf_a_lock():
+        async def go():
+            engine = create_async_engine(db_url)
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text(
+                            "SELECT id FROM jobs "
+                            "WHERE workflow_id = :w AND status = 'pending' "
+                            "FOR UPDATE"
+                        ),
+                        {"w": wf_a},
+                    )
+                    locked.set()
+                    # Hold the transaction open until the main thread releases.
+                    while not proceed.is_set():
+                        await asyncio.sleep(0.05)
+            finally:
+                await engine.dispose()
+
+        asyncio.run(go())
+
+    holder = threading.Thread(target=hold_wf_a_lock, daemon=True)
+    holder.start()
+
+    assert locked.wait(timeout=5.0), "holder thread didn't acquire lock"
+    try:
+        t0 = time.time()
+        resp = client.post(
+            "/api/dispatch/batch",
+            json={"workflow_id": [wf_b], "limit": 100},
+        )
+        elapsed = time.time() - t0
+    finally:
+        proceed.set()
+        holder.join(timeout=5.0)
+        _purge_test_dispatch_state(db_url, [wf_a, wf_b], [sample_a, sample_b])
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["workflow_id"] == wf_b
+    # 2s ceiling is generous; should be milliseconds. If we ever block on
+    # the wf_a locks this assertion catches it.
+    assert elapsed < 2.0, f"dispatch blocked for {elapsed:.2f}s while wf_a was locked"
+
+
+def test_dispatch_batch_two_disjoint_workflow_filters_each_get_their_own(integration_client, db_url):
     """Each dispatch response is scoped to its requested workflow_id (#74).
 
     Pre-#74, FOR UPDATE locks could span multiple workflows before being
@@ -334,20 +448,22 @@ def test_dispatch_batch_two_disjoint_workflow_filters_each_get_their_own(integra
     response is scoped correctly.
     """
     client, _ = integration_client
-    _, wf_a, _ = _seed_job(client)
-    _, wf_b, _ = _seed_job(client)
+    sample_a, wf_a, _ = _seed_job(client)
+    sample_b, wf_b, _ = _seed_job(client)
+    try:
+        a_resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_a], "limit": 100})
+        assert a_resp.status_code == 200, a_resp.text
+        a_data = a_resp.json()
+        assert a_data["workflow_id"] == wf_a
 
-    a_resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_a], "limit": 100})
-    assert a_resp.status_code == 200, a_resp.text
-    a_data = a_resp.json()
-    assert a_data["workflow_id"] == wf_a
+        b_resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_b], "limit": 100})
+        assert b_resp.status_code == 200, b_resp.text
+        b_data = b_resp.json()
+        assert b_data["workflow_id"] == wf_b
 
-    b_resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_b], "limit": 100})
-    assert b_resp.status_code == 200, b_resp.text
-    b_data = b_resp.json()
-    assert b_data["workflow_id"] == wf_b
-
-    assert a_data["run_name"] != b_data["run_name"]
+        assert a_data["run_name"] != b_data["run_name"]
+    finally:
+        _purge_test_dispatch_state(db_url, [wf_a, wf_b], [sample_a, sample_b])
 
 
 def test_dispatch_batch_no_pending_returns_204(integration_client):

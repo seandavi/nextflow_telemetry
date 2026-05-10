@@ -103,7 +103,16 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
                     jobs_tbl.c.workflow_id,
                     jobs_tbl.c.workflow_version,
                     jobs_tbl.c.created_at,
-                ).limit(1)
+                )
+                .limit(1)
+                # Skip rows another dispatcher is already claiming. Without
+                # this, a competing transaction holding a lock on the
+                # otherwise-first pending job would cause every subsequent
+                # caller to pick that workflow, fail step 2 (FOR UPDATE
+                # SKIP LOCKED returns 0 rows because all of that workflow's
+                # rows are locked too), and 204 → spin. SKIP LOCKED on
+                # pick steers us to a workflow that *has* claimable rows.
+                .with_for_update(of=jobs_tbl, skip_locked=True)
             )
 
             pick_row = (await conn.execute(pick_q)).mappings().first()
