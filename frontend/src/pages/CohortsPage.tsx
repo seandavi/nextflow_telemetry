@@ -153,14 +153,24 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
     return { workflowId, workflowVersion }
   }, [workflowKey])
 
+  // Reset the in-process selection only when the user changes cohort or
+  // workflow filter. We deliberately do NOT depend on `tick` here — that
+  // would wipe a user's drill-down every poll interval.
   useEffect(() => {
-    if (!selectedCohort) return
-    setSummary(null)
     setSelectedProcess('')
     setFailures([])
+  }, [selectedCohort, workflowKey])
+
+  // Refresh the summary on every relevant change, including poll ticks.
+  // The summary itself is replaced atomically by setSummary, so a poll
+  // refresh is invisible unless the data actually changed.
+  useEffect(() => {
+    if (!selectedCohort) return
     api.cohorts.summary(selectedCohort, wfFilter).then(setSummary).catch(console.error)
   }, [selectedCohort, workflowKey, tick])
 
+  // Same pattern for the failed-task drill-down: refresh on poll, but
+  // never lose the user's selectedProcess just because the timer fired.
   useEffect(() => {
     if (!selectedCohort || !selectedProcess) return
     setLoadingFailures(true)
