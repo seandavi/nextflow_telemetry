@@ -51,7 +51,8 @@ def _captured_event_types(route: respx.Route) -> list[str]:
 
 @pytest.fixture
 def telemetry_base() -> str:
-    return "http://telemetry.test"
+    """API-base URL passed to --telemetry-url. Mirrors ClientConfig.server_url."""
+    return "http://telemetry.test/api"
 
 
 def test_event_sequence_for_successful_run(tmp_path, telemetry_base, monkeypatch):
@@ -61,7 +62,7 @@ def test_event_sequence_for_successful_run(tmp_path, telemetry_base, monkeypatch
     log_path.write_text("nextflow log content\n")
 
     with respx.mock(base_url=telemetry_base) as rx:
-        route = rx.post("/api/runs/r-test/event").mock(
+        route = rx.post("/runs/r-test/event").mock(
             return_value=httpx.Response(201, json={
                 "run_name": "r-test", "type": "x", "nextflow_log_uploaded": False,
             })
@@ -85,7 +86,7 @@ def test_failing_subprocess_exit_code_propagates(tmp_path, telemetry_base, monke
     monkeypatch.chdir(tmp_path)
 
     with respx.mock(base_url=telemetry_base) as rx:
-        route = rx.post("/api/runs/r-fail/event").mock(
+        route = rx.post("/runs/r-fail/event").mock(
             return_value=httpx.Response(201, json={
                 "run_name": "r-fail", "type": "x", "nextflow_log_uploaded": False,
             })
@@ -111,7 +112,7 @@ def test_nextflow_log_attached_when_present(tmp_path, telemetry_base, monkeypatc
     log_path.write_text("important diagnostic content\n")
 
     with respx.mock(base_url=telemetry_base) as rx:
-        route = rx.post("/api/runs/r-log/event").mock(
+        route = rx.post("/runs/r-log/event").mock(
             return_value=httpx.Response(201, json={
                 "run_name": "r-log", "type": "x", "nextflow_log_uploaded": True,
             })
@@ -135,7 +136,7 @@ def test_missing_nextflow_log_omits_attachment(tmp_path, telemetry_base, monkeyp
     no_log = tmp_path / "does-not-exist.log"
 
     with respx.mock(base_url=telemetry_base) as rx:
-        route = rx.post("/api/runs/r-nolog/event").mock(
+        route = rx.post("/runs/r-nolog/event").mock(
             return_value=httpx.Response(201, json={
                 "run_name": "r-nolog", "type": "x", "nextflow_log_uploaded": False,
             })
@@ -159,7 +160,7 @@ def test_telemetry_post_failure_does_not_fail_the_run(tmp_path, telemetry_base, 
     monkeypatch.chdir(tmp_path)
 
     with respx.mock(base_url=telemetry_base) as rx:
-        rx.post("/api/runs/r-flaky/event").mock(
+        rx.post("/runs/r-flaky/event").mock(
             side_effect=httpx.ConnectError("boom — server unreachable")
         )
 
@@ -179,7 +180,7 @@ def test_pre_nextflow_includes_wait_seconds_when_slurm_env_set(tmp_path, telemet
     monkeypatch.setenv("SLURM_JOB_ID", "999")
 
     with respx.mock(base_url=telemetry_base) as rx:
-        route = rx.post("/api/runs/r-wait/event").mock(
+        route = rx.post("/runs/r-wait/event").mock(
             return_value=httpx.Response(201, json={
                 "run_name": "r-wait", "type": "x", "nextflow_log_uploaded": False,
             })
@@ -199,6 +200,19 @@ def test_pre_nextflow_includes_wait_seconds_when_slurm_env_set(tmp_path, telemet
     assert started["slurm_job_id"] == "999"
 
 
+def test_wait_seconds_is_null_when_negative_delta(monkeypatch):
+    """SLURM_JOB_START_TIME < SLURM_SUBMIT_TIME → return None (never report negative wait)."""
+    monkeypatch.setenv("SLURM_SUBMIT_TIME", "1700000123")
+    monkeypatch.setenv("SLURM_JOB_START_TIME", "1700000000")
+    assert run_wrapper._wait_seconds_from_slurm() is None
+
+
+def test_wait_seconds_is_null_when_unparseable(monkeypatch):
+    monkeypatch.setenv("SLURM_SUBMIT_TIME", "not-an-int")
+    monkeypatch.setenv("SLURM_JOB_START_TIME", "1700000000")
+    assert run_wrapper._wait_seconds_from_slurm() is None
+
+
 def test_wait_seconds_is_null_when_slurm_env_absent(tmp_path, telemetry_base, monkeypatch):
     """Without SLURM env vars, the wrapper sends `wait_seconds: null` rather than omitting the key.
 
@@ -211,7 +225,7 @@ def test_wait_seconds_is_null_when_slurm_env_absent(tmp_path, telemetry_base, mo
     monkeypatch.delenv("SLURM_JOB_START_TIME", raising=False)
 
     with respx.mock(base_url=telemetry_base) as rx:
-        route = rx.post("/api/runs/r-local/event").mock(
+        route = rx.post("/runs/r-local/event").mock(
             return_value=httpx.Response(201, json={
                 "run_name": "r-local", "type": "x", "nextflow_log_uploaded": False,
             })
@@ -244,7 +258,7 @@ def test_heartbeats_fire_during_long_run(tmp_path, telemetry_base, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     with respx.mock(base_url=telemetry_base) as rx:
-        route = rx.post("/api/runs/r-hb/event").mock(
+        route = rx.post("/runs/r-hb/event").mock(
             return_value=httpx.Response(201, json={
                 "run_name": "r-hb", "type": "x", "nextflow_log_uploaded": False,
             })
@@ -269,7 +283,7 @@ def test_heartbeats_disabled_when_interval_is_zero(tmp_path, telemetry_base, mon
     monkeypatch.chdir(tmp_path)
 
     with respx.mock(base_url=telemetry_base) as rx:
-        route = rx.post("/api/runs/r-nohb/event").mock(
+        route = rx.post("/runs/r-nohb/event").mock(
             return_value=httpx.Response(201, json={
                 "run_name": "r-nohb", "type": "x", "nextflow_log_uploaded": False,
             })
@@ -292,7 +306,7 @@ def test_non_2xx_response_is_logged_to_stderr(tmp_path, telemetry_base, monkeypa
     monkeypatch.chdir(tmp_path)
 
     with respx.mock(base_url=telemetry_base) as rx:
-        rx.post("/api/runs/r-orphan/event").mock(
+        rx.post("/runs/r-orphan/event").mock(
             return_value=httpx.Response(404, json={"detail": "no such run"})
         )
 
@@ -313,7 +327,7 @@ def test_popen_oserror_emits_wrapper_exited_with_127(tmp_path, telemetry_base, m
     monkeypatch.chdir(tmp_path)
 
     with respx.mock(base_url=telemetry_base) as rx:
-        route = rx.post("/api/runs/r-noexec/event").mock(
+        route = rx.post("/runs/r-noexec/event").mock(
             return_value=httpx.Response(201, json={
                 "run_name": "r-noexec", "type": "x", "nextflow_log_uploaded": False,
             })

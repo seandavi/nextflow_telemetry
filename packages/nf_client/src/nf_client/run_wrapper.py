@@ -56,13 +56,18 @@ def _post_event(
 
     Accepts ``client=None`` (no-op telemetry mode) for the case where the
     httpx client could not be constructed — see main(); the run still runs.
+
+    The path is *relative* (``runs/{run_name}/event``) so it composes
+    cleanly with whatever path prefix the operator chose for ``base_url``.
+    Mirrors the JobClient convention: ``base_url`` ends with ``/`` and is
+    treated as the API root.
     """
     if client is None:
         return
     event_type = body.get("type", "<unknown>")
     try:
         response = client.post(
-            f"/api/runs/{run_name}/event",
+            f"runs/{run_name}/event",
             data={"event": json.dumps(body)},
             files=files,
             timeout=timeout,
@@ -89,18 +94,21 @@ def _wait_seconds_from_slurm() -> int | None:
     """Compute submit→start queue wait from SLURM env, if available.
 
     Both SLURM_SUBMIT_TIME and SLURM_JOB_START_TIME are unix timestamps
-    (string-encoded integers). Returns None when either is absent or
-    unparseable; the caller still includes the key in the event payload
-    (as null) so the schema is uniform across SLURM and non-SLURM runs.
+    (string-encoded integers). Returns None when either is absent,
+    unparseable, or when the computed delta is negative (which would
+    indicate inconsistent env vars and is never a meaningful queue wait).
+    The caller still includes the key in the event payload (as null) so
+    the schema is uniform across SLURM and non-SLURM runs.
     """
     submit = os.environ.get("SLURM_SUBMIT_TIME")
     start = os.environ.get("SLURM_JOB_START_TIME")
     if not submit or not start:
         return None
     try:
-        return int(start) - int(submit)
+        delta = int(start) - int(submit)
     except ValueError:
         return None
+    return delta if delta >= 0 else None
 
 
 def _hostname() -> str:
@@ -182,7 +190,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-name", required=True, help="Nextflow run name (-name).")
     parser.add_argument(
         "--telemetry-url", required=True,
-        help="Base URL of the telemetry server, e.g. https://nf-telemetry.example.com",
+        help=(
+            "API base URL of the telemetry server (the same value as "
+            "ClientConfig.server_url, e.g. 'https://nf-telemetry.example.com/api'). "
+            "Trailing slash is optional; we append one. The wrapper POSTs to "
+            "<base>/runs/<run_name>/event."
+        ),
     )
     parser.add_argument(
         "--heartbeat-seconds", type=float, default=_HEARTBEAT_SECONDS_DEFAULT,
@@ -205,7 +218,12 @@ def main(argv: list[str] | None = None) -> int:
     # httpx.Client(base_url=...) can raise for malformed URLs. Telemetry
     # must NEVER prevent the run, so fall back to no-op mode (client=None
     # → _post_event silently returns) and still execute the subprocess.
-    base_url = args.telemetry_url.rstrip("/")
+    #
+    # httpx resolves relative paths against base_url per RFC 3986: without a
+    # trailing slash, the last segment of base_url is replaced. We force a
+    # trailing slash so callers can pass `.../api` or `.../api/`
+    # interchangeably and our `runs/{run_name}/event` path always appends.
+    base_url = args.telemetry_url.rstrip("/") + "/"
     client: httpx.Client | None
     try:
         client = httpx.Client(base_url=base_url)
