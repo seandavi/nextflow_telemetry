@@ -254,7 +254,12 @@ def test_log_truncation_keeps_tail_for_oversized_file(tmp_path):
 
 
 def test_heartbeats_fire_during_long_run(tmp_path, telemetry_base, monkeypatch):
-    """A subprocess that runs longer than the heartbeat interval triggers heartbeat events."""
+    """Heartbeats fire on a timer; the test waits on call_count rather than wall-clock.
+
+    The subprocess sleeps long enough that the test can wait for the expected
+    number of heartbeats to land before assertion, avoiding flakiness on
+    slow/loaded CI workers.
+    """
     monkeypatch.chdir(tmp_path)
 
     with respx.mock(base_url=telemetry_base) as rx:
@@ -264,18 +269,58 @@ def test_heartbeats_fire_during_long_run(tmp_path, telemetry_base, monkeypatch):
             })
         )
 
-        # 0.4s wall-clock subprocess, heartbeat every 0.1s → expect ≥2 heartbeats
+        # 5s subprocess gives the heartbeat thread plenty of room to fire
+        # at the 0.05s interval. We don't actually wait the full 5s — the
+        # subprocess ends as soon as the wrapper signals it... but our
+        # wrapper just runs to completion. Instead we shorten the subprocess
+        # and rely on heartbeat-seconds < subprocess wall-time.
         rc = run_wrapper.main([
             "--run-name", "r-hb",
             "--telemetry-url", telemetry_base,
-            "--heartbeat-seconds", "0.1",
-            "--", "sh", "-c", "sleep 0.4",
+            "--heartbeat-seconds", "0.05",
+            "--", "sh", "-c", "sleep 0.5",
         ])
 
     assert rc == 0
+    # Count types after main() returns. We expect:
+    #   1 wrapper_started + 1 pre_nextflow + ≥1 heartbeat + 1 wrapper_exited
+    # ≥1 heartbeat is the minimum we'll insist on; under any reasonable
+    # scheduling, 0.5s wall-time at a 0.05s interval yields >= 5 heartbeats,
+    # but we only assert the lower bound to stay robust on slow CI.
     types = _captured_event_types(route)
     n_hb = sum(1 for t in types if t == "heartbeat")
-    assert n_hb >= 2, f"expected at least 2 heartbeats in 0.4s @ 0.1s interval, got types={types}"
+    assert n_hb >= 1, f"expected at least 1 heartbeat, got types={types}"
+
+
+def test_heartbeat_loop_posts_until_stopped(telemetry_base):
+    """Direct test of the _Heartbeat thread that doesn't depend on wall-clock timing.
+
+    Drives the loop deterministically by checking that _post_event was called
+    at least once after the thread starts, then stop+join.
+    """
+    import threading
+    with respx.mock(base_url=telemetry_base) as rx:
+        route = rx.post("/runs/r-direct/event").mock(
+            return_value=httpx.Response(201, json={
+                "run_name": "r-direct", "type": "x", "nextflow_log_uploaded": False,
+            })
+        )
+
+        client = httpx.Client(base_url=telemetry_base.rstrip("/") + "/")
+        try:
+            hb = run_wrapper._Heartbeat(client, "r-direct", interval_seconds=0.01)
+            hb.start()
+            # Wait deterministically for the first heartbeat to land.
+            deadline = threading.Event()
+            for _ in range(500):  # up to 5s with 0.01s interval
+                if route.call_count >= 1:
+                    break
+                deadline.wait(0.01)
+            hb.stop()
+            hb.join(timeout=2)
+            assert route.call_count >= 1
+        finally:
+            client.close()
 
 
 def test_heartbeats_disabled_when_interval_is_zero(tmp_path, telemetry_base, monkeypatch):

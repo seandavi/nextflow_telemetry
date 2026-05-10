@@ -17,6 +17,7 @@ swallowed. The wrapper must never fail a run because of instrumentation.
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import signal
@@ -184,7 +185,7 @@ class _Heartbeat:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="nf-client.run_wrapper",
+        prog="python -m nf_client.run_wrapper",
         description="Instrumentation wrapper around `nextflow run`.",
     )
     parser.add_argument("--run-name", required=True, help="Nextflow run name (-name).")
@@ -264,6 +265,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             proc = subprocess.Popen(args.nextflow_cmd)
         except OSError as e:
+            # POSIX shell convention: 127 = command not found, 126 = found
+            # but not executable (permission, wrong format).
+            exec_exit_code = 126 if e.errno in (errno.EACCES, errno.ENOEXEC) else 127
             print(
                 f"[run_wrapper] could not start nextflow subprocess "
                 f"({args.nextflow_cmd[0]!r}): {e}",
@@ -272,30 +276,36 @@ def main(argv: list[str] | None = None) -> int:
             _post_event(client, args.run_name, {
                 "type": "wrapper_exited",
                 "utc_time": _now_iso(),
-                "exit_code": 127,  # POSIX shell convention: command not found
+                "exit_code": exec_exit_code,
                 "duration_seconds": int(time.time() - start_ts),
             })
-            return 127
+            return exec_exit_code
 
         heartbeat = _Heartbeat(client, args.run_name, args.heartbeat_seconds)
         heartbeat.start()
 
         # SLURM sends SIGTERM before the wall-time hard kill; forward it
         # to nextflow so it has a chance to write a final .nextflow.log
-        # before SIGKILL hits.
+        # before SIGKILL hits. We capture the previous handlers so we can
+        # restore them in `finally` — main() must not leave process-wide
+        # signal state mutated for callers (which matters for tests that
+        # invoke main() repeatedly in the same interpreter).
         def _forward_signal(signum, _frame):
             try:
                 proc.send_signal(signum)
             except ProcessLookupError:
                 pass
 
-        signal.signal(signal.SIGTERM, _forward_signal)
-        signal.signal(signal.SIGINT, _forward_signal)
+        prev_term = signal.signal(signal.SIGTERM, _forward_signal)
+        prev_int = signal.signal(signal.SIGINT, _forward_signal)
 
         # 4. wait for nextflow to finish (any exit code is fine)
         try:
             exit_code = proc.wait()
         finally:
+            # Restore signal handlers so main() leaves no global side-effects.
+            signal.signal(signal.SIGTERM, prev_term)
+            signal.signal(signal.SIGINT, prev_int)
             # Stop the heartbeat thread AND wait for any in-flight POST to
             # return before the outer `finally` closes the httpx client.
             # Without the join, a heartbeat could try to use a closed client.
