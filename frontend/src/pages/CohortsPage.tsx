@@ -153,10 +153,14 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
     return { workflowId, workflowVersion }
   }, [workflowKey])
 
-  // Reset the in-process selection only when the user changes cohort or
-  // workflow filter. We deliberately do NOT depend on `tick` here — that
-  // would wipe a user's drill-down every poll interval.
+  // Reset selection AND clear the previously-shown summary whenever the
+  // user changes cohort or workflow filter. Clearing summary prevents
+  // flashing stale data (counts/failure_by_process from the old cohort)
+  // during the brief window between selection change and the new fetch
+  // resolving. We deliberately do NOT depend on `tick` here — that would
+  // wipe a user's drill-down every poll interval.
   useEffect(() => {
+    setSummary(null)
     setSelectedProcess('')
     setFailures([])
   }, [selectedCohort, workflowKey])
