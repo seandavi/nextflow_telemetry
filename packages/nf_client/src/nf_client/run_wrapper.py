@@ -90,7 +90,8 @@ def _wait_seconds_from_slurm() -> int | None:
 
     Both SLURM_SUBMIT_TIME and SLURM_JOB_START_TIME are unix timestamps
     (string-encoded integers). Returns None when either is absent or
-    unparseable so the field can be omitted from the event.
+    unparseable; the caller still includes the key in the event payload
+    (as null) so the schema is uniform across SLURM and non-SLURM runs.
     """
     submit = os.environ.get("SLURM_SUBMIT_TIME")
     start = os.environ.get("SLURM_JOB_START_TIME")
@@ -152,6 +153,16 @@ class _Heartbeat:
 
     def stop(self) -> None:
         self._stop.set()
+
+    def join(self, timeout: float | None = None) -> None:
+        """Block until the heartbeat thread exits (or *timeout* seconds elapse).
+
+        The caller should call stop() first; join() guarantees that any
+        in-flight heartbeat POST completes before resources (like the httpx
+        client) are torn down.
+        """
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)
 
     def _loop(self) -> None:
         # First heartbeat fires after one full interval — Nextflow startup
@@ -226,8 +237,27 @@ def main(argv: list[str] | None = None) -> int:
             "wait_seconds": _wait_seconds_from_slurm(),
         })
 
-        # 3. spawn nextflow + heartbeat thread
-        proc = subprocess.Popen(args.nextflow_cmd)
+        # 3. spawn nextflow. If Popen itself fails (command-not-found,
+        # permission denied, ENOEXEC) we want a wrapper_exited event with a
+        # conventional shell-style exit code so the failure is observable
+        # via telemetry — otherwise an OSError here would crash silently
+        # before any "I tried to run nextflow" signal reached the server.
+        start_ts = time.time()
+        try:
+            proc = subprocess.Popen(args.nextflow_cmd)
+        except OSError as e:
+            print(
+                f"[run_wrapper] could not start nextflow subprocess "
+                f"({args.nextflow_cmd[0]!r}): {e}",
+                file=sys.stderr, flush=True,
+            )
+            _post_event(client, args.run_name, {
+                "type": "wrapper_exited",
+                "utc_time": _now_iso(),
+                "exit_code": 127,  # POSIX shell convention: command not found
+                "duration_seconds": int(time.time() - start_ts),
+            })
+            return 127
 
         heartbeat = _Heartbeat(client, args.run_name, args.heartbeat_seconds)
         heartbeat.start()
@@ -245,11 +275,14 @@ def main(argv: list[str] | None = None) -> int:
         signal.signal(signal.SIGINT, _forward_signal)
 
         # 4. wait for nextflow to finish (any exit code is fine)
-        start_ts = time.time()
         try:
             exit_code = proc.wait()
         finally:
+            # Stop the heartbeat thread AND wait for any in-flight POST to
+            # return before the outer `finally` closes the httpx client.
+            # Without the join, a heartbeat could try to use a closed client.
             heartbeat.stop()
+            heartbeat.join(timeout=_EVENT_POST_TIMEOUT + 1)
         duration = int(time.time() - start_ts)
 
         # 5. read .nextflow.log and upload as the wrapper_exited attachment

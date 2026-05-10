@@ -308,6 +308,30 @@ def test_non_2xx_response_is_logged_to_stderr(tmp_path, telemetry_base, monkeypa
     assert "no such run" in captured.err
 
 
+def test_popen_oserror_emits_wrapper_exited_with_127(tmp_path, telemetry_base, monkeypatch, capsys):
+    """If nextflow itself can't be exec'd (command-not-found), still emit a terminal event."""
+    monkeypatch.chdir(tmp_path)
+
+    with respx.mock(base_url=telemetry_base) as rx:
+        route = rx.post("/api/runs/r-noexec/event").mock(
+            return_value=httpx.Response(201, json={
+                "run_name": "r-noexec", "type": "x", "nextflow_log_uploaded": False,
+            })
+        )
+
+        rc = run_wrapper.main([
+            "--run-name", "r-noexec",
+            "--telemetry-url", telemetry_base,
+            "--", "definitely-not-a-real-command-xyz123",
+        ])
+
+    assert rc == 127
+    types = _captured_event_types(route)
+    assert types == ["wrapper_started", "pre_nextflow", "wrapper_exited"]
+    last = _extract_event(route.calls[-1])
+    assert last["exit_code"] == 127
+
+
 def test_invalid_telemetry_url_does_not_fail_the_run(tmp_path, telemetry_base, monkeypatch, capsys):
     """A malformed --telemetry-url falls back to no-op telemetry; the subprocess still runs."""
     monkeypatch.chdir(tmp_path)
