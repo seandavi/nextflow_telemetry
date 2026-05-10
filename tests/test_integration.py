@@ -323,29 +323,45 @@ def _purge_test_dispatch_state(db_url: str, wf_ids: list[str], sample_ids: list[
 
     Without this, samples accumulate in the shared testcontainers DB and
     every subsequent reconcile cross-products them × the next test's
-    fresh workflow. The dispatcher's `LIMIT N` then returns N rows out of
-    a pile of rows-with-tied-created_at and the test's expected sample
-    may not be in the slice.
+    fresh workflow. The dispatcher's ``LIMIT N`` then returns N rows out
+    of a pile of rows-with-tied-created_at and the test's expected
+    sample may not be in the slice.
+
+    Uses Core ``in_()`` constructs so SQLAlchemy/asyncpg type the array
+    bind correctly — raw ``ANY(:s::text[])`` confuses the parameter
+    parser. The dead_letter delete covers both sample_ids and
+    workflow_ids so the FK on dead_letter.job_id can't block the
+    subsequent ``DELETE FROM jobs``.
     """
-    statements = [
-        text("DELETE FROM dead_letter WHERE sample_id = ANY(:s)"),
-        text("DELETE FROM jobs WHERE sample_id = ANY(:s) OR workflow_id = ANY(:w)"),
-        text("DELETE FROM workflow_runs WHERE workflow_id = ANY(:w)"),
-        text("DELETE FROM telemetry WHERE sample_id = ANY(:s)"),
-        text("DELETE FROM samples WHERE sample_id = ANY(:s)"),
-        text("DELETE FROM workflows WHERE workflow_id = ANY(:w)"),
+    from nextflow_telemetry.db import (
+        dead_letter_tbl,
+        jobs_tbl,
+        samples_tbl,
+        telemetry_tbl,
+        workflow_runs_tbl,
+        workflows_tbl,
+    )
+    from sqlalchemy import delete, or_
+
+    stmts = [
+        delete(dead_letter_tbl).where(
+            or_(
+                dead_letter_tbl.c.sample_id.in_(sample_ids),
+                dead_letter_tbl.c.workflow_id.in_(wf_ids),
+            )
+        ),
+        delete(jobs_tbl).where(
+            or_(
+                jobs_tbl.c.sample_id.in_(sample_ids),
+                jobs_tbl.c.workflow_id.in_(wf_ids),
+            )
+        ),
+        delete(workflow_runs_tbl).where(workflow_runs_tbl.c.workflow_id.in_(wf_ids)),
+        delete(telemetry_tbl).where(telemetry_tbl.c.sample_id.in_(sample_ids)),
+        delete(samples_tbl).where(samples_tbl.c.sample_id.in_(sample_ids)),
+        delete(workflows_tbl).where(workflows_tbl.c.workflow_id.in_(wf_ids)),
     ]
-    _run(_exec_with_params(db_url, statements, {"s": sample_ids, "w": wf_ids}))
-
-
-async def _exec_with_params(db_url, stmts, params):
-    engine = create_async_engine(db_url)
-    try:
-        async with engine.begin() as conn:
-            for stmt in stmts:
-                await conn.execute(stmt, params)
-    finally:
-        await engine.dispose()
+    _run(_exec(db_url, *stmts))
 
 
 def test_dispatch_skips_locked_workflow_and_picks_an_unlocked_one(integration_client, db_url):
@@ -424,6 +440,10 @@ def test_dispatch_skips_locked_workflow_and_picks_an_unlocked_one(integration_cl
     finally:
         proceed.set()
         holder.join(timeout=5.0)
+        # Be loud, not silent, if the lock-holder thread didn't exit.
+        # A stuck daemon would leak an open transaction/row locks into
+        # the session-scoped Postgres and break subsequent tests.
+        assert not holder.is_alive(), "lock-holder thread did not exit within 5s"
         _purge_test_dispatch_state(db_url, [wf_a, wf_b], [sample_a, sample_b])
 
     assert resp.status_code == 200, resp.text
