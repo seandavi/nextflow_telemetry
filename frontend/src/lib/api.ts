@@ -50,7 +50,8 @@ function metricsParams(f: MetricsFilters, extra?: Record<string, string | number
   return s ? `?${s}` : ''
 }
 
-const BASE = (import.meta.env.VITE_API_URL ?? '') + '/api'
+export const API_BASE = (import.meta.env.VITE_API_URL ?? '') + '/api'
+const BASE = API_BASE
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

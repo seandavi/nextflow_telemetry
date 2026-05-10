@@ -127,6 +127,9 @@ def create_cohorts_router(engine: AsyncEngine) -> APIRouter:
         workflow_version: Annotated[Optional[str], Query()] = None,
         limit: Annotated[int, Query(ge=1, le=1000, description="Max rows.")] = 200,
     ) -> CohortFailuresResponse:
+        # Match /summary's behaviour: 404 on unknown cohort, not 200 + empty rows.
+        if not await svc.cohort_exists(collection_id):
+            raise HTTPException(status_code=404, detail=f"Cohort '{collection_id}' not found.")
         rows = await svc.failures_for_process(
             collection_id, process, workflow_id, workflow_version, limit=limit
         )

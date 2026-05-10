@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { T } from '../tokens'
 import { fmtNum, fmtDate } from '../lib/format'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
-import { api } from '../lib/api'
+import { api, API_BASE } from '../lib/api'
 import PageWrap from '../components/PageWrap'
 import Panel from '../components/Panel'
 import SectionHeader from '../components/SectionHeader'
@@ -105,7 +105,7 @@ function FailuresTable({ rows, loading }: { rows: CohortFailureRow[]; loading: b
           <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: T.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {r.task_hash ? (
               <a
-                href={`/api/task-logs/${encodeURIComponent(r.run_name)}/${r.task_hash}`}
+                href={`${API_BASE}/task-logs/${encodeURIComponent(r.run_name)}/${r.task_hash}`}
                 target="_blank"
                 rel="noreferrer"
                 style={{ color: T.accent, textDecoration: 'none' }}

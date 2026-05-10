@@ -140,6 +140,16 @@ class CohortService:
             "generated_at_utc": datetime.now(timezone.utc),
         }
 
+    async def cohort_exists(self, collection_id: str) -> bool:
+        async with self.engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    text("SELECT 1 FROM collections WHERE collection_id = :cid"),
+                    {"cid": collection_id},
+                )
+            ).first()
+            return row is not None
+
     async def failures_for_process(
         self,
         collection_id: str,
@@ -151,7 +161,9 @@ class CohortService:
         """Return failed task occurrences for a given (cohort, process).
 
         One row per process_completed FAILED/ABORTED event. Includes task_hash
-        so the UI can link straight to the existing log viewer.
+        so the UI can link straight to the existing log viewer. Caller is
+        responsible for checking that the cohort exists (use cohort_exists)
+        — this method returns an empty list for unknown cohorts.
         """
         params: dict = {"cid": collection_id, "process": process, "limit": limit}
         wf_filter = ""

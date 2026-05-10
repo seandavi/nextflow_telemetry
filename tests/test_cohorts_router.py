@@ -325,6 +325,13 @@ def test_summary_excludes_samples_not_in_cohort(integration_client, db_url, coho
 # /cohorts/{id}/failures (drill-down)
 # ---------------------------------------------------------------------------
 
+def test_failures_404_for_unknown_cohort(integration_client):
+    """Match /summary semantics — unknown cohort is 404, not 200 with empty rows."""
+    client, _ = integration_client
+    resp = client.get("/api/cohorts/does-not-exist-cohort/failures?process=FETCH_READS")
+    assert resp.status_code == 404
+
+
 def test_failures_returns_per_task_rows_with_task_hash(integration_client, db_url, cohort_data):
     client, _ = integration_client
     tag = cohort_data
