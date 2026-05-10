@@ -11,11 +11,18 @@ services/process_metrics.py and services/cohort.py are:
   - trace->>'process'   (the Nextflow process name)
   - trace->>'status'    (COMPLETED / FAILED / ABORTED)
 
-We only need them for `event = 'process_completed' AND trace IS NOT NULL`
-rows: the other event types don't carry a useful trace.process, and the
-analytical queries already filter on `trace IS NOT NULL`. Tightening
-the partial predicate to match the queries keeps the index small and
-keeps it eligible for the planner.
+We only need them for `event = 'process_completed'` rows since the
+other event types don't carry a useful trace.process. Partial indexes
+on that predicate alone keep the index small (this filter accounts for
+~all the trace volume) and the predicate is one Postgres can prove
+holds for any analytical query that has `event = 'process_completed'`
+in its WHERE — no need for the queries to repeat any extra condition.
+
+A tighter `AND trace IS NOT NULL` partial was considered but rejected:
+not every cohort/analytics query repeats that check explicitly, and
+when the partial predicate has more conjuncts than the query, the
+planner has to *prove* the implication, which it doesn't always do.
+Dropping the extra conjunct keeps the index broadly usable.
 
 Created CONCURRENTLY so the migration doesn't take a long lock on the
 table when applied to a production database with ongoing writes. Alembic
@@ -45,7 +52,7 @@ def upgrade() -> None:
             [sa.text("(trace->>'process')")],
             unique=False,
             postgresql_concurrently=True,
-            postgresql_where=sa.text("event = 'process_completed' AND trace IS NOT NULL"),
+            postgresql_where=sa.text("event = 'process_completed'"),
             if_not_exists=True,
         )
         op.create_index(
@@ -54,7 +61,7 @@ def upgrade() -> None:
             [sa.text("(trace->>'status')")],
             unique=False,
             postgresql_concurrently=True,
-            postgresql_where=sa.text("event = 'process_completed' AND trace IS NOT NULL"),
+            postgresql_where=sa.text("event = 'process_completed'"),
             if_not_exists=True,
         )
 

@@ -11,7 +11,7 @@ from ..services.process_metrics import ProcessMetricsService
 
 _WINDOW_DAYS_DESC = (
     "Limit results to events in the last N days. Mutually exclusive with "
-    "`window_hours` (a 422 is returned if both are supplied); composes "
+    "`window_hours` (a 400 is returned if both are supplied); composes "
     "additively with `since`/`until` if both are given (the intersection "
     "is queried). **When none of window_days, window_hours, since, or "
     "until is supplied, the server applies a default 7-day look-back** "
