@@ -32,6 +32,7 @@ class CohortListItem(BaseModel):
 class CohortJobStatusCounts(BaseModel):
     pending: int = 0
     claimed: int = 0
+    submitted: int = 0
     running: int = 0
     completed: int = 0
     failed: int = 0

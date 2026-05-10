@@ -266,6 +266,7 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
               <StatusChip label="Jobs total" count={summary.total_jobs} color={T.text} />
               <StatusChip label="Pending" count={counts?.pending ?? 0} color={T.muted} />
               <StatusChip label="Claimed" count={counts?.claimed ?? 0} color={T.blue} />
+              <StatusChip label="Submitted" count={counts?.submitted ?? 0} color={T.blue} />
               <StatusChip label="Running" count={counts?.running ?? 0} color={T.amber} />
               <StatusChip label="Completed" count={counts?.completed ?? 0} color={T.green} />
               <StatusChip label="Failed" count={counts?.failed ?? 0} color={T.red} />

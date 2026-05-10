@@ -344,6 +344,7 @@ class WorkflowJobSummary(BaseModel):
     total: int = Field(description="Total number of jobs for this workflow.")
     pending: int = Field(description="Jobs waiting to be dispatched.")
     claimed: int = Field(description="Jobs claimed by a dispatcher but not yet submitted.")
+    submitted: int = Field(default=0, description="Jobs submitted to the executor (e.g. queued in SLURM) but not yet running in Nextflow.")
     running: int = Field(description="Jobs currently executing in Nextflow.")
     completed: int = Field(description="Jobs that completed successfully.")
     failed: int = Field(description="Jobs that exhausted retries and are marked failed.")

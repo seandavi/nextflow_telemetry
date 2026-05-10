@@ -68,10 +68,10 @@ pending → claimed → submitted → running → completed
 
 - `pending`: created by `reconcile_jobs()` (cross-product of samples × active workflows)
 - `claimed`: `POST /dispatch/batch` atomically selects jobs with `SELECT ... FOR UPDATE SKIP LOCKED` and creates a `workflow_run` record
-- `submitted`: `POST /dispatch/submitted` confirms the executor accepted the job
-- `running`: set when Nextflow sends a `started` weblog event to `POST /telemetry`
+- `submitted`: `POST /dispatch/submitted` confirms the executor accepted the job. Distinct from `running`: a SLURM job that's queued but not yet started sits in `submitted` for the queue-wait duration. The gap between `submitted` and `running` is the scheduler queue wait; surfacing it separately is what allows dashboards to distinguish "slow pipeline" from "slow cluster."
+- `running`: set when Nextflow sends a `started` weblog event to `POST /telemetry` (transitions from `submitted` in the normal flow; defensively also accepts `claimed` for out-of-order events).
 - `completed`: set when Nextflow sends `process_completed` for the `MARK_COMPLETE` sentinel process with `status=COMPLETED`
-- On run `completed` event: `sweep_run_incomplete()` retries jobs within `max_retries` budget or routes to DLQ
+- On run `completed` event: `sweep_run_incomplete()` retries jobs within `max_retries` budget or routes to DLQ. Sweep covers `claimed`, `submitted`, *and* `running` jobs.
 
 ### nf-client
 

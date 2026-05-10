@@ -194,10 +194,11 @@ def create_workflows_router(engine: AsyncEngine) -> APIRouter:
 
         pending   = counts.get("pending",   0)
         claimed   = counts.get("claimed",   0)
+        submitted = counts.get("submitted", 0)
         running   = counts.get("running",   0)
         completed = counts.get("completed", 0)
         failed    = counts.get("failed",    0)
-        total     = pending + claimed + running + completed + failed
+        total     = pending + claimed + submitted + running + completed + failed
         pct       = 100.0 * completed / total if total > 0 else 0.0
 
         return WorkflowJobSummary(
@@ -207,6 +208,7 @@ def create_workflows_router(engine: AsyncEngine) -> APIRouter:
             total=total,
             pending=pending,
             claimed=claimed,
+            submitted=submitted,
             running=running,
             completed=completed,
             failed=failed,

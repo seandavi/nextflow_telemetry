@@ -32,6 +32,7 @@ export interface JobStats {
   total: number
   pending: number
   claimed?: number
+  submitted?: number
   running: number
   completed: number
   failed: number
@@ -308,6 +309,7 @@ export interface WorkflowJobSummary {
   total: number
   pending: number
   claimed: number
+  submitted: number
   running: number
   completed: number
   failed: number
@@ -348,6 +350,7 @@ export interface CohortListItem {
 export interface CohortJobStatusCounts {
   pending: number
   claimed: number
+  submitted: number
   running: number
   completed: number
   failed: number
