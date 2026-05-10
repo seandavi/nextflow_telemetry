@@ -38,7 +38,7 @@ from ..models import (
     WrapperLogEvent,
     WrapperStartedEvent,
 )
-from ..db import task_logs_tbl, telemetry_tbl, workflow_runs_tbl
+from ..db import telemetry_tbl, workflow_runs_tbl
 
 
 _MAX_NEXTFLOW_LOG_BYTES = 16 * 1024 * 1024  # 16 MB
@@ -63,8 +63,10 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
             "`nextflow_log` file attachment is only meaningful for `wrapper_exited`; "
             "if present it is stored under the run's task_logs with a sentinel hash "
             "and `nextflow_log_uploaded_at` is set on `workflow_runs`. Re-uploading "
-            "the same log is idempotent. Posting events for an unknown run_name "
-            "upserts a workflow_runs row so events are never dropped."
+            "the same log is idempotent. Events for an unknown `run_name` are still "
+            "appended to the raw `telemetry` table so nothing is dropped, but no "
+            "`workflow_runs` row is created — summary fields only update for runs "
+            "already on record (typically created by the dispatch claim)."
         ),
     )
     async def post_run_event(
@@ -81,6 +83,18 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
             parsed: RunEvent = _run_event_adapter.validate_python(payload)
         except ValidationError as e:
             raise HTTPException(status_code=422, detail=e.errors())
+
+        # Read and validate the optional .nextflow.log *outside* the DB transaction
+        # so we don't hold a connection / locks while decoding a 16 MB payload.
+        log_content_str: str | None = None
+        if isinstance(parsed, WrapperExitedEvent) and nextflow_log is not None:
+            raw = await nextflow_log.read()
+            if len(raw) > _MAX_NEXTFLOW_LOG_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"nextflow_log exceeds {_MAX_NEXTFLOW_LOG_BYTES} byte limit.",
+                )
+            log_content_str = raw.decode("utf-8", errors="replace")
 
         log_uploaded = False
         now = datetime.now(timezone.utc)
@@ -124,14 +138,7 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
             await _apply_summary_update(conn, run_name, parsed, now)
 
             # 4. Optional .nextflow.log attachment (only on wrapper_exited)
-            if isinstance(parsed, WrapperExitedEvent) and nextflow_log is not None:
-                raw = await nextflow_log.read()
-                if len(raw) > _MAX_NEXTFLOW_LOG_BYTES:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"nextflow_log exceeds {_MAX_NEXTFLOW_LOG_BYTES} byte limit.",
-                    )
-                content_str = raw.decode("utf-8", errors="replace")
+            if log_content_str is not None:
                 await conn.execute(
                     text(
                         """
@@ -145,7 +152,7 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
                         "run_name": run_name,
                         "task_hash": _NEXTFLOW_LOG_SENTINEL_HASH,
                         "log_type": _NEXTFLOW_LOG_TYPE,
-                        "content": content_str,
+                        "content": log_content_str,
                         "uploaded_at": now,
                     },
                 )
