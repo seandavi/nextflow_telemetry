@@ -115,7 +115,12 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
                     ).where(workflow_runs_tbl.c.run_name == run_name)
                 )
             ).mappings().first()
-            run_id = (existing["run_id"] if existing else None) or ""
+            # run_id is NOT NULL on telemetry. When the run is known we copy
+            # Nextflow's UUID; when it isn't (events arriving before the
+            # weblog 'started' event), we fall back to a unique-per-run
+            # sentinel so events for distinct runs never share a run_id.
+            existing_run_id = existing["run_id"] if existing else None
+            run_id = existing_run_id or f"pre-weblog:{run_name}"
             workflow_id = existing["workflow_id"] if existing else None
             workflow_version = existing["workflow_version"] if existing else None
 
@@ -132,8 +137,6 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
                 )
 
             # 2. Append raw event to telemetry (same shape as weblog rows).
-            # run_id is NOT NULL; we use empty string as a sentinel when Nextflow
-            # hasn't sent its 'started' event yet.
             await conn.execute(
                 insert(telemetry_tbl).values(
                     run_id=run_id,

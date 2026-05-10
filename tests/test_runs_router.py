@@ -380,6 +380,29 @@ def test_event_for_unknown_run_still_records_raw(integration_client, db_url):
     assert len(run_rows) == 0  # we don't pollute workflow_runs with orphan events
 
 
+def test_pre_weblog_events_get_unique_run_id_sentinel(integration_client, db_url):
+    """Events for unknown runs must each get a unique run_id, not a shared empty string."""
+    from nextflow_telemetry.db import telemetry_tbl
+
+    client, _ = integration_client
+    run_a = _make_run_name()
+    run_b = _make_run_name()
+
+    for run_name in (run_a, run_b):
+        resp = _post_event(client, run_name, {"type": "heartbeat", "utc_time": _ts()})
+        assert resp.status_code == 201
+
+    rows_a = _run(_query(db_url, select(telemetry_tbl).where(
+        telemetry_tbl.c.run_name == run_a
+    )))
+    rows_b = _run(_query(db_url, select(telemetry_tbl).where(
+        telemetry_tbl.c.run_name == run_b
+    )))
+    assert rows_a[0]["run_id"] == f"pre-weblog:{run_a}"
+    assert rows_b[0]["run_id"] == f"pre-weblog:{run_b}"
+    assert rows_a[0]["run_id"] != rows_b[0]["run_id"]
+
+
 def test_log_attachment_on_unknown_run_returns_404(integration_client, db_url):
     """A .nextflow.log without a known run is rejected — no orphan task_logs row."""
     from nextflow_telemetry.db import task_logs_tbl, telemetry_tbl
