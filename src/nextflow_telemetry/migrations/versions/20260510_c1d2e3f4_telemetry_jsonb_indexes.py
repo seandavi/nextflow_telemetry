@@ -15,14 +15,17 @@ We only need them for `event = 'process_completed'` rows since the other
 event types don't carry a useful trace.process. Partial indexes on that
 predicate keep the index small and the planner happy.
 
-If/when the telemetry table grows large enough that CREATE INDEX becomes
-disruptive, future migrations should use CREATE INDEX CONCURRENTLY (which
-requires running outside a transaction; see Alembic's autocommit_block).
+Created CONCURRENTLY so the migration doesn't take a long lock on the
+table when applied to a production database with ongoing writes. Alembic
+runs each migration inside a transaction by default, but
+CREATE INDEX CONCURRENTLY can't run in a transaction — autocommit_block
+takes us out of the surrounding transaction for the duration.
 """
 from __future__ import annotations
 
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 
@@ -33,22 +36,38 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS ix_telemetry_trace_process
-          ON telemetry ((trace->>'process'))
-          WHERE event = 'process_completed'
-        """
-    )
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS ix_telemetry_trace_status
-          ON telemetry ((trace->>'status'))
-          WHERE event = 'process_completed'
-        """
-    )
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "ix_telemetry_trace_process",
+            "telemetry",
+            [sa.text("(trace->>'process')")],
+            unique=False,
+            postgresql_concurrently=True,
+            postgresql_where=sa.text("event = 'process_completed'"),
+            if_not_exists=True,
+        )
+        op.create_index(
+            "ix_telemetry_trace_status",
+            "telemetry",
+            [sa.text("(trace->>'status')")],
+            unique=False,
+            postgresql_concurrently=True,
+            postgresql_where=sa.text("event = 'process_completed'"),
+            if_not_exists=True,
+        )
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX IF EXISTS ix_telemetry_trace_status")
-    op.execute("DROP INDEX IF EXISTS ix_telemetry_trace_process")
+    with op.get_context().autocommit_block():
+        op.drop_index(
+            "ix_telemetry_trace_status",
+            table_name="telemetry",
+            postgresql_concurrently=True,
+            if_exists=True,
+        )
+        op.drop_index(
+            "ix_telemetry_trace_process",
+            table_name="telemetry",
+            postgresql_concurrently=True,
+            if_exists=True,
+        )

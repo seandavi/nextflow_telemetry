@@ -12,6 +12,28 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 _DEFAULT_WINDOW_DAYS = 7
 
 
+def _normalize_window(
+    *,
+    window_days: int | None,
+    window_hours: int | None,
+    since: dt.datetime | None,
+    until: dt.datetime | None,
+) -> tuple[int | None, int | None]:
+    """Apply the default 7-day window when no time filter was supplied.
+
+    Public service methods call this at entry so the effective value flows
+    into both the SQL filter and the response payload — clients see the
+    actual window the query used, not None.
+
+    Callers that explicitly want all-time data should pass
+    `window_days=10000` or similar; the default only applies when every
+    time field is None.
+    """
+    if window_days is None and window_hours is None and since is None and until is None:
+        return _DEFAULT_WINDOW_DAYS, window_hours
+    return window_days, window_hours
+
+
 @dataclass
 class ProcessMetricsService:
     engine: AsyncEngine
@@ -29,26 +51,13 @@ class ProcessMetricsService:
         sample_id: str | None = None,
         table_alias: str = "t",
     ) -> tuple[str, dict[str, Any]]:
-        """Build a composable WHERE fragment and bind-params dict for telemetry queries.
-
-        If no time-bound filter is supplied (no window_*, no since/until), a
-        default look-back of `_DEFAULT_WINDOW_DAYS` is applied. This prevents
-        an unparameterised metrics endpoint from scanning the entire
-        telemetry table once event volume grows. Callers that explicitly
-        want all-time data should pass `window_days=10000` or similar.
-        """
+        """Build a composable WHERE fragment and bind-params dict for telemetry queries."""
         clauses: list[str] = []
         params: dict[str, Any] = {}
         a = table_alias
 
         if window_days is not None and window_hours is not None:
             raise ValueError("Provide only one of window_days or window_hours, not both.")
-
-        if (
-            window_days is None and window_hours is None
-            and since is None and until is None
-        ):
-            window_days = _DEFAULT_WINDOW_DAYS
 
         if window_days is not None:
             if window_days < 1:
@@ -108,6 +117,10 @@ class ProcessMetricsService:
         if limit < 1:
             raise ValueError("limit must be >= 1")
 
+        window_days, window_hours = _normalize_window(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+        )
         fc, params = self._filter_clause(
             window_days=window_days, window_hours=window_hours,
             since=since, until=until,
@@ -224,7 +237,7 @@ class ProcessMetricsService:
             from telemetry t
             where t.event = 'process_completed'
               and t.trace is not null
-              and coalesce(t.trace->>'status','') in ('FAILED', 'ABORTED')
+              and t.trace->>'status' in ('FAILED', 'ABORTED')
               {fc}
             group by exit_code
             order by failures desc, exit_code
@@ -279,6 +292,10 @@ class ProcessMetricsService:
         if limit < 1:
             raise ValueError("limit must be >= 1")
 
+        window_days, window_hours = _normalize_window(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+        )
         fc, params = self._filter_clause(
             window_days=window_days, window_hours=window_hours,
             since=since, until=until,
@@ -386,6 +403,10 @@ class ProcessMetricsService:
         if limit < 1:
             raise ValueError("limit must be >= 1")
 
+        window_days, window_hours = _normalize_window(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+        )
         fc, params = self._filter_clause(
             window_days=window_days, window_hours=window_hours,
             since=since, until=until,
@@ -470,6 +491,10 @@ class ProcessMetricsService:
         if limit < 1:
             raise ValueError("limit must be >= 1")
 
+        window_days, window_hours = _normalize_window(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+        )
         fc, params = self._filter_clause(
             window_days=window_days, window_hours=window_hours,
             since=since, until=until,
@@ -566,6 +591,10 @@ class ProcessMetricsService:
         if limit < 1:
             raise ValueError("limit must be >= 1")
 
+        window_days, window_hours = _normalize_window(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+        )
         fc, params = self._filter_clause(
             window_days=window_days, window_hours=window_hours,
             since=since, until=until,
@@ -584,7 +613,7 @@ class ProcessMetricsService:
             from telemetry t
             where t.event = 'process_completed'
               and t.trace is not null
-              and coalesce(t.trace->>'status','') in ('FAILED', 'ABORTED')
+              and t.trace->>'status' in ('FAILED', 'ABORTED')
               {fc}
             group by process, exit_code, error_action
             order by failures desc, process, exit_code
@@ -616,6 +645,10 @@ class ProcessMetricsService:
         if bucket not in ("hour", "day", "week"):
             raise ValueError("bucket must be 'hour', 'day', or 'week'")
 
+        window_days, window_hours = _normalize_window(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+        )
         fc, params = self._filter_clause(
             window_days=window_days, window_hours=window_hours,
             since=since, until=until,
@@ -738,6 +771,10 @@ class ProcessMetricsService:
         if offset < 0:
             raise ValueError("offset must be >= 0")
 
+        window_days, window_hours = _normalize_window(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+        )
         fc, params = self._filter_clause(
             window_days=window_days, window_hours=window_hours,
             since=since, until=until,
@@ -751,7 +788,7 @@ class ProcessMetricsService:
             extra_clauses += " and t.trace->>'process' = :process"
             params["process"] = process
         if status is not None:
-            extra_clauses += " and coalesce(t.trace->>'status','') = :status"
+            extra_clauses += " and t.trace->>'status' = :status"
             params["status"] = status
 
         sql = text(
