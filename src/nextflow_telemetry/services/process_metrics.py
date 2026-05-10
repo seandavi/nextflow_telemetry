@@ -9,6 +9,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 
+_DEFAULT_WINDOW_DAYS = 7
+
+
 @dataclass
 class ProcessMetricsService:
     engine: AsyncEngine
@@ -26,13 +29,26 @@ class ProcessMetricsService:
         sample_id: str | None = None,
         table_alias: str = "t",
     ) -> tuple[str, dict[str, Any]]:
-        """Build a composable WHERE fragment and bind-params dict for telemetry queries."""
+        """Build a composable WHERE fragment and bind-params dict for telemetry queries.
+
+        If no time-bound filter is supplied (no window_*, no since/until), a
+        default look-back of `_DEFAULT_WINDOW_DAYS` is applied. This prevents
+        an unparameterised metrics endpoint from scanning the entire
+        telemetry table once event volume grows. Callers that explicitly
+        want all-time data should pass `window_days=10000` or similar.
+        """
         clauses: list[str] = []
         params: dict[str, Any] = {}
         a = table_alias
 
         if window_days is not None and window_hours is not None:
             raise ValueError("Provide only one of window_days or window_hours, not both.")
+
+        if (
+            window_days is None and window_hours is None
+            and since is None and until is None
+        ):
+            window_days = _DEFAULT_WINDOW_DAYS
 
         if window_days is not None:
             if window_days < 1:
