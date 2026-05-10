@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
@@ -315,6 +315,176 @@ def _seed_job(client, *, workflow_id: str | None = None, sample_suffix: str = ""
     client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"})
     client.post("/api/admin/reconcile-jobs")
     return sample_id, wf_id, wf_pk
+
+
+def _purge_test_dispatch_state(db_url: str, wf_ids: list[str], sample_ids: list[str]) -> None:
+    """Delete jobs / workflow_runs / samples / workflows so subsequent
+    reconcile-jobs calls don't see this test's leftovers.
+
+    Without this, samples accumulate in the shared testcontainers DB and
+    every subsequent reconcile cross-products them × the next test's
+    fresh workflow. The dispatcher's ``LIMIT N`` then returns N rows out
+    of a pile of rows-with-tied-created_at and the test's expected
+    sample may not be in the slice.
+
+    Uses Core ``in_()`` constructs so SQLAlchemy/asyncpg type the array
+    bind correctly — raw ``ANY(:s::text[])`` confuses the parameter
+    parser. The dead_letter delete covers both sample_ids and
+    workflow_ids so the FK on dead_letter.job_id can't block the
+    subsequent ``DELETE FROM jobs``.
+    """
+    from nextflow_telemetry.db import (
+        dead_letter_tbl,
+        jobs_tbl,
+        samples_tbl,
+        telemetry_tbl,
+        workflow_runs_tbl,
+        workflows_tbl,
+    )
+    from sqlalchemy import delete, or_
+
+    stmts = [
+        delete(dead_letter_tbl).where(
+            or_(
+                dead_letter_tbl.c.sample_id.in_(sample_ids),
+                dead_letter_tbl.c.workflow_id.in_(wf_ids),
+            )
+        ),
+        delete(jobs_tbl).where(
+            or_(
+                jobs_tbl.c.sample_id.in_(sample_ids),
+                jobs_tbl.c.workflow_id.in_(wf_ids),
+            )
+        ),
+        delete(workflow_runs_tbl).where(workflow_runs_tbl.c.workflow_id.in_(wf_ids)),
+        delete(telemetry_tbl).where(telemetry_tbl.c.sample_id.in_(sample_ids)),
+        delete(samples_tbl).where(samples_tbl.c.sample_id.in_(sample_ids)),
+        delete(workflows_tbl).where(workflows_tbl.c.workflow_id.in_(wf_ids)),
+    ]
+    _run(_exec(db_url, *stmts))
+
+
+def test_dispatch_skips_locked_workflow_and_picks_an_unlocked_one(integration_client, db_url):
+    """The #74 contract: a workflow whose rows are entirely locked must NOT
+    starve dispatchers that could otherwise have claimed a different one.
+
+    Setup makes wf_a sort before wf_b alphabetically by workflow_id, so
+    the pick step's `ORDER BY workflow_id, workflow_version, created_at`
+    *would* pick wf_a if it ignored locks. We:
+
+      1. Spawn a background thread that locks every pending wf_a row
+         (`SELECT … FOR UPDATE`) in its own async transaction.
+      2. Filter the dispatch to `[wf_a, wf_b]` (both candidates) — so
+         the dispatcher is forced to choose between them. The naive
+         pick (no SKIP LOCKED) would land on wf_a, then claim_q would
+         find every wf_a row locked, return 0 rows, and 204.
+      3. Assert the response is 200 with workflow_id=wf_b — proving
+         the pick step skipped the entirely-locked wf_a and steered
+         to the unlocked wf_b.
+
+    Without `SKIP LOCKED` on the pick step (the round-2 fix in this
+    PR), this test would 204-and-spin under contention.
+    """
+    import asyncio
+    import threading
+
+    client, _ = integration_client
+    # Force alphabetical ordering: wf_a sorts before wf_b. The pick step
+    # default ORDER BY would land on wf_a if not for SKIP LOCKED.
+    aaa_id = "wf-aaaa-" + uuid.uuid4().hex[:6]
+    zzz_id = "wf-zzzz-" + uuid.uuid4().hex[:6]
+    sample_a, wf_a, _ = _seed_job(client, workflow_id=aaa_id)
+    sample_b, wf_b, _ = _seed_job(client, workflow_id=zzz_id)
+    assert wf_a < wf_b, "test setup invariant: wf_a must sort before wf_b"
+
+    locked = threading.Event()
+    proceed = threading.Event()
+
+    def hold_wf_a_lock():
+        async def go():
+            engine = create_async_engine(db_url)
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text(
+                            "SELECT id FROM jobs "
+                            "WHERE workflow_id = :w AND status = 'pending' "
+                            "FOR UPDATE"
+                        ),
+                        {"w": wf_a},
+                    )
+                    locked.set()
+                    while not proceed.is_set():
+                        await asyncio.sleep(0.05)
+            finally:
+                await engine.dispose()
+
+        asyncio.run(go())
+
+    holder = threading.Thread(target=hold_wf_a_lock, daemon=True)
+    # Outer try/finally guarantees the holder thread is released and the
+    # test data is purged even if the lock-acquisition assertion fails or
+    # the dispatch call raises — otherwise a stuck daemon thread holding
+    # an open transaction would leak into the session-scoped Postgres.
+    holder.start()
+    try:
+        assert locked.wait(timeout=5.0), "holder thread didn't acquire lock"
+
+        # Both workflows in the filter. Pre-fix: pick lands on wf_a
+        # (alphabetically first), claim_q finds it all locked, 204.
+        # Post-fix: pick SKIP LOCKED skips wf_a, picks wf_b, succeeds.
+        resp = client.post(
+            "/api/dispatch/batch",
+            json={"workflow_id": [wf_a, wf_b], "limit": 100},
+        )
+    finally:
+        proceed.set()
+        holder.join(timeout=5.0)
+        # Be loud, not silent, if the lock-holder thread didn't exit.
+        # A stuck daemon would leak an open transaction/row locks into
+        # the session-scoped Postgres and break subsequent tests.
+        assert not holder.is_alive(), "lock-holder thread did not exit within 5s"
+        _purge_test_dispatch_state(db_url, [wf_a, wf_b], [sample_a, sample_b])
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["workflow_id"] == wf_b, (
+        f"expected dispatcher to pick the unlocked wf_b, got {resp.json()['workflow_id']}"
+    )
+
+
+def test_dispatch_batch_two_disjoint_workflow_filters_each_get_their_own(integration_client, db_url):
+    """Each dispatch response is scoped to its requested workflow_id (#74).
+
+    Pre-#74, FOR UPDATE locks could span multiple workflows before being
+    narrowed in Python — the pick-then-lock pattern in this PR locks
+    only the batch corresponding to the picked (workflow_id, version),
+    so disjoint workflow filters land in independent locked sets.
+
+    This test isn't a true concurrency stress test (TestClient runs
+    sequentially), but it does verify the contract: requesting workflow A
+    then workflow B in succession produces claims whose top-level
+    workflow_id matches the request, and the run_names are distinct.
+    Reconcile cross-products samples × workflows so both samples have
+    jobs for both workflows, which is fine — what matters is each
+    response is scoped correctly.
+    """
+    client, _ = integration_client
+    sample_a, wf_a, _ = _seed_job(client)
+    sample_b, wf_b, _ = _seed_job(client)
+    try:
+        a_resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_a], "limit": 100})
+        assert a_resp.status_code == 200, a_resp.text
+        a_data = a_resp.json()
+        assert a_data["workflow_id"] == wf_a
+
+        b_resp = client.post("/api/dispatch/batch", json={"workflow_id": [wf_b], "limit": 100})
+        assert b_resp.status_code == 200, b_resp.text
+        b_data = b_resp.json()
+        assert b_data["workflow_id"] == wf_b
+
+        assert a_data["run_name"] != b_data["run_name"]
+    finally:
+        _purge_test_dispatch_state(db_url, [wf_a, wf_b], [sample_a, sample_b])
 
 
 def test_dispatch_batch_no_pending_returns_204(integration_client):

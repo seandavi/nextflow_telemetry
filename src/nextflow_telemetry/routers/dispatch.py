@@ -80,8 +80,14 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
         now = datetime.now(timezone.utc)
 
         async with engine.begin() as conn:
-            q = (
-                select(jobs_tbl, workflows_tbl)
+            # Two-step pick-then-lock: first decide *which* (workflow_id,
+            # workflow_version) batch to claim, then take a row-level lock
+            # only on jobs in that batch. Issue #74: a single FOR UPDATE
+            # SKIP LOCKED LIMIT N could lock rows across multiple workflows
+            # that we'd then narrow away in Python — those locks blocked
+            # other dispatchers needlessly.
+            pick_q = (
+                select(jobs_tbl.c.workflow_id, jobs_tbl.c.workflow_version)
                 .join(workflows_tbl, jobs_tbl.c.workflow_pk == workflows_tbl.c.id)
                 .where(
                     jobs_tbl.c.status == "pending",
@@ -89,25 +95,53 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
                 )
             )
             if req.workflow_id:
-                q = q.where(jobs_tbl.c.workflow_id.in_(req.workflow_id))
+                pick_q = pick_q.where(jobs_tbl.c.workflow_id.in_(req.workflow_id))
             if req.workflow_version:
-                q = q.where(jobs_tbl.c.workflow_version == req.workflow_version)
+                pick_q = pick_q.where(jobs_tbl.c.workflow_version == req.workflow_version)
+            pick_q = (
+                pick_q.order_by(
+                    jobs_tbl.c.workflow_id,
+                    jobs_tbl.c.workflow_version,
+                    jobs_tbl.c.created_at,
+                )
+                .limit(1)
+                # Skip rows another dispatcher is already claiming. Without
+                # this, a competing transaction holding a lock on the
+                # otherwise-first pending job would cause every subsequent
+                # caller to pick that workflow, fail step 2 (FOR UPDATE
+                # SKIP LOCKED returns 0 rows because all of that workflow's
+                # rows are locked too), and 204 → spin. SKIP LOCKED on
+                # pick steers us to a workflow that *has* claimable rows.
+                .with_for_update(of=jobs_tbl, skip_locked=True)
+            )
 
-            result = await conn.execute(
-                q.order_by(jobs_tbl.c.workflow_id, jobs_tbl.c.workflow_version,
-                           jobs_tbl.c.created_at)
+            pick_row = (await conn.execute(pick_q)).mappings().first()
+            if pick_row is None:
+                return Response(status_code=204)
+            first_wf_id = pick_row["workflow_id"]
+            first_wf_ver = pick_row["workflow_version"]
+
+            # Step 2: lock and claim jobs in that single batch only.
+            # If a competing dispatcher swept through between step 1 and
+            # step 2, this returns nothing and the caller retries — the
+            # next pick may resolve to a different workflow.
+            claim_q = (
+                select(jobs_tbl, workflows_tbl)
+                .join(workflows_tbl, jobs_tbl.c.workflow_pk == workflows_tbl.c.id)
+                .where(
+                    jobs_tbl.c.status == "pending",
+                    workflows_tbl.c.status == "active",
+                    jobs_tbl.c.workflow_id == first_wf_id,
+                    jobs_tbl.c.workflow_version == first_wf_ver,
+                )
+                .order_by(jobs_tbl.c.created_at)
                 .limit(req.limit)
                 .with_for_update(of=jobs_tbl, skip_locked=True)
             )
-            rows = result.mappings().all()
+            rows = (await conn.execute(claim_q)).mappings().all()
 
             if not rows:
                 return Response(status_code=204)
-
-            first_wf_id = rows[0]["workflow_id"]
-            first_wf_ver = rows[0]["workflow_version"]
-            rows = [r for r in rows if r["workflow_id"] == first_wf_id
-                    and r["workflow_version"] == first_wf_ver]
 
             job_ids = [r["id"] for r in rows]
             run_name = "r" + str(_uuid7())
