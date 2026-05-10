@@ -201,7 +201,7 @@ def test_wrapper_exited_records_exit_code(integration_client, db_url):
     rows = _run(_query(db_url, select(workflow_runs_tbl).where(
         workflow_runs_tbl.c.run_name == run_name
     )))
-    assert rows[0]["slurm_exit_code"] == 137
+    assert rows[0]["wrapper_exit_code"] == 137
 
 
 def test_wrapper_exited_with_attached_log_stores_in_task_logs(integration_client, db_url):
@@ -380,6 +380,69 @@ def test_event_for_unknown_run_still_records_raw(integration_client, db_url):
     assert len(run_rows) == 0  # we don't pollute workflow_runs with orphan events
 
 
+def test_log_attachment_on_unknown_run_returns_404(integration_client, db_url):
+    """A .nextflow.log without a known run is rejected — no orphan task_logs row."""
+    from nextflow_telemetry.db import task_logs_tbl, telemetry_tbl
+
+    client, _ = integration_client
+    run_name = _make_run_name()  # no _seed_run
+
+    resp = _post_event(
+        client, run_name,
+        {"type": "wrapper_exited", "utc_time": _ts(), "exit_code": 0},
+        file=("nextflow.log", b"would-be-orphan", "text/plain"),
+    )
+    assert resp.status_code == 404
+
+    # No orphan log row was created.
+    log_rows = _run(_query(db_url, select(task_logs_tbl).where(
+        task_logs_tbl.c.run_name == run_name
+    )))
+    assert log_rows == []
+
+    # Transaction was rolled back: telemetry row must not be there either.
+    tel_rows = _run(_query(db_url, select(telemetry_tbl).where(
+        telemetry_tbl.c.run_name == run_name
+    )))
+    assert tel_rows == []
+
+
+def test_slurm_state_event_without_reason_clears_stale_reason(integration_client, db_url):
+    """A later state event without a reason should NULL the column, not leave a stale value."""
+    from nextflow_telemetry.db import workflow_runs_tbl
+
+    client, _ = integration_client
+    run_name = _make_run_name()
+    _seed_run(db_url, run_name)
+
+    # First: state with a reason.
+    resp = _post_event(client, run_name, {
+        "type": "slurm_state",
+        "utc_time": _ts(),
+        "state": "PENDING",
+        "reason": "Resources",
+    })
+    assert resp.status_code == 201
+    rows = _run(_query(db_url, select(workflow_runs_tbl).where(
+        workflow_runs_tbl.c.run_name == run_name
+    )))
+    assert rows[0]["slurm_reason"] == "Resources"
+
+    # Then: a state transition with no reason — the column must clear.
+    resp = _post_event(client, run_name, {
+        "type": "slurm_state",
+        "utc_time": _ts(),
+        "state": "RUNNING",
+    })
+    assert resp.status_code == 201
+
+    rows = _run(_query(db_url, select(workflow_runs_tbl).where(
+        workflow_runs_tbl.c.run_name == run_name
+    )))
+    assert rows[0]["last_known_slurm_state"] == "RUNNING"
+    assert rows[0]["slurm_reason"] is None
+
+
 def test_out_of_order_pre_nextflow_after_exit_does_not_clobber_exit_code(integration_client, db_url):
     """A late pre_nextflow event must not roll back forward-looking state."""
     from nextflow_telemetry.db import workflow_runs_tbl
@@ -407,5 +470,5 @@ def test_out_of_order_pre_nextflow_after_exit_does_not_clobber_exit_code(integra
     rows = _run(_query(db_url, select(workflow_runs_tbl).where(
         workflow_runs_tbl.c.run_name == run_name
     )))
-    assert rows[0]["slurm_exit_code"] == 0
+    assert rows[0]["wrapper_exit_code"] == 0
     assert rows[0]["wait_seconds"] == 12

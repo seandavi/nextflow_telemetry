@@ -66,7 +66,9 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
             "the same log is idempotent. Events for an unknown `run_name` are still "
             "appended to the raw `telemetry` table so nothing is dropped, but no "
             "`workflow_runs` row is created — summary fields only update for runs "
-            "already on record (typically created by the dispatch claim)."
+            "already on record (typically created by the dispatch claim). "
+            "A `nextflow_log` attachment requires a known `run_name`; otherwise the "
+            "request fails with 404 to avoid orphan log rows."
         ),
     )
     async def post_run_event(
@@ -117,6 +119,18 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
             workflow_id = existing["workflow_id"] if existing else None
             workflow_version = existing["workflow_version"] if existing else None
 
+            # If a .nextflow.log was attached but no workflow_runs row exists,
+            # 404 — storing it would orphan the row and the response would
+            # falsely claim the upload succeeded against a known run.
+            if log_content_str is not None and existing is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=(
+                        f"No workflow_runs row for '{run_name}'; refusing to store "
+                        "nextflow_log attachment as an orphan."
+                    ),
+                )
+
             # 2. Append raw event to telemetry (same shape as weblog rows).
             # run_id is NOT NULL; we use empty string as a sentinel when Nextflow
             # hasn't sent its 'started' event yet.
@@ -137,7 +151,8 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
             # 3. Update workflow_runs summary columns by event variant
             await _apply_summary_update(conn, run_name, parsed, now)
 
-            # 4. Optional .nextflow.log attachment (only on wrapper_exited)
+            # 4. Optional .nextflow.log attachment (only on wrapper_exited).
+            # Existence of the run row was verified above.
             if log_content_str is not None:
                 await conn.execute(
                     text(
@@ -204,13 +219,15 @@ async def _apply_summary_update(conn, run_name: str, parsed: RunEvent, now: date
             values["wait_seconds"] = parsed.wait_seconds
     elif isinstance(parsed, WrapperExitedEvent):
         if parsed.exit_code is not None:
-            values["slurm_exit_code"] = parsed.exit_code
+            values["wrapper_exit_code"] = parsed.exit_code
     elif isinstance(parsed, HeartbeatEvent):
         values["last_heartbeat_at"] = parsed.utc_time
     elif isinstance(parsed, SlurmStateEvent):
+        # `slurm_reason` is reset on every state event (including to NULL when
+        # the new event omits it) so the column always reflects the *current*
+        # scheduler state, not a stale reason from an earlier transition.
         values["last_known_slurm_state"] = parsed.state
-        if parsed.reason is not None:
-            values["slurm_reason"] = parsed.reason
+        values["slurm_reason"] = parsed.reason
     # WorkflowOnComplete/OnError/WrapperLog have no summary columns — only the raw row matters.
 
     if not values:

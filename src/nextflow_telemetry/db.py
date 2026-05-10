@@ -161,7 +161,7 @@ workflow_runs_tbl = Table(
     Column("last_heartbeat_at", DateTime(timezone=True), nullable=True),
     Column("last_known_slurm_state", Text, nullable=True),
     Column("slurm_reason", Text, nullable=True),
-    Column("slurm_exit_code", Integer, nullable=True),
+    Column("wrapper_exit_code", Integer, nullable=True),
     Column("wait_seconds", Integer, nullable=True),
     Column("nextflow_log_uploaded_at", DateTime(timezone=True), nullable=True),
     Index("ix_workflow_runs_status", "status"),
