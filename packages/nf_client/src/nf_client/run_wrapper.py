@@ -299,9 +299,15 @@ def main(argv: list[str] | None = None) -> int:
         prev_term = signal.signal(signal.SIGTERM, _forward_signal)
         prev_int = signal.signal(signal.SIGINT, _forward_signal)
 
-        # 4. wait for nextflow to finish (any exit code is fine)
+        # 4. wait for nextflow to finish (any exit code is fine).
+        # subprocess.wait() returns a negative number when the child is
+        # killed by a signal (-SIGTERM == -15). Returning that from main()
+        # would propagate as Python's `sys.exit(-15)` → 241 (256+(-15)),
+        # which is meaningless to operators. Normalize using POSIX shell
+        # convention: signal-killed → 128 + signum.
         try:
-            exit_code = proc.wait()
+            raw_exit = proc.wait()
+            exit_code = (128 - raw_exit) if raw_exit < 0 else raw_exit
         finally:
             # Restore signal handlers so main() leaves no global side-effects.
             signal.signal(signal.SIGTERM, prev_term)

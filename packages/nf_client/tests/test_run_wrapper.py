@@ -367,6 +367,36 @@ def test_non_2xx_response_is_logged_to_stderr(tmp_path, telemetry_base, monkeypa
     assert "no such run" in captured.err
 
 
+def test_signal_killed_subprocess_normalizes_exit_code(tmp_path, telemetry_base, monkeypatch):
+    """A subprocess killed by a signal returns -signum from wait(); we report 128+signum.
+
+    `kill -SIGTERM $$` from the subprocess gives proc.wait() == -15. Without
+    normalization, main() would propagate that to sys.exit(-15) which Python
+    maps to 241 — meaningless to operators. POSIX shell convention is
+    128+signum (so SIGTERM == 143).
+    """
+    monkeypatch.chdir(tmp_path)
+
+    with respx.mock(base_url=telemetry_base) as rx:
+        route = rx.post("/runs/r-killed/event").mock(
+            return_value=httpx.Response(201, json={
+                "run_name": "r-killed", "type": "x", "nextflow_log_uploaded": False,
+            })
+        )
+
+        rc = run_wrapper.main([
+            "--run-name", "r-killed",
+            "--telemetry-url", telemetry_base,
+            # subshell sends SIGTERM (15) to itself
+            "--", "sh", "-c", "kill -TERM $$",
+        ])
+
+    # 128 + 15 == 143
+    assert rc == 143
+    last = _extract_event(route.calls[-1])
+    assert last["exit_code"] == 143
+
+
 def test_popen_oserror_emits_wrapper_exited_with_127(tmp_path, telemetry_base, monkeypatch, capsys):
     """If nextflow itself can't be exec'd (command-not-found), still emit a terminal event."""
     monkeypatch.chdir(tmp_path)
@@ -397,13 +427,14 @@ def test_invalid_telemetry_url_does_not_fail_the_run(tmp_path, telemetry_base, m
 
     rc = run_wrapper.main([
         "--run-name", "r-badurl",
-        # Missing scheme — httpx.Client construction raises
+        # Garbage that httpx will either reject at construction (raise)
+        # or accept and fail on every POST. Either way the wrapper must
+        # not propagate the failure to its own exit code.
         "--telemetry-url", "not-a-url://!!!::",
         "--", "true",
     ])
 
     captured = capsys.readouterr()
-    # Either the client constructs (with a weird base_url that produces
-    # transport errors per POST) or it raises at construction (caught and
-    # logged). In both cases the subprocess must run and exit 0.
+    # The subprocess must run and exit 0 regardless of how httpx handles
+    # the URL.
     assert rc == 0
