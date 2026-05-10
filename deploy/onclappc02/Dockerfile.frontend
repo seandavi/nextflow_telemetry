@@ -1,0 +1,29 @@
+# Multi-stage build for the Vite SPA. Stage 1 builds the static bundle
+# with VITE_API_URL baked in; stage 2 serves it with nginx. Total image
+# is ~50 MB (nginx:alpine).
+#
+# Context is the repo root (../.. in the compose file) so we can access
+# `frontend/` and friends in one COPY.
+
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install deps first so the layer is cached when only source changes.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# Now the source + build.
+COPY frontend/ ./
+
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+RUN npm run build
+
+# Stage 2 — runtime nginx.
+FROM nginx:alpine
+
+COPY deploy/onclappc02/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80

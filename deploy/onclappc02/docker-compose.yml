@@ -1,0 +1,72 @@
+# Production compose for nextflow_telemetry on onclappc02 (cancerdatasci.org).
+#
+# Companion services (Traefik, Postgres + pg_duckdb) live in
+# monode/infrastructure/compose and are deployed independently. This file
+# only adds the telemetry API and the static-frontend container, both of
+# which join the existing `proxy` network so Traefik routes them
+# transparently.
+#
+# DB connectivity: the pg_duckdb container exposes :5432 on the host. The
+# API reaches it via `host.docker.internal`, which is wired up by
+# `extra_hosts: host-gateway` (Linux Docker doesn't resolve it natively).
+#
+# See ./README.md for first-time setup and the Cloud Run → onclappc02
+# cutover plan.
+
+services:
+  nf_telemetry_api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: nf-telemetry-api:local
+    container_name: nf_telemetry_api
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      SQLALCHEMY_URI: ${SQLALCHEMY_URI}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://${FRONTEND_HOST:-cmgd.cancerdatasci.org}}
+    extra_hosts:
+      # Lets `host.docker.internal` resolve to the docker host's gateway
+      # IP, so the SQLALCHEMY_URI can point at the pg_duckdb container
+      # listening on :5432 of the host without putting it on the proxy
+      # network.
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status == 200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nf-telemetry-api.rule=Host(`${API_HOST:-nf-telemetry.cancerdatasci.org}`)"
+      - "traefik.http.routers.nf-telemetry-api.entrypoints=websecure"
+      - "traefik.http.routers.nf-telemetry-api.tls=true"
+      - "traefik.http.routers.nf-telemetry-api.tls.certresolver=cloudflare"
+      - "traefik.http.services.nf-telemetry-api.loadbalancer.server.port=8000"
+
+  nf_telemetry_frontend:
+    build:
+      context: ../..
+      dockerfile: deploy/onclappc02/Dockerfile.frontend
+      args:
+        # Baked into the bundle at build time. Must match the API host
+        # the frontend will talk to (CORS is enforced server-side, too).
+        VITE_API_URL: https://${API_HOST:-nf-telemetry.cancerdatasci.org}
+    image: nf-telemetry-frontend:local
+    container_name: nf_telemetry_frontend
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nf-telemetry-frontend.rule=Host(`${FRONTEND_HOST:-cmgd.cancerdatasci.org}`)"
+      - "traefik.http.routers.nf-telemetry-frontend.entrypoints=websecure"
+      - "traefik.http.routers.nf-telemetry-frontend.tls=true"
+      - "traefik.http.routers.nf-telemetry-frontend.tls.certresolver=cloudflare"
+      - "traefik.http.services.nf-telemetry-frontend.loadbalancer.server.port=80"
+
+networks:
+  proxy:
+    external: true
