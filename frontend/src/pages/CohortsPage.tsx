@@ -39,17 +39,20 @@ function FailureBar({
 }) {
   const pct = total > 0 ? (failedCount / total) * 100 : 0
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
+      aria-pressed={selected}
       style={{
         display: 'grid', gridTemplateColumns: '1fr 70px 80px 32px', gap: 12,
         alignItems: 'center', padding: '10px 12px', borderRadius: 4,
         background: selected ? T.accentDim : 'transparent',
         border: `1px solid ${selected ? T.accent : 'transparent'}`,
         cursor: 'pointer',
+        font: 'inherit', color: 'inherit', textAlign: 'inherit', width: '100%',
       }}
     >
-      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
         {process}
       </div>
       <div style={{ position: 'relative', height: 6, background: T.border, borderRadius: 3, overflow: 'hidden' }}>
@@ -62,7 +65,7 @@ function FailureBar({
         {failedCount} <span style={{ color: T.muted }}>/{sampleCount}</span>
       </div>
       <div style={{ fontSize: 11, color: T.muted, textAlign: 'right' }}>›</div>
-    </div>
+    </button>
   )
 }
 
