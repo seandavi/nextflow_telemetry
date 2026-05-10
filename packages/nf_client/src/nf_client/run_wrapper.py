@@ -40,16 +40,28 @@ def _now_iso() -> str:
 
 
 def _post_event(
-    client: httpx.Client,
+    client: httpx.Client | None,
     run_name: str,
     body: dict,
     files: dict | None = None,
     *,
     timeout: int = _EVENT_POST_TIMEOUT,
 ) -> None:
-    """POST a run-lifecycle event. Errors are logged and swallowed."""
+    """POST a run-lifecycle event. Errors are logged and swallowed.
+
+    Logs both transport-level failures (network down, timeout) and HTTP-level
+    failures (4xx/5xx). httpx does not raise on non-2xx responses, so a
+    server-side rejection (e.g. the orphan-log 404 from PR #64) would otherwise
+    look like a successful no-op in the wrapper logs.
+
+    Accepts ``client=None`` (no-op telemetry mode) for the case where the
+    httpx client could not be constructed — see main(); the run still runs.
+    """
+    if client is None:
+        return
+    event_type = body.get("type", "<unknown>")
     try:
-        client.post(
+        response = client.post(
             f"/api/runs/{run_name}/event",
             data={"event": json.dumps(body)},
             files=files,
@@ -57,7 +69,17 @@ def _post_event(
         )
     except Exception as e:
         print(
-            f"[run_wrapper] telemetry POST {body.get('type')} failed: {e}",
+            f"[run_wrapper] telemetry POST {event_type} failed: {e}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+    if not response.is_success:
+        # Truncate body so a stray HTML error page doesn't flood the log.
+        body_preview = response.text[:500].replace("\n", " ")
+        print(
+            f"[run_wrapper] telemetry POST {event_type} returned "
+            f"{response.status_code}: {body_preview}",
             file=sys.stderr,
             flush=True,
         )
@@ -105,17 +127,28 @@ def _read_nextflow_log(log_path: Path, max_bytes: int = 16 * 1024 * 1024) -> byt
 
 
 class _Heartbeat:
-    """Daemon thread that POSTs heartbeat events on a fixed interval."""
+    """Daemon thread that POSTs heartbeat events on a fixed interval.
 
-    def __init__(self, client: httpx.Client, run_name: str, interval_seconds: int) -> None:
+    Pass ``interval_seconds <= 0`` to disable heartbeats entirely (start()
+    becomes a no-op, no thread is created). Otherwise the value is the
+    number of seconds between heartbeats; sub-second values are allowed
+    so tests can exercise the loop without real waits.
+    """
+
+    def __init__(self, client: httpx.Client | None, run_name: str, interval_seconds: float) -> None:
         self._client = client
         self._run_name = run_name
         self._interval = interval_seconds
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._loop, daemon=True, name="nf-heartbeat")
+        self._enabled = interval_seconds > 0
+        self._thread = (
+            threading.Thread(target=self._loop, daemon=True, name="nf-heartbeat")
+            if self._enabled else None
+        )
 
     def start(self) -> None:
-        self._thread.start()
+        if self._thread is not None:
+            self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
@@ -141,8 +174,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Base URL of the telemetry server, e.g. https://nf-telemetry.example.com",
     )
     parser.add_argument(
-        "--heartbeat-seconds", type=int, default=_HEARTBEAT_SECONDS_DEFAULT,
-        help=f"Heartbeat interval (default {_HEARTBEAT_SECONDS_DEFAULT}s).",
+        "--heartbeat-seconds", type=float, default=_HEARTBEAT_SECONDS_DEFAULT,
+        help=(
+            f"Heartbeat interval in seconds (default {_HEARTBEAT_SECONDS_DEFAULT}). "
+            "Set to 0 (or negative) to disable heartbeats."
+        ),
     )
     parser.add_argument(
         "--nextflow-log", type=Path, default=Path.cwd() / ".nextflow.log",
@@ -155,8 +191,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # httpx.Client(base_url=...) can raise for malformed URLs. Telemetry
+    # must NEVER prevent the run, so fall back to no-op mode (client=None
+    # → _post_event silently returns) and still execute the subprocess.
     base_url = args.telemetry_url.rstrip("/")
-    client = httpx.Client(base_url=base_url)
+    client: httpx.Client | None
+    try:
+        client = httpx.Client(base_url=base_url)
+    except Exception as e:
+        print(
+            f"[run_wrapper] could not construct httpx.Client for "
+            f"'{base_url}': {e}; continuing with telemetry disabled.",
+            file=sys.stderr, flush=True,
+        )
+        client = None
 
     try:
         host = _hostname()
@@ -225,7 +273,8 @@ def main(argv: list[str] | None = None) -> int:
 
         return exit_code
     finally:
-        client.close()
+        if client is not None:
+            client.close()
 
 
 if __name__ == "__main__":

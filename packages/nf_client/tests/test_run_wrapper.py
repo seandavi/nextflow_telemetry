@@ -199,7 +199,13 @@ def test_pre_nextflow_includes_wait_seconds_when_slurm_env_set(tmp_path, telemet
     assert started["slurm_job_id"] == "999"
 
 
-def test_wait_seconds_omitted_when_slurm_env_absent(tmp_path, telemetry_base, monkeypatch):
+def test_wait_seconds_is_null_when_slurm_env_absent(tmp_path, telemetry_base, monkeypatch):
+    """Without SLURM env vars, the wrapper sends `wait_seconds: null` rather than omitting the key.
+
+    The server-side Pydantic model accepts None for optional fields, so this is
+    the simplest contract: always include the key with whatever the wrapper
+    could derive (or null).
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SLURM_SUBMIT_TIME", raising=False)
     monkeypatch.delenv("SLURM_JOB_START_TIME", raising=False)
@@ -218,6 +224,7 @@ def test_wait_seconds_omitted_when_slurm_env_absent(tmp_path, telemetry_base, mo
         ])
 
     pre = _extract_event(route.calls[1])
+    assert "wait_seconds" in pre
     assert pre["wait_seconds"] is None
 
 
@@ -243,17 +250,77 @@ def test_heartbeats_fire_during_long_run(tmp_path, telemetry_base, monkeypatch):
             })
         )
 
-        # sleep 0.4s wall, heartbeat every 0.1s → expect ≥2 heartbeats
+        # 0.4s wall-clock subprocess, heartbeat every 0.1s → expect ≥2 heartbeats
         rc = run_wrapper.main([
             "--run-name", "r-hb",
             "--telemetry-url", telemetry_base,
-            "--heartbeat-seconds", "0",  # 0 means "wait(0)" which is immediate, but Event.wait(0) is non-blocking and returns False
+            "--heartbeat-seconds", "0.1",
             "--", "sh", "-c", "sleep 0.4",
         ])
 
     assert rc == 0
     types = _captured_event_types(route)
-    # We always have wrapper_started, pre_nextflow, wrapper_exited.
-    # With heartbeat_seconds=0 (effectively a tight loop), we should see >0 heartbeats.
     n_hb = sum(1 for t in types if t == "heartbeat")
-    assert n_hb >= 1, f"expected at least one heartbeat, got types={types}"
+    assert n_hb >= 2, f"expected at least 2 heartbeats in 0.4s @ 0.1s interval, got types={types}"
+
+
+def test_heartbeats_disabled_when_interval_is_zero(tmp_path, telemetry_base, monkeypatch):
+    """`--heartbeat-seconds 0` cleanly disables heartbeats — no thread, no busy loop, no events."""
+    monkeypatch.chdir(tmp_path)
+
+    with respx.mock(base_url=telemetry_base) as rx:
+        route = rx.post("/api/runs/r-nohb/event").mock(
+            return_value=httpx.Response(201, json={
+                "run_name": "r-nohb", "type": "x", "nextflow_log_uploaded": False,
+            })
+        )
+
+        rc = run_wrapper.main([
+            "--run-name", "r-nohb",
+            "--telemetry-url", telemetry_base,
+            "--heartbeat-seconds", "0",
+            "--", "sh", "-c", "sleep 0.3",
+        ])
+
+    assert rc == 0
+    types = _captured_event_types(route)
+    assert "heartbeat" not in types, f"expected no heartbeats, got types={types}"
+
+
+def test_non_2xx_response_is_logged_to_stderr(tmp_path, telemetry_base, monkeypatch, capsys):
+    """A 404 from the server (e.g. orphan-log path from PR #64) is logged but does not fail the run."""
+    monkeypatch.chdir(tmp_path)
+
+    with respx.mock(base_url=telemetry_base) as rx:
+        rx.post("/api/runs/r-orphan/event").mock(
+            return_value=httpx.Response(404, json={"detail": "no such run"})
+        )
+
+        rc = run_wrapper.main([
+            "--run-name", "r-orphan",
+            "--telemetry-url", telemetry_base,
+            "--", "true",
+        ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "404" in captured.err
+    assert "no such run" in captured.err
+
+
+def test_invalid_telemetry_url_does_not_fail_the_run(tmp_path, telemetry_base, monkeypatch, capsys):
+    """A malformed --telemetry-url falls back to no-op telemetry; the subprocess still runs."""
+    monkeypatch.chdir(tmp_path)
+
+    rc = run_wrapper.main([
+        "--run-name", "r-badurl",
+        # Missing scheme — httpx.Client construction raises
+        "--telemetry-url", "not-a-url://!!!::",
+        "--", "true",
+    ])
+
+    captured = capsys.readouterr()
+    # Either the client constructs (with a weird base_url that produces
+    # transport errors per POST) or it raises at construction (caught and
+    # logged). In both cases the subprocess must run and exit 0.
+    assert rc == 0
