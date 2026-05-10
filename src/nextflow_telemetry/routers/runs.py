@@ -88,8 +88,18 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
 
         # Read and validate the optional .nextflow.log *outside* the DB transaction
         # so we don't hold a connection / locks while decoding a 16 MB payload.
+        # Reject attachments on non-wrapper_exited events outright — clients
+        # should never attach a log to a heartbeat or slurm_state.
         log_content_str: str | None = None
-        if isinstance(parsed, WrapperExitedEvent) and nextflow_log is not None:
+        if nextflow_log is not None:
+            if not isinstance(parsed, WrapperExitedEvent):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "nextflow_log attachment is only valid on wrapper_exited events; "
+                        f"received it with type={parsed.type}."
+                    ),
+                )
             raw = await nextflow_log.read()
             if len(raw) > _MAX_NEXTFLOW_LOG_BYTES:
                 raise HTTPException(
@@ -221,10 +231,13 @@ async def _apply_summary_update(conn, run_name: str, parsed: RunEvent, now: date
         if parsed.wait_seconds is not None:
             values["wait_seconds"] = parsed.wait_seconds
     elif isinstance(parsed, WrapperExitedEvent):
-        if parsed.exit_code is not None:
-            values["wrapper_exit_code"] = parsed.exit_code
+        values["wrapper_exit_code"] = parsed.exit_code
     elif isinstance(parsed, HeartbeatEvent):
-        values["last_heartbeat_at"] = parsed.utc_time
+        # Use server receipt time, not the client-supplied utc_time. Heartbeat
+        # staleness is "how recently did we hear from this wrapper?" — answering
+        # that with a clock the wrapper itself controls is unreliable when its
+        # clock drifts or events arrive out of order.
+        values["last_heartbeat_at"] = now
     elif isinstance(parsed, SlurmStateEvent):
         # `slurm_reason` is reset on every state event (including to NULL when
         # the new event omits it) so the column always reflects the *current*

@@ -5,9 +5,12 @@ Revises: a1b2c3d4
 Create Date: 2026-05-10
 
 Adds run-lifecycle observability columns to workflow_runs (#62 / #63):
-  - last_heartbeat_at        — wrapper-emitted heartbeat (Phase 3)
+  - last_heartbeat_at        — wrapper-emitted heartbeat (Phase 3); set to
+                               server receipt time, not client utc_time
   - last_known_slurm_state   — most recent sacct state (Phase 4)
-  - slurm_reason             — sacct Reason field on terminal state
+  - slurm_reason             — sacct Reason field for the most recent state
+                               event (cleared to NULL when the latest state
+                               event omits it; not just terminal states)
   - wrapper_exit_code        — exit code from `nextflow run` reported by the wrapper
   - wait_seconds             — queue wait, submit→start
   - nextflow_log_uploaded_at — sentinel: have we received the .nextflow.log?

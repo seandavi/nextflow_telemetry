@@ -380,6 +380,58 @@ def test_event_for_unknown_run_still_records_raw(integration_client, db_url):
     assert len(run_rows) == 0  # we don't pollute workflow_runs with orphan events
 
 
+def test_log_attachment_on_non_wrapper_exited_returns_422(integration_client, db_url):
+    """Attaching a .nextflow.log to a heartbeat (or any other event) is rejected."""
+    client, _ = integration_client
+    run_name = _make_run_name()
+    _seed_run(db_url, run_name)
+
+    resp = _post_event(
+        client, run_name,
+        {"type": "heartbeat", "utc_time": _ts()},
+        file=("nextflow.log", b"x" * 1024, "text/plain"),
+    )
+    assert resp.status_code == 422
+
+
+def test_wrapper_exited_without_exit_code_returns_422(integration_client, db_url):
+    """exit_code is required: a wrapper claiming nextflow exited must say with what."""
+    client, _ = integration_client
+    run_name = _make_run_name()
+    _seed_run(db_url, run_name)
+
+    resp = _post_event(client, run_name, {
+        "type": "wrapper_exited",
+        "utc_time": _ts(),
+        # no exit_code
+    })
+    assert resp.status_code == 422
+
+
+def test_heartbeat_uses_server_receipt_time_not_client_utc_time(integration_client, db_url):
+    """last_heartbeat_at is server-authoritative — client clock drift mustn't poison staleness checks."""
+    from datetime import datetime, timezone, timedelta
+    from nextflow_telemetry.db import workflow_runs_tbl
+
+    client, _ = integration_client
+    run_name = _make_run_name()
+    _seed_run(db_url, run_name)
+
+    # Send a heartbeat with a client-supplied utc_time set 1 hour in the past.
+    one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    resp = _post_event(client, run_name, {"type": "heartbeat", "utc_time": one_hour_ago})
+    assert resp.status_code == 201
+
+    rows = _run(_query(db_url, select(workflow_runs_tbl).where(
+        workflow_runs_tbl.c.run_name == run_name
+    )))
+    last = rows[0]["last_heartbeat_at"]
+    assert last is not None
+    # Server time, not client's stale time: should be within seconds of now.
+    skew = abs((datetime.now(timezone.utc) - last).total_seconds())
+    assert skew < 30, f"last_heartbeat_at drift {skew}s — server should use receipt time"
+
+
 def test_pre_weblog_events_get_unique_run_id_sentinel(integration_client, db_url):
     """Events for unknown runs must each get a unique run_id, not a shared empty string."""
     from nextflow_telemetry.db import telemetry_tbl

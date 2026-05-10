@@ -397,7 +397,7 @@ class WrapperExitedEvent(_RunEventBase):
     the .nextflow.log file as the multipart attachment named `nextflow_log`.
     """
     type: Literal["wrapper_exited"]
-    exit_code: Optional[int] = Field(default=None, description="Exit code from `nextflow run`.")
+    exit_code: int = Field(description="Exit code from `nextflow run`. Required: a wrapper that knows nextflow has exited must know what it exited with.")
     duration_seconds: Optional[int] = Field(default=None, description="Wall-clock seconds the wrapper ran.")
 
 
