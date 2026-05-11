@@ -51,7 +51,19 @@ Registry of pipeline versions. Each workflow card shows:
 
 ### Samples
 
-Paginated catalog of all registered BioSample IDs with metadata and full-text search.
+Paginated catalog of all registered BioSample IDs with metadata and substring filtering by
+sample_id or cohort.
+
+### Cohorts
+
+Collection-level summary (`/api/cohorts`) for any registered group of samples — a
+BioProject, an SRA Study, or a manually-tagged cohort. Each cohort shows:
+
+- Completion percentage and counts (pending / claimed / submitted / running / completed /
+  failed) across the cohort's samples for a chosen workflow
+- A failure-by-process bar chart: which Nextflow process is killing samples, and how many
+- Click a process row to drill down to the failing task list, with deep-links into the
+  log viewer
 
 ---
 
@@ -61,8 +73,11 @@ Paginated catalog of all registered BioSample IDs with metadata and full-text se
 metadata. Each sample is processed once per active workflow version.
 
 **Job** — one processing attempt for a (sample, workflow version) pair. Lifecycle:
-`pending → claimed → running → completed | failed`. A job can be retried up to
-`max_retries` times before being written to the dead-letter table.
+`pending → claimed → submitted → running → completed | failed`. The gap between `submitted`
+(executor accepted) and `running` (Nextflow actually started) is the scheduler queue
+wait — kept separate so dashboards can distinguish a slow pipeline from a slow cluster.
+A job can be retried up to `max_retries` times before being written to the dead-letter
+table.
 
 **Workflow run** — a single Nextflow execution that processes a batch of samples together.
 The server dispatches runs in configurable batch sizes.
@@ -81,7 +96,7 @@ without it, the job is failed (or re-queued if retries remain).
 
 ```
                         ┌─────────────────────────────────┐
-                        │          Alpine HPC              │
+                        │       HPC cluster (Anvil/Alpine) │
                         │                                  │
   ┌──────────────┐      │  ┌───────────┐  SLURM submit    │
   │  nf-client   │──────┼─►│ sbatch    │──────────────►   │
@@ -95,8 +110,10 @@ without it, the job is failed (or re-queued if retries remain).
   │              FastAPI server + PostgreSQL          │
   │                                                  │
   │  /telemetry  ◄── Nextflow weblog events          │
+  │  /runs/…/event ◄── wrapper + pipeline hook events│
   │  /dispatch   ◄── nf-client claims & reports      │
   │  /metrics    ──► dashboard queries               │
+  │  /cohorts    ──► cohort summaries + drill-down   │
   │  /samples    ──► sample catalog                  │
   └──────────────────────────┬───────────────────────┘
                              │
@@ -109,19 +126,29 @@ without it, the job is failed (or re-queued if retries remain).
 **Data flow**
 
 1. Samples are registered in the server's catalog (BioSample IDs + NCBI accessions).
-2. `nf-client` (running as a daemon on the Alpine head node) claims batches of pending
-   samples from the server and submits a SLURM wrapper job for each batch.
-3. The wrapper job runs Nextflow, which submits individual compute tasks (downloading reads,
-   taxonomic profiling, etc.) back to SLURM via the `process.executor = 'slurm'` setting.
-4. Nextflow sends real-time weblog events to the server's `/telemetry` endpoint as each
-   task starts and finishes.
+2. `nf-client` (running as a daemon on each HPC head node — Anvil and Alpine) claims
+   batches of pending samples from the server and submits a SLURM wrapper job for each
+   batch.
+3. The wrapper job (`nf_client.run_wrapper`) emits run-lifecycle events to
+   `/api/runs/{run_name}/event` (wrapper_started, pre_nextflow with queue wait,
+   periodic heartbeats), then runs Nextflow under instrumentation.
+4. Nextflow submits individual compute tasks (downloading reads, taxonomic profiling,
+   etc.) back to SLURM via the `process.executor = 'slurm'` setting, and posts real-time
+   weblog events to `/telemetry` as each task starts and finishes.
 5. When the `MARK_COMPLETE` sentinel process fires for a sample, the server marks that
-   sample's job as `completed`. If the run ends without it, the job is swept to `failed`.
-6. The dashboard polls the server's metrics and status endpoints to render live progress.
+   sample's job as `completed`. If the run ends without it, the job is swept to `failed`
+   (or re-queued, within the workflow's retry budget).
+6. On exit, the wrapper posts `wrapper_exited` and uploads the `.nextflow.log` so the
+   diagnosis surface is complete even when the run dies before any weblog event.
+7. The dashboard polls the server's metrics, cohort, and status endpoints to render live
+   progress.
 
 **Storage** — all data lives in PostgreSQL. Raw Nextflow events are stored as JSONB in the
 `telemetry` table; sample, workflow, and job state live in their own relational tables.
-Process-level metrics are computed at query time from the raw event stream.
+Process-level metrics are computed at query time from the raw event stream, with partial
+functional indexes on `(trace->>'process')` and `(trace->>'status')` keeping the
+analytical queries fast. Metrics endpoints apply a 7-day default look-back when no time
+filter is supplied, so unparameterised calls stay bounded as event volume grows.
 
 ---
 
@@ -160,12 +187,17 @@ Interactive OpenAPI docs are available at `/docs` when the server is running.
 
 | Group | Endpoints |
 |-------|-----------|
-| Telemetry ingest | `POST /telemetry` |
+| Telemetry ingest | `POST /telemetry` (Nextflow `-with-weblog`) |
+| Run-lifecycle events | `POST /api/runs/{run_name}/event` (wrapper, pipeline hooks, daemon sacct polling) |
 | Dispatch | `POST /dispatch/batch`, `/dispatch/submitted`, `/dispatch/requeue-expired` |
-| Samples | `GET/POST /samples`, `GET /samples/{id}` |
-| Workflows | `GET/POST /workflows`, `PATCH /workflows/{pk}/status`, `GET /workflows/{pk}/job-summary` |
-| Process metrics | `GET /metrics/processes/running`, `/summary`, `/failures`, `/retries`, `/resources-by-attempt`, `/failure-signatures` |
-| Admin | `POST /admin/reconcile-jobs` |
+| Samples | `GET/POST /samples`, `GET /samples/{id}`, `GET /samples/by-srr/{srr}`, `GET /samples/by-biosample/{id}` |
+| Workflows | `GET/POST /workflows`, `PATCH /workflows/{pk}/status`, `/revision`, `GET /workflows/{pk}/job-summary` |
+| Cohorts | `GET /cohorts`, `/cohorts/{id}/summary`, `/cohorts/{id}/failures` |
+| Process metrics | `GET /metrics/processes/running`, `/summary`, `/failures`, `/retries`, `/resources-by-attempt`, `/failure-signatures`, `/timeline`, `/tasks` |
+| Task logs | `POST /task-logs`, `GET /task-logs/{run_name}/{task_hash}` |
+| Daemons | `GET /daemons/`, `POST /daemons/heartbeat` |
+| Curated | `GET/POST /curated/studies`, `/curated/samples` |
+| Admin | `POST /admin/reconcile-jobs`, `/admin/expire-stale-runs`, `GET /admin/stats` |
 
 ### nf-client (HPC orchestration)
 
@@ -177,7 +209,15 @@ uv pip install -e packages/nf_client
 nf-client daemon --config client-alpine.yaml
 ```
 
-For full Alpine SLURM deployment details see [docs/hpc-deployment.md](docs/hpc-deployment.md).
+The daemon's SLURM template invokes `python -m nf_client.run_wrapper` rather than
+`nextflow run` directly. The wrapper emits run-lifecycle events (wrapper_started,
+pre_nextflow with queue wait, periodic heartbeats, wrapper_exited with exit code and
+`.nextflow.log` upload), all best-effort and incapable of failing the run. This makes
+crashes visible end-to-end — including pre-Nextflow failures (module load, container
+pull) that the weblog stream can't see.
+
+For full Alpine / Anvil SLURM deployment details see
+[docs/hpc-deployment.md](docs/hpc-deployment.md).
 
 ### Test pipeline
 
@@ -193,9 +233,14 @@ The production stack runs on Google Cloud:
 
 | Component | Service |
 |-----------|---------|
-| API | Cloud Run |
-| Frontend | Firebase Hosting |
+| API | Cloud Run (`nf-telemetry.cancerdatasci.org`) |
+| Frontend | Firebase Hosting (`curatedmetagenomicdata.web.app`) |
 | Database | Cloud SQL (PostgreSQL) |
+
+A self-hosted alternative is in flight — see `deploy/onclappc02/` for the Docker Compose
+stack that runs the same image behind Traefik on the existing
+`pgducklake` / Postgres-18 instance. Cutover plan tracked in the project's GitHub issues
+(meta issue: self-host migration).
 
 ### Prerequisites
 
@@ -259,24 +304,24 @@ immediately.
 
 ### DNS
 
-The system uses two stable public hostnames. Both should be custom domains rather than
-the default Cloud Run / Firebase subdomains, so that HPC-submitted jobs always reach the
-right endpoint regardless of future infrastructure moves.
+The system uses two stable public hostnames, both custom domains rather than the default
+Cloud Run / Firebase subdomains so that HPC-submitted jobs always reach the right endpoint
+regardless of future infrastructure moves.
 
-| Hostname | Points to | Purpose |
-|----------|-----------|---------|
-| `api.yourdomain.com` | Cloud Run (custom domain mapping) | All API traffic, including Nextflow weblog POSTs from HPC |
-| `telemetry.yourdomain.com` | Firebase Hosting (custom domain) | React dashboard |
+| Hostname | Currently points to | Purpose |
+|----------|---------------------|---------|
+| `nf-telemetry.cancerdatasci.org` | Cloud Run (custom domain mapping) | All API traffic, including Nextflow weblog and wrapper-event POSTs from HPC |
+| `cmgd.cancerdatasci.org` | Firebase Hosting (custom domain) | React dashboard |
 
 **To add a custom domain to Cloud Run:**
 ```bash
 gcloud run domain-mappings create \
-  --service nextflow-telemetry-api \
-  --domain api.yourdomain.com \
+  --service nf-telemetry \
+  --domain nf-telemetry.cancerdatasci.org \
   --region $REGION
 ```
 Cloud Run will issue a managed TLS certificate automatically. Add the CNAME shown in the
-output to your DNS provider.
+output to your DNS provider (Cloudflare, DNS-only on the campus network).
 
 **To add a custom domain to Firebase Hosting:** run `firebase hosting:channel:deploy` or
 use the Firebase console; Firebase provisions the cert and provides the DNS records.
@@ -285,6 +330,7 @@ use the Firebase console; Firebase provisions the cert and provides the DNS reco
 > into SLURM scripts at submission time. Changing the API hostname mid-batch will silently
 > drop telemetry for all in-flight jobs. Always keep the old hostname resolving (or
 > redirect it) until all running Nextflow jobs have finished before cutting DNS over.
+> The same goes for the wrapper events that `nf_client.run_wrapper` posts.
 
 ### CORS
 
@@ -292,8 +338,8 @@ The API reads allowed origins from the `CORS_ORIGINS` environment variable
 (comma-separated). Set this in `deploy/cloudrun.yaml` to the frontend's domain:
 
 ```
-CORS_ORIGINS=https://telemetry.yourdomain.com
+CORS_ORIGINS=https://cmgd.cancerdatasci.org
 ```
 
-Nextflow weblog POSTs are server-to-server and are not subject to CORS, so the HPC
-endpoint does not need to be in the allowlist.
+Nextflow weblog POSTs and `nf_client.run_wrapper` events are server-to-server and are not
+subject to CORS, so the HPC endpoint does not need to be in the allowlist.
