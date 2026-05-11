@@ -35,6 +35,7 @@ from .submission import (
     submit_local,
     submit_slurm,
     submit_pbs,
+    submit_with_retry,
 )
 
 app = typer.Typer(help="nf-client: claim and submit Nextflow telemetry jobs")
@@ -145,9 +146,15 @@ def submit(
             script = render_submission_script(cfg.submission.template_path, context)
 
             if mode == "slurm":
-                executor_job_id = submit_slurm(script, export_none=cfg.submission.slurm_export_none)
+                executor_job_id = submit_with_retry(
+                    lambda: submit_slurm(script, export_none=cfg.submission.slurm_export_none),
+                    label="sbatch",
+                )
             elif mode == "pbs":
-                executor_job_id = submit_pbs(script)
+                executor_job_id = submit_with_retry(
+                    lambda: submit_pbs(script),
+                    label="qsub",
+                )
 
             typer.echo(f"Submitted {mode.upper()} job {executor_job_id}")
 
@@ -296,11 +303,17 @@ def daemon(
 
             try:
                 if mode == "slurm":
-                    executor_job_id = submit_slurm(script, export_none=cfg.submission.slurm_export_none)
+                    executor_job_id = submit_with_retry(
+                        lambda: submit_slurm(script, export_none=cfg.submission.slurm_export_none),
+                        label="sbatch",
+                    )
                 elif mode == "pbs":
-                    executor_job_id = submit_pbs(script)
+                    executor_job_id = submit_with_retry(
+                        lambda: submit_pbs(script),
+                        label="qsub",
+                    )
             except Exception as e:
-                typer.echo(f"  ERROR: scheduler submission failed, skipping batch (will requeue via TTL): {e}", err=True)
+                typer.echo(f"  ERROR: scheduler submission failed after retries, skipping batch (will requeue via TTL): {e}", err=True)
                 continue
 
             typer.echo(f"  Submitted {mode.upper()} job {executor_job_id}")

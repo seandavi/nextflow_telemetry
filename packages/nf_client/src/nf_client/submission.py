@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 try:
@@ -93,6 +95,38 @@ def build_nextflow_command(
     for key, value in (extra_params or {}).items():
         cmd.extend([f"--{key}", value])
     return cmd
+
+
+def submit_with_retry(
+    submit_callable: Callable[[], str],
+    *,
+    max_attempts: int = 3,
+    initial_backoff: float = 2.0,
+    backoff_multiplier: float = 2.0,
+    label: str = "submit",
+) -> str:
+    # Three attempts with 2s and 4s waits between covers the bulk of real-world
+    # transient failures (controller momentary unresponsiveness, NFS hiccup, sshd
+    # restart on a login node) without making the daemon block for minutes on a
+    # genuinely permanent failure like an exhausted account quota.
+    last_exc: BaseException | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return submit_callable()
+        except (subprocess.SubprocessError, OSError) as e:
+            last_exc = e
+            if attempt == max_attempts:
+                break
+            delay = initial_backoff * (backoff_multiplier ** (attempt - 1))
+            print(
+                f"  {label} attempt {attempt}/{max_attempts} failed: {e}; "
+                f"retrying in {delay:.1f}s",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(delay)
+    assert last_exc is not None  # unreachable: loop exits via return or sets last_exc
+    raise last_exc
 
 
 def submit_local(cmd: list[str], log_file: Path | None = None) -> str:
