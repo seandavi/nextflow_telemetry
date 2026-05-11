@@ -1,135 +1,218 @@
 # Self-host on onclappc02
 
 Production compose for the telemetry API + frontend, served via the
-existing Traefik on `cancerdatasci.org`. Postgres lives in the existing
-`pg_duckdb` container (see `monode/infrastructure/compose/pg_and_duckdb`).
+existing Traefik on `cancerdatasci.org`. The Postgres backend lives in
+the shared `pg_ducklake_18` cluster (see
+`monode/infrastructure/compose/pg_ducklake_stack/`), one database per
+app — this app owns the `nf_telemetry` database on port 5433.
 
 ## Files
 
-- `docker-compose.yml` — API + frontend services, both labelled for Traefik
+- `docker-compose.yml` — API + frontend, both labelled for Traefik
 - `Dockerfile.frontend` — multi-stage build (node → nginx:alpine)
 - `nginx.conf` — SPA config with sane caching headers
 - `.env.example` — fill in and copy to `.env`
 
-## First-time setup
+## State machine (current as of 2026-05-11)
 
-1. **Postgres DB + user**, inside the existing pg_duckdb container:
+| Phase | Status |
+|---|---|
+| 1. Stable API URL (`nf-telemetry.cancerdatasci.org`) | ✅ done (Cloud Run domain mapping + managed cert) |
+| 2. Bootstrap new DB on onclappc02 | ✅ done (role, schema, API+frontend containers up internally) |
+| 3. DNS flip Cloud Run → onclappc02 | ⏳ this document's main subject |
+| 4. Tear down Cloud Run + Cloud SQL | ⏳ after Phase 3 stabilizes |
+
+## Current backend state on onclappc02
+
+```
+pg_ducklake_18         host:5433  → /data/postgres_ducklake/    (shared cluster, db nf_telemetry)
+nf_telemetry_api       proxy net  → host.docker.internal:5433/nf_telemetry
+nf_telemetry_frontend  proxy net  → built with VITE_API_URL=https://nf-telemetry.cancerdatasci.org
+traefik                host net   → routes both hostnames by Docker labels
+```
+
+Internal smoke (works today):
+
+```sh
+curl -sSk -H "Host: nf-telemetry.cancerdatasci.org" https://localhost/health
+curl -sSk -H "Host: cmgd.cancerdatasci.org" https://localhost/ | head
+```
+
+External DNS still points at Cloud Run, so external `https://nf-telemetry.cancerdatasci.org`
+goes to the legacy stack.
+
+## First-time setup (already done; recorded for reproducibility)
+
+1. **Database + role**, inside the new shared cluster:
    ```sh
-   docker exec -it pg_duckdb_18 psql -U postgres
+   docker exec -it pg_ducklake_18 psql -U postgres -d postgres
    ```
    ```sql
-   CREATE USER nf_telemetry WITH PASSWORD '<choose-one>';
-   CREATE DATABASE nextflow_telemetry OWNER nf_telemetry;
-   GRANT ALL PRIVILEGES ON DATABASE nextflow_telemetry TO nf_telemetry;
+   CREATE ROLE nf_telemetry WITH LOGIN PASSWORD '<choose-one>';
+   CREATE DATABASE nf_telemetry OWNER nf_telemetry;
+   ```
+   (Do **not** `CREATE EXTENSION pg_duckdb` in this DB — the app uses plain
+   Postgres; pg_duckdb hooks would only get in the way.)
+
+2. **`.env`** — copy `.env.example` to `.env` (already gitignored) and fill
+   the password into `SQLALCHEMY_URI`. URI shape:
+   ```
+   postgresql+asyncpg://nf_telemetry:<pw>@host.docker.internal:5433/nf_telemetry
    ```
 
-2. **Cloudflare DNS** for both hostnames (DNS-only, grey cloud — required
-   on this network):
-   - `nf-telemetry.cancerdatasci.org` → `140.226.4.71`
-   - `cmgd.cancerdatasci.org` → `140.226.4.71`
-
-3. **`.env`** — copy `.env.example` and fill the password into `SQLALCHEMY_URI`.
-
-4. **Apply migrations** against the new empty DB, then **load data**.
-   See the cutover plan below.
-
-5. **Bring up the stack**:
-   ```sh
-   docker compose build           # ~2 min first time
-   docker compose up -d
-   docker compose logs -f nf_telemetry_api
-   ```
-   Traefik should auto-discover both services within a few seconds. First
-   request to each hostname triggers Let's Encrypt cert issuance (~5s).
-
-## Cloud Run → onclappc02 cutover
-
-Goal: zero-downtime DNS swap. The host changes underneath; the public
-URL stays the same.
-
-### Phase 1 — stable the URL (do this whenever)
-
-The current API URL is the GCP-issued `nf-telemetry-819875667022.us-central1.run.app`.
-This is sprinkled across pipeline configs and nf-client configs on the
-clusters. Before swapping hosts, get everyone pointing at a stable
-hostname *we own* so the second swap is just DNS.
-
-1. In Cloud Run, add a **custom domain mapping** for
-   `nf-telemetry.cancerdatasci.org` → the `nf-telemetry` service.
-   Cloud Run will instruct you to add a CNAME (or A record) at your
-   DNS provider; do that in Cloudflare (DNS-only).
-2. Wait for the cert in Cloud Run to go green (a few minutes).
-3. Verify: `curl https://nf-telemetry.cancerdatasci.org/health` returns
-   the existing service.
-4. Update everywhere the old URL appears:
-   - `seandavi/curatedMetagenomicsNextflow` `nextflow.config`:
-     `params.api_url`, the weblog hook URL
-   - nf-client configs on Anvil + Alpine (the `server_url` /
-     `weblog_url` fields in `client-*.yaml`)
-   - the frontend build's `VITE_API_URL` (rebuild + redeploy Firebase
-     Hosting once; this becomes irrelevant after Phase 3 since the
-     frontend moves on-prem)
-5. Run a sample dispatch end-to-end through the new hostname to confirm.
-
-After Phase 1 the only thing pinning you to GCP is the DNS record.
-
-### Phase 2 — replicate data to onclappc02
-
-1. Set up the DB + user (above).
-2. Run migrations against the new DB so the schema is current:
+3. **Apply migrations**:
    ```sh
    cd /home/davsean/Documents/git/nextflow_telemetry
-   SQLALCHEMY_URI='postgresql+asyncpg://nf_telemetry:<pw>@localhost:5432/nextflow_telemetry' \
-     uv run alembic upgrade head
+   set -a; source deploy/onclappc02/.env; set +a
+   uv run alembic upgrade head
    ```
-3. `pg_dump` from Cloud SQL and `pg_restore` into the new DB. Easiest
-   path: through the Cloud SQL proxy:
+
+4. **Build + bring up**:
    ```sh
-   # On a workstation with gcloud:
-   gcloud sql connect cmgd-prod ...                # discover host:port via the proxy
-   pg_dump -h <proxy-host> -U postgres -Fc cmgd_prod \
-     --no-owner --no-acl > cmgd_prod.dump
-
-   # On the server:
-   docker cp cmgd_prod.dump pg_duckdb_18:/tmp/
-   docker exec -it pg_duckdb_18 pg_restore \
-     -U nf_telemetry -d nextflow_telemetry \
-     --no-owner --role=nf_telemetry /tmp/cmgd_prod.dump
+   cd deploy/onclappc02
+   docker compose build
+   docker compose up -d
    ```
-4. Spot-check that row counts match Cloud SQL.
 
-### Phase 3 — flip DNS
+## Cutover — Phase 3 DNS flip
 
-1. Bring up the local stack with `docker compose up -d`. Traefik issues
-   a cert as soon as the first request lands; we'll get it after the
-   DNS flip.
-2. In Cloudflare, change `nf-telemetry.cancerdatasci.org` from the Cloud
-   Run target to an A record for `140.226.4.71`. DNS-only.
-3. Same for `cmgd.cancerdatasci.org` — point at `140.226.4.71`. (If you
-   want to keep the Firebase Hosting URL alive as a fallback, leave it
-   alone; the new hostname is the canonical one.)
-4. Within seconds the cluster nodes' POSTs land on Traefik → API
-   container → local Postgres. Watch logs for the first heartbeat.
-5. Once confident (an hour? a day?), turn off Cloud Run and Cloud SQL.
+The new stack is running internally; DNS flip is the only thing
+between Cloud Run and onclappc02.
 
-### Rollback
+### Pre-flip checks (no external impact)
 
-If anything goes wrong post-flip, flip the CNAME back at Cloudflare.
-The Cloud Run service and Cloud SQL stay healthy on idle until you
-delete them. Any writes that landed on onclappc02 between flip and
-rollback would be lost — pause the workflow first if that matters.
+```sh
+# API serves /health correctly via Traefik (Host header simulates DNS):
+curl -sSk -H "Host: nf-telemetry.cancerdatasci.org" https://localhost/health
+
+# Frontend serves the SPA:
+curl -sSk -H "Host: cmgd.cancerdatasci.org" https://localhost/ | head
+
+# DB connection clean from inside the API container:
+docker exec nf_telemetry_api curl -sS http://localhost:8000/api/admin/stats
+```
+
+### Heads-up: Traefik ACME rate-limit
+
+The moment the API container came up with Traefik labels, Traefik started
+trying to provision a Let's Encrypt cert via the TLS-ALPN challenge.
+Validation goes wherever DNS points the hostname — currently Cloud Run —
+so the validator sees Cloud Run's cert instead of Traefik's ACME
+challenge cert and returns 403. After 5 failures within an hour Traefik
+is rate-limited by Let's Encrypt for ~1 hour. **This is not a problem**
+for the cutover — once DNS flips, the next retry succeeds. But:
+
+- Don't restart Traefik or recycle the containers before the flip; each
+  attempt extends the rate-limit window.
+- After the flip, allow up to a minute for Traefik to retry against the
+  new (correct) endpoint. The error log clears, a real cert lands, and
+  `https://nf-telemetry.cancerdatasci.org/health` returns 200.
+
+### Flip steps (in Cloudflare DNS, DNS-only / grey cloud)
+
+1. `nf-telemetry.cancerdatasci.org`:
+   - Remove: `CNAME → ghs.googlehosted.com` (Cloud Run managed cert path)
+   - Add: `A → 140.226.4.71`
+2. `cmgd.cancerdatasci.org`:
+   - Set: `A → 140.226.4.71`
+   - (If currently a Firebase Hosting CNAME, remove that.)
+
+Both DNS-only (grey cloud) per the campus firewall constraints
+documented in `monode/infrastructure/compose/NETWORK_CONSTRAINTS.md`.
+
+### Post-flip verification
+
+```sh
+# DNS shows the new IP:
+dig +short nf-telemetry.cancerdatasci.org   # → 140.226.4.71
+dig +short cmgd.cancerdatasci.org           # → 140.226.4.71
+
+# Cert issued by Let's Encrypt (not the Traefik default):
+echo | openssl s_client -servername nf-telemetry.cancerdatasci.org \
+  -connect nf-telemetry.cancerdatasci.org:443 2>/dev/null | \
+  openssl x509 -noout -subject -issuer
+
+# Endpoint healthy:
+curl -sS https://nf-telemetry.cancerdatasci.org/health
+```
+
+### What clients see at flip time
+
+- **Nextflow weblog POSTs from compute nodes** start landing on the new
+  DB immediately on TTL expiry. Events reference `run_id` and `task_id`
+  values that the new DB has never seen — they'll either be accepted as
+  new run-lifecycle / process events (the events endpoint is lenient) or
+  fail at FK boundaries depending on schema. Some loss of in-flight
+  telemetry is expected and was accepted as the cost of the fresh-start
+  strategy.
+- **nf-client daemons** (Alpine, Anvil) will start calling the new DB.
+  `POST /api/dispatch/batch` returns empty (no workflows registered yet
+  → no pending jobs → nothing to claim). Daemons keep heartbeating
+  cleanly; no new work starts until production workflows are registered
+  in the new DB.
+
+### Production data bootstrap (after flip)
+
+The new DB is empty. To accept real work:
+
+1. Register production workflows via `POST /api/workflows`:
+   ```sh
+   curl -X POST https://nf-telemetry.cancerdatasci.org/api/workflows \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "workflow_id": "cmgd_nextflow",
+       "version": "1.6.0",
+       "repository_url": "https://github.com/seandavi/curatedMetagenomicsNextflow",
+       "revision": "main",
+       "profile": "anvil",
+       "max_retries": 3
+     }'
+   ```
+2. Register production sample sets (BioProject manifests via the
+   existing import paths).
+3. Hit `POST /api/admin/reconcile-jobs` to create the cross-product of
+   pending jobs.
+
+## Phase 4 — Cloud Run + Cloud SQL teardown
+
+Once the new stack has held production for some quiet period:
+
+1. Delete the Cloud Run domain mapping (releases the `ghs.googlehosted.com`
+   target):
+   ```sh
+   gcloud beta run domain-mappings delete \
+     --domain nf-telemetry.cancerdatasci.org \
+     --region us-central1 --project curatedmetagenomicdata
+   ```
+2. Delete the Cloud Run service:
+   ```sh
+   gcloud run services delete nf-telemetry \
+     --region us-central1 --project curatedmetagenomicdata
+   ```
+3. Delete the Cloud SQL instance backing it. **Snapshot first** if you
+   want to keep the historical data; snapshot storage is tiny vs. the
+   running instance.
+
+### Rollback (any time before Phase 4)
+
+Flip the Cloudflare DNS back:
+- `nf-telemetry.cancerdatasci.org` → `CNAME ghs.googlehosted.com` (DNS-only)
+- `cmgd.cancerdatasci.org` → whatever the previous Firebase target was
+
+The Cloud Run service + Cloud SQL stay healthy on idle as long as you
+haven't run Phase 4. Any writes that landed on onclappc02 between the
+two flips will be on the new DB only — pause workflows first if that
+matters.
 
 ## Operational notes
 
-- **No backups configured here.** Postgres backups should be handled at
-  the pg_duckdb container layer (WAL archive → MinIO?). That's separate
-  from this stack.
-- **Migrations** run from the workstation, not the API container — same
-  pattern as today. `uv run alembic upgrade head` with the right
-  `SQLALCHEMY_URI`.
+- **Migrations** run from the workstation (this host), not the API
+  container. `uv run alembic upgrade head` with the right `SQLALCHEMY_URI`.
 - **Pulling the latest API** is `docker compose build nf_telemetry_api &&
-  docker compose up -d nf_telemetry_api`. ~30s downtime; weblog clients
-  retry, but if you're paranoid pause the workflow first.
-- **Frontend updates** are baked at build time. If the API URL changes,
-  rebuild the frontend image; otherwise `git pull && docker compose
-  build nf_telemetry_frontend && docker compose up -d nf_telemetry_frontend`.
+  docker compose up -d nf_telemetry_api`. ~30s downtime; clients retry.
+- **Frontend updates** are baked at build time; rebuild only if the API
+  URL changes or the bundle is stale.
+- **Backups** are not configured at this layer. Tracked separately in
+  issue #84 (pg_basebackup + WAL archiving at the shared cluster level).
+- **Logs**: `docker compose logs -f nf_telemetry_api` for app logs;
+  `docker logs traefik` for routing + cert issues.
