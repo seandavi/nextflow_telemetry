@@ -57,32 +57,73 @@ app.add_middleware(
 )
 
 
+def _client_ip(request: Request) -> str | None:
+    """Best-effort client IP extraction that honors reverse-proxy headers.
+
+    Behind Traefik (and any normal reverse proxy) ``request.client.host``
+    is the proxy's IP, not the originating client. Standard headers in
+    order of preference:
+
+      X-Forwarded-For : comma-separated list, leftmost is the original client.
+      Forwarded       : RFC 7239 structured header; we only parse the simple
+                        ``for=<ip>`` token, not the full grammar.
+
+    Falls back to ``request.client.host`` when neither header is present.
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        first = xff.split(",", 1)[0].strip()
+        if first:
+            return first
+    forwarded = request.headers.get("forwarded")
+    if forwarded:
+        for part in forwarded.split(";"):
+            part = part.strip()
+            if part.lower().startswith("for="):
+                val = part[4:].strip().strip('"')
+                if val.startswith("[") and "]" in val:
+                    val = val[1:val.index("]")]
+                elif ":" in val:
+                    host, sep, _ = val.rpartition(":")
+                    if sep and host:
+                        val = host
+                if val:
+                    return val
+    return request.client.host if request.client else None
+
+
 @app.middleware("http")
 async def access_log_middleware(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
-    # /health is hit every 30s by the Docker healthcheck — logging it at
-    # INFO drowns out real signal, so it goes to DEBUG. Everything else
-    # logs at INFO; unhandled exceptions log at ERROR with the traceback
-    # before re-raising so FastAPI's normal error handling still runs.
+    # Level priority: an unhandled exception always logs at ERROR (with
+    # traceback), regardless of path. Then /health (Docker healthcheck
+    # noise floor) drops to DEBUG. Everything else logs at INFO. Without
+    # the error-first check, a real failure hitting /health would be
+    # hidden in DEBUG-level logs in production.
+    #
+    # We catch `Exception`, not `BaseException`: `asyncio.CancelledError`
+    # (inherits BaseException in 3.8+), `KeyboardInterrupt`, and
+    # `SystemExit` should propagate cleanly through async cancellation
+    # and graceful-shutdown paths without spamming ERROR access logs.
     started = time.perf_counter()
     response: Response | None = None
-    error: BaseException | None = None
+    error: Exception | None = None
     try:
         response = await call_next(request)
         return response
-    except BaseException as exc:
+    except Exception as exc:
         error = exc
         raise
     finally:
         duration_ms = round((time.perf_counter() - started) * 1000, 1)
         path = request.url.path
         status = response.status_code if response is not None else 500
-        if path == "/health":
-            level = logging.DEBUG
-        elif error is not None:
+        if error is not None:
             level = logging.ERROR
+        elif path == "/health":
+            level = logging.DEBUG
         else:
             level = logging.INFO
         extra: dict[str, object] = {
@@ -90,7 +131,7 @@ async def access_log_middleware(
             "path": path,
             "status": status,
             "duration_ms": duration_ms,
-            "client": request.client.host if request.client else None,
+            "client": _client_ip(request),
             "user_agent": request.headers.get("user-agent"),
         }
         if error is not None:
