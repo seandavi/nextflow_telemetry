@@ -59,10 +59,22 @@ def _seed_run(db_url: str, run_name: str, *, status: str = "claimed") -> None:
     ))
 
 
-def _post_event(client, run_name: str, body: dict, *, file: tuple | None = None):
+def _post_event(
+    client,
+    run_name: str,
+    body: dict,
+    *,
+    file: tuple | None = None,
+    wrapper_output_log: tuple | None = None,
+):
     payload: dict = {"data": {"event": json.dumps(body)}}
+    files: dict = {}
     if file is not None:
-        payload["files"] = {"nextflow_log": file}
+        files["nextflow_log"] = file
+    if wrapper_output_log is not None:
+        files["wrapper_output_log"] = wrapper_output_log
+    if files:
+        payload["files"] = files
     return client.post(f"/api/runs/{run_name}/event", **payload)
 
 
@@ -234,6 +246,70 @@ def test_wrapper_exited_with_attached_log_stores_in_task_logs(integration_client
         workflow_runs_tbl.c.run_name == run_name
     )))
     assert run_rows[0]["nextflow_log_uploaded_at"] is not None
+
+
+def test_wrapper_exited_with_wrapper_output_log_stores_separately(integration_client, db_url):
+    """wrapper_output_log lands in task_logs under its own sentinel hash, alongside
+    any nextflow_log attached to the same wrapper_exited event (#88)."""
+    from nextflow_telemetry.db import task_logs_tbl
+
+    client, _ = integration_client
+    run_name = _make_run_name()
+    _seed_run(db_url, run_name)
+
+    nf_log = "Nextflow log content\n"
+    wrapper_log = "[run_wrapper] could not start nextflow subprocess: No such file\n"
+
+    resp = _post_event(
+        client,
+        run_name,
+        {"type": "wrapper_exited", "utc_time": _ts(), "exit_code": 127},
+        file=("nextflow.log", nf_log.encode(), "text/plain"),
+        wrapper_output_log=("wrapper_output.log", wrapper_log.encode(), "text/plain"),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["nextflow_log_uploaded"] is True
+    assert resp.json()["wrapper_output_log_uploaded"] is True
+
+    log_rows = _run(_query(db_url, select(task_logs_tbl).where(
+        task_logs_tbl.c.run_name == run_name
+    ).order_by(task_logs_tbl.c.task_hash)))
+    assert len(log_rows) == 2
+    by_hash = {r["task_hash"]: r for r in log_rows}
+    assert by_hash["nextflow_log"]["content"] == nf_log
+    assert by_hash["wrapper_output_log"]["content"] == wrapper_log
+    assert by_hash["wrapper_output_log"]["log_type"] == "wrapper_output_log"
+
+
+def test_wrapper_output_log_on_non_wrapper_exited_returns_422(integration_client, db_url):
+    """The wrapper_output_log attachment is only valid on wrapper_exited (same as nextflow_log)."""
+    client, _ = integration_client
+    run_name = _make_run_name()
+    _seed_run(db_url, run_name)
+
+    resp = _post_event(
+        client,
+        run_name,
+        {"type": "heartbeat", "utc_time": _ts()},
+        wrapper_output_log=("wrapper_output.log", b"stray output", "text/plain"),
+    )
+    assert resp.status_code == 422
+    assert "wrapper_output_log attachment is only valid on wrapper_exited" in resp.json()["detail"]
+
+
+def test_wrapper_output_log_on_unknown_run_returns_404(integration_client, db_url):
+    """Same orphan-prevention rule as nextflow_log — no row, no upload."""
+    client, _ = integration_client
+    # Deliberately do NOT seed the run
+
+    resp = _post_event(
+        client,
+        "r-nonexistent",
+        {"type": "wrapper_exited", "utc_time": _ts(), "exit_code": 0},
+        wrapper_output_log=("wrapper_output.log", b"orphan", "text/plain"),
+    )
+    assert resp.status_code == 404
+    assert "wrapper_output_log" in resp.json()["detail"]
 
 
 def test_re_uploading_nextflow_log_is_idempotent(integration_client, db_url):
