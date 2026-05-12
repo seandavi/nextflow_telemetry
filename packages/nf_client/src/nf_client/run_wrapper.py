@@ -17,6 +17,7 @@ swallowed. The wrapper must never fail a run because of instrumentation.
 from __future__ import annotations
 
 import argparse
+import collections
 import errno
 import json
 import os
@@ -27,6 +28,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TextIO
 
 import httpx
 
@@ -34,6 +36,8 @@ import httpx
 _HEARTBEAT_SECONDS_DEFAULT = 60
 _LOG_UPLOAD_TIMEOUT = 60
 _EVENT_POST_TIMEOUT = 10
+# Server caps at 4 MB; keep some headroom for multipart overhead.
+_WRAPPER_LOG_MAX_CHARS = 3 * 1024 * 1024
 
 
 def _now_iso() -> str:
@@ -136,6 +140,107 @@ def _read_nextflow_log(log_path: Path, max_bytes: int = 16 * 1024 * 1024) -> byt
         return None
 
 
+class _CaptureBuffer:
+    """Bounded append-only string buffer for the wrapper's combined output.
+
+    Trims from the *front* when oversize: the failure context we care about
+    lives at the tail (the last things printed before nextflow died), so
+    keeping the tail is correct. Thread-safe; the reader thread and the
+    Python `print` callsites in the main thread share one buffer.
+    """
+
+    def __init__(self, max_chars: int = _WRAPPER_LOG_MAX_CHARS) -> None:
+        self._chunks: collections.deque[str] = collections.deque()
+        self._chars = 0
+        self._max = max_chars
+        self._lock = threading.Lock()
+
+    def append(self, data: str) -> None:
+        if not data:
+            return
+        with self._lock:
+            self._chunks.append(data)
+            self._chars += len(data)
+            while self._chars > self._max and self._chunks:
+                evicted = self._chunks.popleft()
+                self._chars -= len(evicted)
+
+    def encoded(self) -> bytes:
+        with self._lock:
+            return "".join(self._chunks).encode("utf-8", errors="replace")
+
+    def is_empty(self) -> bool:
+        with self._lock:
+            return not self._chunks
+
+
+class _TeeWriter:
+    """File-like wrapper that writes to *primary* and also appends to *buffer*.
+
+    Replaces ``sys.stdout`` / ``sys.stderr`` so every ``print()`` from the
+    wrapper or from libraries it calls accumulates in the capture buffer
+    in addition to reaching the slurm-job stdout/stderr file as before.
+
+    Subprocesses inherit the real underlying file descriptors (via
+    ``fileno()``), not this Python wrapper — so the nextflow subprocess's
+    output bypasses the tee. The reader thread set up around its
+    ``stdout=PIPE`` captures that stream separately and feeds it into
+    the same buffer.
+    """
+
+    def __init__(self, primary: TextIO, buffer: _CaptureBuffer) -> None:
+        self._primary = primary
+        self._buffer = buffer
+
+    def write(self, data: str) -> int:
+        self._buffer.append(data)
+        return self._primary.write(data)
+
+    def flush(self) -> None:
+        self._primary.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+    def fileno(self) -> int:
+        return self._primary.fileno()
+
+    def __getattr__(self, name: str):
+        # encoding, errors, newlines, mode, name, … all delegate to primary
+        return getattr(self._primary, name)
+
+
+def _spawn_capture_reader(
+    proc: subprocess.Popen,
+    buffer: _CaptureBuffer,
+    echo_to: TextIO,
+) -> threading.Thread:
+    """Stream the subprocess's merged stdout/stderr to *echo_to* and *buffer*.
+
+    The subprocess must have been launched with ``stdout=PIPE``,
+    ``stderr=STDOUT``, ``bufsize=1``, ``text=True`` so we get one decoded
+    line per ``readline()`` call. ``echo_to`` should be the *underlying*
+    stdout (e.g. ``sys.__stdout__``), not the tee — otherwise lines would
+    end up in the capture buffer twice.
+    """
+    def _reader() -> None:
+        assert proc.stdout is not None
+        try:
+            for line in iter(proc.stdout.readline, ""):
+                buffer.append(line)
+                echo_to.write(line)
+                echo_to.flush()
+        finally:
+            try:
+                proc.stdout.close()
+            except Exception:
+                pass
+
+    thread = threading.Thread(target=_reader, daemon=True, name="nf-capture")
+    thread.start()
+    return thread
+
+
 class _Heartbeat:
     """Daemon thread that POSTs heartbeat events on a fixed interval.
 
@@ -236,6 +341,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         client = None
 
+    # Tee sys.stdout / sys.stderr into a capture buffer so every ``print``
+    # from this wrapper (and any library it calls) lands in both the
+    # operator-visible slurm-log stream AND a bounded buffer we upload as
+    # the ``wrapper_output_log`` multipart attachment on ``wrapper_exited``.
+    # (Note: distinct from the ``wrapper_log`` *event type* in models.py,
+    # which carries per-line streaming via a different mechanism.) The
+    # nextflow subprocess's output is captured separately via stdout=PIPE
+    # + reader thread below.
+    capture = _CaptureBuffer()
+    orig_stdout, orig_stderr = sys.stdout, sys.stderr
+    sys.stdout = _TeeWriter(orig_stdout, capture)
+    sys.stderr = _TeeWriter(orig_stderr, capture)
+
     try:
         host = _hostname()
         slurm_job_id = os.environ.get("SLURM_JOB_ID")
@@ -261,25 +379,47 @@ def main(argv: list[str] | None = None) -> int:
         # conventional shell-style exit code so the failure is observable
         # via telemetry — otherwise an OSError here would crash silently
         # before any "I tried to run nextflow" signal reached the server.
+        #
+        # stdout=PIPE + stderr=STDOUT + bufsize=1 + text=True gives us
+        # line-buffered, merged, decoded output that the capture reader
+        # thread can stream to both the buffer AND the operator's stdout
+        # in real time.
         start_ts = time.time()
         try:
-            proc = subprocess.Popen(args.nextflow_cmd)
+            proc = subprocess.Popen(
+                args.nextflow_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=1,
+                text=True,
+            )
         except OSError as e:
             # POSIX shell convention: 127 = command not found, 126 = found
-            # but not executable (permission, wrong format).
+            # but not executable (permission, wrong format). The wrapper's
+            # diagnostic print below lands in *capture* via the tee, so it
+            # rides home on the wrapper_output_log attachment — exactly
+            # the pre-Nextflow failure surface this PR (#88) exists to
+            # make visible from the dashboard.
             exec_exit_code = 126 if e.errno in (errno.EACCES, errno.ENOEXEC) else 127
             print(
                 f"[run_wrapper] could not start nextflow subprocess "
                 f"({args.nextflow_cmd[0]!r}): {e}",
                 file=sys.stderr, flush=True,
             )
-            _post_event(client, args.run_name, {
-                "type": "wrapper_exited",
-                "utc_time": _now_iso(),
-                "exit_code": exec_exit_code,
-                "duration_seconds": int(time.time() - start_ts),
-            })
+            _post_event(
+                client, args.run_name,
+                {
+                    "type": "wrapper_exited",
+                    "utc_time": _now_iso(),
+                    "exit_code": exec_exit_code,
+                    "duration_seconds": int(time.time() - start_ts),
+                },
+                files=_wrapper_log_files(capture),
+                timeout=_LOG_UPLOAD_TIMEOUT,
+            )
             return exec_exit_code
+
+        capture_reader = _spawn_capture_reader(proc, capture, orig_stdout)
 
         heartbeat = _Heartbeat(client, args.run_name, args.heartbeat_seconds)
         heartbeat.start()
@@ -312,6 +452,11 @@ def main(argv: list[str] | None = None) -> int:
             # Restore signal handlers so main() leaves no global side-effects.
             signal.signal(signal.SIGTERM, prev_term)
             signal.signal(signal.SIGINT, prev_int)
+            # Drain the capture reader before tearing down anything — once
+            # proc has exited the pipe will EOF promptly, so this is a
+            # tight join. Without it the wrapper_output_log we upload
+            # below could miss the final few lines that mattered most.
+            capture_reader.join(timeout=_EVENT_POST_TIMEOUT)
             # Stop the heartbeat thread AND wait for any in-flight POST to
             # return before the outer `finally` closes the httpx client.
             # Without the join, a heartbeat could try to use a closed client.
@@ -321,10 +466,10 @@ def main(argv: list[str] | None = None) -> int:
 
         # 5. read .nextflow.log and upload as the wrapper_exited attachment
         log_bytes = _read_nextflow_log(args.nextflow_log)
-        files = (
-            {"nextflow_log": (".nextflow.log", log_bytes, "text/plain")}
-            if log_bytes is not None else None
-        )
+        files = _wrapper_log_files(capture)
+        if log_bytes is not None:
+            files = files or {}
+            files["nextflow_log"] = (".nextflow.log", log_bytes, "text/plain")
 
         _post_event(
             client, args.run_name,
@@ -340,8 +485,24 @@ def main(argv: list[str] | None = None) -> int:
 
         return exit_code
     finally:
+        # Restore Python's standard streams so callers (tests, future
+        # in-process invokers) aren't left with a tee wrapper installed.
+        sys.stdout = orig_stdout
+        sys.stderr = orig_stderr
         if client is not None:
             client.close()
+
+
+def _wrapper_log_files(capture: _CaptureBuffer) -> dict | None:
+    """Return the multipart files dict for the wrapper_output_log attachment.
+
+    Field name on the wire is ``wrapper_output_log`` (distinct from the
+    ``wrapper_log`` event *type* used for per-line streaming). Returns
+    None when the buffer is empty (don't attach an empty file).
+    """
+    if capture.is_empty():
+        return None
+    return {"wrapper_output_log": ("wrapper_output.log", capture.encoded(), "text/plain")}
 
 
 if __name__ == "__main__":

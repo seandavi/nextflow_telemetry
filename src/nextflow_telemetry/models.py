@@ -462,6 +462,7 @@ class RunEventResponse(BaseModel):
     run_name: str
     type: str
     nextflow_log_uploaded: bool = Field(description="True if a .nextflow.log file was attached and stored.")
+    wrapper_output_log_uploaded: bool = Field(default=False, description="True if a captured wrapper-output log was attached and stored (per #88). Distinct from the `wrapper_log` event type, which is per-line streaming.")
 
 
 class DaemonHeartbeat(BaseModel):

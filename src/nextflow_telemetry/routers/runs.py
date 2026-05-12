@@ -44,6 +44,20 @@ from ..db import telemetry_tbl, workflow_runs_tbl
 _MAX_NEXTFLOW_LOG_BYTES = 16 * 1024 * 1024  # 16 MB
 _NEXTFLOW_LOG_SENTINEL_HASH = "nextflow_log"
 _NEXTFLOW_LOG_TYPE = "nextflow_log"
+# Wrapper log: captured stdout+stderr of the wrapper's nextflow subprocess.
+# Smaller cap than nextflow_log because we tail-truncate at the wrapper to
+# the last N lines (failure context is at the end), so the upload is
+# already bounded.
+_MAX_WRAPPER_LOG_BYTES = 4 * 1024 * 1024  # 4 MB
+# The wrapper teez sys.stdout/sys.stderr AND drains the nextflow
+# subprocess's pipe into a single capture buffer, so this attachment
+# is the wrapper's *combined* output (its own diagnostic prints + the
+# nextflow subprocess's merged stdout/stderr), not just the subprocess
+# stream. Distinct from the WrapperLogEvent *event* type (which carries
+# per-line log lines as telemetry rows) — this is the
+# captured-on-exit attachment.
+_WRAPPER_LOG_SENTINEL_HASH = "wrapper_output_log"
+_WRAPPER_LOG_TYPE = "wrapper_output_log"
 
 _run_event_adapter: TypeAdapter[RunEvent] = TypeAdapter(RunEvent)
 
@@ -75,6 +89,7 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
         run_name: Annotated[str, Path(description="Nextflow run name (matches workflow_runs.run_name).")],
         event: Annotated[str, Form(description="JSON-encoded run event; `type` selects the variant.")],
         nextflow_log: Annotated[UploadFile | None, File(description="Optional .nextflow.log; honoured on `wrapper_exited`.")] = None,
+        wrapper_output_log: Annotated[UploadFile | None, File(description="Optional captured stdout+stderr of the wrapper's nextflow subprocess; honoured on `wrapper_exited`. Captures the pre-Nextflow failure surface (`.nextflow.log` may be empty or missing if Nextflow never started). Named distinctly from the `wrapper_log` *event type* (per-line telemetry rows) to avoid confusion.")] = None,
     ) -> RunEventResponse:
         try:
             payload = json.loads(event)
@@ -108,7 +123,26 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
                 )
             log_content_str = raw.decode("utf-8", errors="replace")
 
+        wrapper_log_content_str: str | None = None
+        if wrapper_output_log is not None:
+            if not isinstance(parsed, WrapperExitedEvent):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "wrapper_output_log attachment is only valid on wrapper_exited events; "
+                        f"received it with type={parsed.type}."
+                    ),
+                )
+            raw = await wrapper_output_log.read()
+            if len(raw) > _MAX_WRAPPER_LOG_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"wrapper_output_log exceeds {_MAX_WRAPPER_LOG_BYTES} byte limit.",
+                )
+            wrapper_log_content_str = raw.decode("utf-8", errors="replace")
+
         log_uploaded = False
+        wrapper_output_log_uploaded = False
         now = datetime.now(timezone.utc)
 
         async with engine.begin() as conn:
@@ -134,15 +168,22 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
             workflow_id = existing["workflow_id"] if existing else None
             workflow_version = existing["workflow_version"] if existing else None
 
-            # If a .nextflow.log was attached but no workflow_runs row exists,
+            # If any log attachment was provided but no workflow_runs row exists,
             # 404 — storing it would orphan the row and the response would
-            # falsely claim the upload succeeded against a known run.
-            if log_content_str is not None and existing is None:
+            # falsely claim the upload succeeded against a known run. Same
+            # rule applies to both .nextflow.log and the captured wrapper log.
+            if (log_content_str is not None or wrapper_log_content_str is not None) and existing is None:
+                provided = []
+                if log_content_str is not None:
+                    provided.append("nextflow_log")
+                if wrapper_log_content_str is not None:
+                    provided.append("wrapper_output_log")
+                attachments = " + ".join(provided)
                 raise HTTPException(
                     status_code=404,
                     detail=(
                         f"No workflow_runs row for '{run_name}'; refusing to store "
-                        "nextflow_log attachment as an orphan."
+                        f"{attachments} attachment{'s' if len(provided) > 1 else ''} as orphan."
                     ),
                 )
 
@@ -191,10 +232,36 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
                 )
                 log_uploaded = True
 
+            # 5. Optional wrapper_output_log attachment. Same upsert pattern as
+            # the nextflow_log block above, but with the wrapper-output-log
+            # sentinel hash so the two coexist in task_logs without conflict.
+            # No summary column on workflow_runs — operators query task_logs
+            # directly (the existing log viewer renders it the same way).
+            if wrapper_log_content_str is not None:
+                await conn.execute(
+                    text(
+                        """
+                        INSERT INTO task_logs (run_name, task_hash, log_type, content, uploaded_at)
+                        VALUES (:run_name, :task_hash, :log_type, :content, :uploaded_at)
+                        ON CONFLICT ON CONSTRAINT uq_task_log
+                        DO UPDATE SET content = EXCLUDED.content, uploaded_at = EXCLUDED.uploaded_at
+                        """
+                    ),
+                    {
+                        "run_name": run_name,
+                        "task_hash": _WRAPPER_LOG_SENTINEL_HASH,
+                        "log_type": _WRAPPER_LOG_TYPE,
+                        "content": wrapper_log_content_str,
+                        "uploaded_at": now,
+                    },
+                )
+                wrapper_output_log_uploaded = True
+
         return RunEventResponse(
             run_name=run_name,
             type=parsed.type,
             nextflow_log_uploaded=log_uploaded,
+            wrapper_output_log_uploaded=wrapper_output_log_uploaded,
         )
 
     return router

@@ -131,6 +131,116 @@ def test_nextflow_log_attached_when_present(tmp_path, telemetry_base, monkeypatc
     assert 'name="nextflow_log"' in last_body
 
 
+def test_wrapper_log_attached_when_subprocess_produces_output(tmp_path, telemetry_base, monkeypatch):
+    """Output from the nextflow subprocess lands in the wrapper_log attachment (#88)."""
+    monkeypatch.chdir(tmp_path)
+
+    with respx.mock(base_url=telemetry_base) as rx:
+        route = rx.post("/runs/r-cap/event").mock(
+            return_value=httpx.Response(201, json={
+                "run_name": "r-cap", "type": "x",
+                "nextflow_log_uploaded": False, "wrapper_output_log_uploaded": True,
+            })
+        )
+
+        rc = run_wrapper.main([
+            "--run-name", "r-cap",
+            "--telemetry-url", telemetry_base,
+            "--", "sh", "-c", "echo nextflow-says-hello; echo a-second-line",
+        ])
+
+    assert rc == 0
+    last_body = route.calls[-1].request.content.decode()
+    assert 'name="wrapper_output_log"' in last_body
+    # Both lines from the subprocess should be present in the multipart body
+    assert "nextflow-says-hello" in last_body
+    assert "a-second-line" in last_body
+
+
+def test_wrapper_log_captures_pre_nextflow_failure(tmp_path, telemetry_base, monkeypatch):
+    """If `nextflow` itself can't be exec'd, the wrapper's own stderr diagnostic
+    lands in the wrapper_log — exactly the gap #88 was filed for."""
+    monkeypatch.chdir(tmp_path)
+
+    with respx.mock(base_url=telemetry_base) as rx:
+        route = rx.post("/runs/r-noexec/event").mock(
+            return_value=httpx.Response(201, json={
+                "run_name": "r-noexec", "type": "x",
+                "nextflow_log_uploaded": False, "wrapper_output_log_uploaded": True,
+            })
+        )
+
+        rc = run_wrapper.main([
+            "--run-name", "r-noexec",
+            "--telemetry-url", telemetry_base,
+            "--", "/this/binary/definitely/does/not/exist",
+        ])
+
+    # 127 = command-not-found per POSIX shell convention (errno != EACCES/ENOEXEC)
+    assert rc == 127
+    last = _extract_event(route.calls[-1])
+    assert last["type"] == "wrapper_exited"
+    assert last["exit_code"] == 127
+    last_body = route.calls[-1].request.content.decode()
+    # The wrapper's diagnostic about Popen failure rode home in the buffer
+    assert 'name="wrapper_output_log"' in last_body
+    assert "could not start nextflow subprocess" in last_body
+
+
+def test_wrapper_log_omitted_when_capture_buffer_is_empty(tmp_path, telemetry_base, monkeypatch):
+    """No wrapper_log part when nothing was captured (e.g., silent `true`).
+
+    `true` writes nothing to stdout/stderr, and a happy-path run doesn't
+    print to sys.stderr either — so the buffer stays empty and we send no
+    attachment rather than an empty file.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    with respx.mock(base_url=telemetry_base) as rx:
+        route = rx.post("/runs/r-silent/event").mock(
+            return_value=httpx.Response(201, json={
+                "run_name": "r-silent", "type": "x", "nextflow_log_uploaded": False,
+            })
+        )
+
+        rc = run_wrapper.main([
+            "--run-name", "r-silent",
+            "--telemetry-url", telemetry_base,
+            "--", "true",
+        ])
+
+    assert rc == 0
+    last_body = route.calls[-1].request.content.decode()
+    assert 'name="wrapper_output_log"' not in last_body
+
+
+def test_capture_buffer_trims_front_when_oversized() -> None:
+    """The bounded buffer keeps the tail (where failure context lives)."""
+    buf = run_wrapper._CaptureBuffer(max_chars=20)
+    buf.append("aaaaa\n")        # 6 chars
+    buf.append("bbbbb\n")        # 6 → 12
+    buf.append("ccccc\n")        # 6 → 18
+    buf.append("ddddd\n")        # 6 → 24 → trim oldest (6 → 18)
+    captured = buf.encoded().decode()
+    assert "aaaaa" not in captured     # evicted
+    assert "bbbbb" in captured
+    assert "ccccc" in captured
+    assert "ddddd" in captured
+
+
+def test_tee_writer_writes_to_both_primary_and_buffer() -> None:
+    """The TeeWriter sends data to the real stream AND the capture buffer."""
+    import io
+    primary = io.StringIO()
+    buf = run_wrapper._CaptureBuffer()
+    tee = run_wrapper._TeeWriter(primary, buf)
+    tee.write("hello ")
+    tee.write("world\n")
+    tee.flush()
+    assert primary.getvalue() == "hello world\n"
+    assert buf.encoded() == b"hello world\n"
+
+
 def test_missing_nextflow_log_omits_attachment(tmp_path, telemetry_base, monkeypatch):
     monkeypatch.chdir(tmp_path)
     no_log = tmp_path / "does-not-exist.log"
