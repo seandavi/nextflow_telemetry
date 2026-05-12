@@ -210,10 +210,16 @@ process MARK_COMPLETE {
     tuple val(sample_id), path("${sample_id}.done")
 
     script:
-    """
-    echo "${sample_id} complete at \$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        > ${sample_id}.done
-    """
+    if (shouldFail("MARK_COMPLETE"))
+        """
+        echo "Simulated MARK_COMPLETE failure for ${sample_id}" >&2
+        exit 1
+        """
+    else
+        """
+        echo "${sample_id} complete at \$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > ${sample_id}.done
+        """
 }
 
 // ---------------------------------------------------------------------------
