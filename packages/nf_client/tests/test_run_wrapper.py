@@ -131,7 +131,7 @@ def test_nextflow_log_attached_when_present(tmp_path, telemetry_base, monkeypatc
     assert 'name="nextflow_log"' in last_body
 
 
-def test_wrapper_log_attached_when_subprocess_produces_output(tmp_path, telemetry_base, monkeypatch, capfd):
+def test_wrapper_log_attached_when_subprocess_produces_output(tmp_path, telemetry_base, monkeypatch):
     """Output from the nextflow subprocess lands in the wrapper_log attachment (#88)."""
     monkeypatch.chdir(tmp_path)
 

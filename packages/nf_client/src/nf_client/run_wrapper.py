@@ -344,8 +344,11 @@ def main(argv: list[str] | None = None) -> int:
     # Tee sys.stdout / sys.stderr into a capture buffer so every ``print``
     # from this wrapper (and any library it calls) lands in both the
     # operator-visible slurm-log stream AND a bounded buffer we upload as
-    # ``wrapper_log`` on ``wrapper_exited``. The nextflow subprocess's
-    # output is captured separately via stdout=PIPE + reader thread below.
+    # the ``wrapper_output_log`` multipart attachment on ``wrapper_exited``.
+    # (Note: distinct from the ``wrapper_log`` *event type* in models.py,
+    # which carries per-line streaming via a different mechanism.) The
+    # nextflow subprocess's output is captured separately via stdout=PIPE
+    # + reader thread below.
     capture = _CaptureBuffer()
     orig_stdout, orig_stderr = sys.stdout, sys.stderr
     sys.stdout = _TeeWriter(orig_stdout, capture)
@@ -394,9 +397,9 @@ def main(argv: list[str] | None = None) -> int:
             # POSIX shell convention: 127 = command not found, 126 = found
             # but not executable (permission, wrong format). The wrapper's
             # diagnostic print below lands in *capture* via the tee, so it
-            # rides home on the wrapper_log attachment — exactly the
-            # pre-Nextflow failure surface this PR (#88) exists to make
-            # visible from the dashboard.
+            # rides home on the wrapper_output_log attachment — exactly
+            # the pre-Nextflow failure surface this PR (#88) exists to
+            # make visible from the dashboard.
             exec_exit_code = 126 if e.errno in (errno.EACCES, errno.ENOEXEC) else 127
             print(
                 f"[run_wrapper] could not start nextflow subprocess "
@@ -450,9 +453,9 @@ def main(argv: list[str] | None = None) -> int:
             signal.signal(signal.SIGTERM, prev_term)
             signal.signal(signal.SIGINT, prev_int)
             # Drain the capture reader before tearing down anything — once
-            # proc has exited the pipe will EOF promptly, so this is a tight
-            # join. Without it the wrapper_log we upload below could miss
-            # the final few lines that mattered most.
+            # proc has exited the pipe will EOF promptly, so this is a
+            # tight join. Without it the wrapper_output_log we upload
+            # below could miss the final few lines that mattered most.
             capture_reader.join(timeout=_EVENT_POST_TIMEOUT)
             # Stop the heartbeat thread AND wait for any in-flight POST to
             # return before the outer `finally` closes the httpx client.
@@ -491,9 +494,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _wrapper_log_files(capture: _CaptureBuffer) -> dict | None:
-    """Return the multipart files dict for the wrapper_log attachment.
+    """Return the multipart files dict for the wrapper_output_log attachment.
 
-    Returns None when the buffer is empty (don't attach an empty file).
+    Field name on the wire is ``wrapper_output_log`` (distinct from the
+    ``wrapper_log`` event *type* used for per-line streaming). Returns
+    None when the buffer is empty (don't attach an empty file).
     """
     if capture.is_empty():
         return None

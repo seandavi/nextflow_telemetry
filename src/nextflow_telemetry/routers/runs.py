@@ -49,8 +49,13 @@ _NEXTFLOW_LOG_TYPE = "nextflow_log"
 # the last N lines (failure context is at the end), so the upload is
 # already bounded.
 _MAX_WRAPPER_LOG_BYTES = 4 * 1024 * 1024  # 4 MB
-# Distinct from the WrapperLogEvent *event* type (which carries per-line
-# log lines as telemetry rows) — this is the captured-on-exit attachment.
+# The wrapper teez sys.stdout/sys.stderr AND drains the nextflow
+# subprocess's pipe into a single capture buffer, so this attachment
+# is the wrapper's *combined* output (its own diagnostic prints + the
+# nextflow subprocess's merged stdout/stderr), not just the subprocess
+# stream. Distinct from the WrapperLogEvent *event* type (which carries
+# per-line log lines as telemetry rows) — this is the
+# captured-on-exit attachment.
 _WRAPPER_LOG_SENTINEL_HASH = "wrapper_output_log"
 _WRAPPER_LOG_TYPE = "wrapper_output_log"
 
@@ -168,12 +173,17 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
             # falsely claim the upload succeeded against a known run. Same
             # rule applies to both .nextflow.log and the captured wrapper log.
             if (log_content_str is not None or wrapper_log_content_str is not None) and existing is None:
-                missing = "nextflow_log" if log_content_str is not None else "wrapper_output_log"
+                provided = []
+                if log_content_str is not None:
+                    provided.append("nextflow_log")
+                if wrapper_log_content_str is not None:
+                    provided.append("wrapper_output_log")
+                attachments = " + ".join(provided)
                 raise HTTPException(
                     status_code=404,
                     detail=(
                         f"No workflow_runs row for '{run_name}'; refusing to store "
-                        f"{missing} attachment as an orphan."
+                        f"{attachments} attachment{'s' if len(provided) > 1 else ''} as orphan."
                     ),
                 )
 
