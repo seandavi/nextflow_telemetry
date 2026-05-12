@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 try:
@@ -93,6 +95,46 @@ def build_nextflow_command(
     for key, value in (extra_params or {}).items():
         cmd.extend([f"--{key}", value])
     return cmd
+
+
+def submit_with_retry(
+    submit_callable: Callable[[], str],
+    *,
+    max_attempts: int = 3,
+    initial_backoff: float = 2.0,
+    backoff_multiplier: float = 2.0,
+    label: str = "submit",
+) -> str:
+    # Three attempts with 2s and 4s waits between covers the bulk of real-world
+    # transient failures (controller momentary unresponsiveness, NFS hiccup, sshd
+    # restart on a login node) without making the daemon block for minutes on a
+    # genuinely permanent failure like an exhausted account quota.
+    if max_attempts < 1:
+        # A loop that never runs would otherwise fall through to a
+        # post-loop `raise`, which under `python -O` strips the assert
+        # and surfaces as a bare UnboundLocalError. Better to fail fast.
+        raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return submit_callable()
+        except (subprocess.SubprocessError, OSError) as e:
+            if attempt == max_attempts:
+                # Bare `raise` preserves the original exception's traceback
+                # so the operator sees where the underlying subprocess call
+                # actually failed, not a synthetic frame inside this helper.
+                raise
+            delay = initial_backoff * (backoff_multiplier ** (attempt - 1))
+            print(
+                f"  {label} attempt {attempt}/{max_attempts} failed: {e}; "
+                f"retrying in {delay:.1f}s",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(delay)
+    # Unreachable: the loop always exits via `return` (success) or `raise`
+    # (final-attempt failure). Kept as a defensive guard for type-checkers
+    # that can't prove the invariant.
+    raise RuntimeError("submit_with_retry exited loop without returning or raising")
 
 
 def submit_local(cmd: list[str], log_file: Path | None = None) -> str:

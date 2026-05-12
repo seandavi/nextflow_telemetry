@@ -35,6 +35,7 @@ from .submission import (
     submit_local,
     submit_slurm,
     submit_pbs,
+    submit_with_retry,
 )
 
 app = typer.Typer(help="nf-client: claim and submit Nextflow telemetry jobs")
@@ -145,9 +146,21 @@ def submit(
             script = render_submission_script(cfg.submission.template_path, context)
 
             if mode == "slurm":
-                executor_job_id = submit_slurm(script, export_none=cfg.submission.slurm_export_none)
+                executor_job_id = submit_with_retry(
+                    lambda: submit_slurm(script, export_none=cfg.submission.slurm_export_none),
+                    label="sbatch",
+                )
             elif mode == "pbs":
-                executor_job_id = submit_pbs(script)
+                executor_job_id = submit_with_retry(
+                    lambda: submit_pbs(script),
+                    label="qsub",
+                )
+            else:
+                # mode passed the guard above (slurm|pbs|lsf) but no
+                # submit_lsf exists yet. Fail explicitly rather than
+                # silently reporting a null executor_job_id to the server.
+                typer.echo(f"ERROR: mode={mode!r} is in the supported set but no submit path is wired yet", err=True)
+                raise typer.Exit(1)
 
             typer.echo(f"Submitted {mode.upper()} job {executor_job_id}")
 
@@ -296,11 +309,24 @@ def daemon(
 
             try:
                 if mode == "slurm":
-                    executor_job_id = submit_slurm(script, export_none=cfg.submission.slurm_export_none)
+                    executor_job_id = submit_with_retry(
+                        lambda: submit_slurm(script, export_none=cfg.submission.slurm_export_none),
+                        label="sbatch",
+                    )
                 elif mode == "pbs":
-                    executor_job_id = submit_pbs(script)
+                    executor_job_id = submit_with_retry(
+                        lambda: submit_pbs(script),
+                        label="qsub",
+                    )
+                else:
+                    # mode passed the outer guard but no submit path is
+                    # wired (e.g. lsf). Skip the batch loudly so the server
+                    # can sweep it via TTL rather than silently recording
+                    # executor_job_id=None.
+                    typer.echo(f"  ERROR: mode={mode!r} has no submit path wired; skipping batch (will requeue via TTL)", err=True)
+                    continue
             except Exception as e:
-                typer.echo(f"  ERROR: scheduler submission failed, skipping batch (will requeue via TTL): {e}", err=True)
+                typer.echo(f"  ERROR: scheduler submission failed after retries, skipping batch (will requeue via TTL): {e}", err=True)
                 continue
 
             typer.echo(f"  Submitted {mode.upper()} job {executor_job_id}")
