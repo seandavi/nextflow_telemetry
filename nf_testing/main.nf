@@ -34,7 +34,10 @@ params.fail_at          = ""                   // inject failure at named proces
 // We expose it as a param so it appears in weblog metadata.params for
 // server-side correlation.
 params.run_name            = workflow.runName
-params.stochastic_fail_pct = 30              // % chance STOCHASTIC_STEP fails (0–100)
+// Default 0 so the happy path is deterministic and reproducible. The
+// `stochastic` profile in nextflow.config raises this to exercise the
+// retry path on real runs.
+params.stochastic_fail_pct = 0                // % chance STOCHASTIC_STEP fails (0–100)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -149,16 +152,25 @@ process STOCHASTIC_STEP {
 }
 
 process AGGREGATE_RESULTS {
+    // Process directives must precede input/output blocks in Nextflow DSL2.
+    // Older Nextflow versions tolerated misplaced directives; 26.04+ does not
+    // and reports `Unrecognized process output qualifier 'publishDir'`.
+    //
+    // publishDir's path is wrapped in a closure so input variables (sample_id,
+    // bound by the input tuple below) resolve at task-invocation time. Without
+    // the closure Nextflow 26.04 reports `No such variable: sample_id` —
+    // directive parameters evaluate eagerly otherwise.
     tag "${tag(sample_id)}"
+    publishDir(
+        path: { "${params.outdir}/${params.workflow_id}/${params.workflow_version}/${sample_id}" },
+        mode: 'copy',
+    )
 
     input:
     tuple val(sample_id), path(profile)
 
     output:
     tuple val(sample_id), path("${sample_id}_summary.json")
-
-    publishDir "${params.outdir}/${params.workflow_id}/${params.workflow_version}/${sample_id}",
-        mode: 'copy'
 
     script:
     if (shouldFail("AGGREGATE_RESULTS"))
