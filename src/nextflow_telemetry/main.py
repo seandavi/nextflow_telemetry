@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+import logging
+import time
+from collections.abc import Awaitable, Callable
+
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -51,6 +55,47 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def access_log_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    # /health is hit every 30s by the Docker healthcheck — logging it at
+    # INFO drowns out real signal, so it goes to DEBUG. Everything else
+    # logs at INFO; unhandled exceptions log at ERROR with the traceback
+    # before re-raising so FastAPI's normal error handling still runs.
+    started = time.perf_counter()
+    response: Response | None = None
+    error: BaseException | None = None
+    try:
+        response = await call_next(request)
+        return response
+    except BaseException as exc:
+        error = exc
+        raise
+    finally:
+        duration_ms = round((time.perf_counter() - started) * 1000, 1)
+        path = request.url.path
+        status = response.status_code if response is not None else 500
+        if path == "/health":
+            level = logging.DEBUG
+        elif error is not None:
+            level = logging.ERROR
+        else:
+            level = logging.INFO
+        extra: dict[str, object] = {
+            "method": request.method,
+            "path": path,
+            "status": status,
+            "duration_ms": duration_ms,
+            "client": request.client.host if request.client else None,
+            "user_agent": request.headers.get("user-agent"),
+        }
+        if error is not None:
+            extra["error"] = str(error)
+        logger.log(level, "http.request", extra=extra, exc_info=error if error else None)
 
 process_metrics_service = ProcessMetricsService(engine=engine)
 telemetry_service = TelemetryService(engine=engine)
