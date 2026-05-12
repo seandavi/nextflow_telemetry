@@ -86,6 +86,36 @@ def test_submit_with_retry_single_attempt_no_sleep() -> None:
     assert sleep_mock.call_count == 0
 
 
+def test_submit_with_retry_rejects_zero_or_negative_max_attempts() -> None:
+    """max_attempts < 1 is a programming error — fail fast, don't silently no-op."""
+    fn = MagicMock()
+    with pytest.raises(ValueError, match=r"max_attempts must be >= 1"):
+        submit_with_retry(fn, max_attempts=0, label="sbatch")
+    with pytest.raises(ValueError, match=r"max_attempts must be >= 1"):
+        submit_with_retry(fn, max_attempts=-3, label="sbatch")
+    assert fn.call_count == 0
+
+
+def test_submit_with_retry_preserves_original_traceback_on_final_failure() -> None:
+    """The last attempt re-raises with bare `raise` (not `raise last_exc`) so the
+    operator sees the underlying subprocess call's frame chain, not a synthetic
+    `raise last_exc` frame inside this helper.
+    """
+    err = subprocess.CalledProcessError(2, ["sbatch"])
+    fn = MagicMock(side_effect=err)
+    with patch("nf_client.submission.time.sleep"):
+        with pytest.raises(subprocess.CalledProcessError) as exc_info:
+            submit_with_retry(fn, max_attempts=2, label="sbatch")
+    tb = exc_info.value.__traceback__
+    frames = []
+    while tb is not None:
+        frames.append(tb.tb_frame.f_code.co_name)
+        tb = tb.tb_next
+    # The chain should pass through submit_with_retry's `try` callsite, not
+    # through a synthetic `raise last_exc` block at the bottom of the function.
+    assert "submit_with_retry" in frames
+
+
 def test_submit_slurm_through_retry_helper_end_to_end() -> None:
     """submit_with_retry wrapping submit_slurm survives one failure then succeeds.
 

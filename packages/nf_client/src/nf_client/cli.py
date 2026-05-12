@@ -155,6 +155,12 @@ def submit(
                     lambda: submit_pbs(script),
                     label="qsub",
                 )
+            else:
+                # mode passed the guard above (slurm|pbs|lsf) but no
+                # submit_lsf exists yet. Fail explicitly rather than
+                # silently reporting a null executor_job_id to the server.
+                typer.echo(f"ERROR: mode={mode!r} is in the supported set but no submit path is wired yet", err=True)
+                raise typer.Exit(1)
 
             typer.echo(f"Submitted {mode.upper()} job {executor_job_id}")
 
@@ -312,6 +318,13 @@ def daemon(
                         lambda: submit_pbs(script),
                         label="qsub",
                     )
+                else:
+                    # mode passed the outer guard but no submit path is
+                    # wired (e.g. lsf). Skip the batch loudly so the server
+                    # can sweep it via TTL rather than silently recording
+                    # executor_job_id=None.
+                    typer.echo(f"  ERROR: mode={mode!r} has no submit path wired; skipping batch (will requeue via TTL)", err=True)
+                    continue
             except Exception as e:
                 typer.echo(f"  ERROR: scheduler submission failed after retries, skipping batch (will requeue via TTL): {e}", err=True)
                 continue

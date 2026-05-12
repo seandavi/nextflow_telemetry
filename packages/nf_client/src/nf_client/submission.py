@@ -109,14 +109,20 @@ def submit_with_retry(
     # transient failures (controller momentary unresponsiveness, NFS hiccup, sshd
     # restart on a login node) without making the daemon block for minutes on a
     # genuinely permanent failure like an exhausted account quota.
-    last_exc: BaseException | None = None
+    if max_attempts < 1:
+        # A loop that never runs would otherwise fall through to a
+        # post-loop `raise`, which under `python -O` strips the assert
+        # and surfaces as a bare UnboundLocalError. Better to fail fast.
+        raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
     for attempt in range(1, max_attempts + 1):
         try:
             return submit_callable()
         except (subprocess.SubprocessError, OSError) as e:
-            last_exc = e
             if attempt == max_attempts:
-                break
+                # Bare `raise` preserves the original exception's traceback
+                # so the operator sees where the underlying subprocess call
+                # actually failed, not a synthetic frame inside this helper.
+                raise
             delay = initial_backoff * (backoff_multiplier ** (attempt - 1))
             print(
                 f"  {label} attempt {attempt}/{max_attempts} failed: {e}; "
@@ -125,8 +131,10 @@ def submit_with_retry(
                 flush=True,
             )
             time.sleep(delay)
-    assert last_exc is not None  # unreachable: loop exits via return or sets last_exc
-    raise last_exc
+    # Unreachable: the loop always exits via `return` (success) or `raise`
+    # (final-attempt failure). Kept as a defensive guard for type-checkers
+    # that can't prove the invariant.
+    raise RuntimeError("submit_with_retry exited loop without returning or raising")
 
 
 def submit_local(cmd: list[str], log_file: Path | None = None) -> str:
