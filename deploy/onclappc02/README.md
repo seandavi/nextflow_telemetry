@@ -4,7 +4,7 @@ Production compose for the telemetry API + frontend, served via the
 existing Traefik on `cancerdatasci.org`. The Postgres backend lives in
 the shared `pg_ducklake_18` cluster (see
 `monode/infrastructure/compose/pg_ducklake_stack/`), one database per
-app — this app owns the `nf_telemetry` database on port 5433.
+app — this app owns the `nf_telemetry` database on host port 5432.
 
 ## Files
 
@@ -25,11 +25,14 @@ app — this app owns the `nf_telemetry` database on port 5433.
 ## Current backend state on onclappc02
 
 ```
-pg_ducklake_18         host:5433  → /data/postgres_ducklake/    (shared cluster, db nf_telemetry)
-nf_telemetry_api       proxy net  → host.docker.internal:5433/nf_telemetry
+pg_ducklake_18         host:5432  → /data/postgres_ducklake/    (shared cluster, db nf_telemetry)
+nf_telemetry_api       proxy net  → host.docker.internal:5432/nf_telemetry
 nf_telemetry_frontend  proxy net  → built with VITE_API_URL=https://nf-telemetry.cancerdatasci.org
 traefik                host net   → routes both hostnames by Docker labels
 ```
+
+(Note: `pg_duckdb_18` on host port 5433 is a legacy cluster kept up
+during the ducklake migration; the API does **not** talk to it.)
 
 Internal smoke (works today):
 
@@ -41,23 +44,84 @@ curl -sSk -H "Host: cmgd.cancerdatasci.org" https://localhost/ | head
 External DNS still points at Cloud Run, so external `https://nf-telemetry.cancerdatasci.org`
 goes to the legacy stack.
 
+## Secrets
+
+This deploy intentionally has **no app-managed secrets files** beyond
+`.env` (which is gitignored and only used as a runtime artefact, not a
+source of truth). All Postgres credentials live in GCP Secret Manager
+under the `cdsci-infra` project. Code, CI, and humans all read from
+there — never invent a parallel copy in a config file, a chat thread,
+or a password manager note.
+
+| Secret | Role rotated | Consumed by |
+|---|---|---|
+| `cdsci-postgres-admin-password` | `postgres` superuser on `pg_ducklake_18` | cluster admins; not used by app containers |
+| `cdsci-nf-telemetry-db-password` | `nf_telemetry` login role | this deploy's `.env` (composed into `SQLALCHEMY_URI`) |
+
+**Naming convention** (see also the cdsci-infra Terraform):
+
+- `cdsci-*` — shared cluster / cross-app infra secrets.
+- `cdsci-<app>-db-password` — per-app Postgres role passwords on the
+  shared ducklake cluster. One role per app, one secret per role.
+
+**Reading the password into the runtime `.env`:**
+
+```sh
+PW=$(gcloud secrets versions access latest \
+  --secret=cdsci-nf-telemetry-db-password --project=cdsci-infra)
+# Use $PW to substitute into deploy/onclappc02/.env's SQLALCHEMY_URI.
+```
+
+**Rotating** (no application downtime if you reload env + restart cleanly,
+but expect ~30s of 503 during the container recreate):
+
+```sh
+# 1. Generate + write new version to SM
+python3 -c "import secrets, string; print(''.join(secrets.choice(string.ascii_letters+string.digits) for _ in range(32)))" \
+  | gcloud secrets versions add cdsci-nf-telemetry-db-password \
+      --project=cdsci-infra --data-file=-
+
+# 2. Apply to the Postgres role (use psql heredoc; never pass via -c with :'var'):
+PW=$(gcloud secrets versions access latest \
+  --secret=cdsci-nf-telemetry-db-password --project=cdsci-infra)
+PW_ESC=$(printf %s "$PW" | sed "s/'/''/g")
+docker exec -i pg_ducklake_18 psql -U postgres -v ON_ERROR_STOP=1 <<SQL
+ALTER ROLE nf_telemetry WITH PASSWORD '$PW_ESC';
+SQL
+
+# 3. Rewrite deploy/onclappc02/.env with the new $PW, then:
+cd deploy/onclappc02 && docker compose up -d --force-recreate nf_telemetry_api
+```
+
+If the API can't reach the DB (503 from `/health`), the first place to
+look is whether `.env` is in sync with the latest secret version.
+
 ## First-time setup (already done; recorded for reproducibility)
 
-1. **Database + role**, inside the new shared cluster:
+1. **Database + role**, inside the new shared cluster. Password is
+   generated and stored in GCP Secret Manager — *not* chosen ad-hoc:
    ```sh
-   docker exec -it pg_ducklake_18 psql -U postgres -d postgres
-   ```
-   ```sql
-   CREATE ROLE nf_telemetry WITH LOGIN PASSWORD '<choose-one>';
+   # Generate + store in SM (one-time per role):
+   python3 -c "import secrets, string; print(''.join(secrets.choice(string.ascii_letters+string.digits) for _ in range(32)))" \
+     | gcloud secrets create cdsci-nf-telemetry-db-password \
+         --project=cdsci-infra --replication-policy=automatic --data-file=-
+
+   # Read it back and create the role + database:
+   PW=$(gcloud secrets versions access latest \
+     --secret=cdsci-nf-telemetry-db-password --project=cdsci-infra)
+   PW_ESC=$(printf %s "$PW" | sed "s/'/''/g")
+   docker exec -i pg_ducklake_18 psql -U postgres -v ON_ERROR_STOP=1 <<SQL
+   CREATE ROLE nf_telemetry WITH LOGIN PASSWORD '$PW_ESC';
    CREATE DATABASE nf_telemetry OWNER nf_telemetry;
+   SQL
    ```
    (Do **not** `CREATE EXTENSION pg_duckdb` in this DB — the app uses plain
    Postgres; pg_duckdb hooks would only get in the way.)
 
-2. **`.env`** — copy `.env.example` to `.env` (already gitignored) and fill
-   the password into `SQLALCHEMY_URI`. URI shape:
+2. **`.env`** — copy `.env.example` to `.env` (already gitignored), fetch
+   the password from SM, and substitute it into `SQLALCHEMY_URI`. Shape:
    ```
-   postgresql+asyncpg://nf_telemetry:<pw>@host.docker.internal:5433/nf_telemetry
+   postgresql+asyncpg://nf_telemetry:<pw-from-sm>@host.docker.internal:5432/nf_telemetry
    ```
 
 3. **Apply migrations**:
