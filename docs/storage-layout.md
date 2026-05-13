@@ -114,6 +114,10 @@ The consumer is a small async task in the telemetry API process: pull → upsert
 
 ## Access tokens
 
-- **`cmgd-raw` / `cmgd-public`**: read tokens are unnecessary (public). Write tokens scoped per-bucket and held by the daemon / publishing pipeline.
-- **`cdsci-lake`**: per-project R/W tokens scoped to that project's schema-shaped prefix. Read-only token published to external consumers as needed.
-- **`cdsci-backups`**: dedicated write-only token. Restore uses a separate, rarely-issued admin token. Object Lock makes accidental deletion impossible during the retention window.
+All app/infrastructure secrets — Cloudflare API token, R2 access keys, Cloudflare Queue pull-consumer bearer tokens, Postgres passwords, backup write-only tokens — are stored in **GCP Secret Manager**. Terraform reads them at plan/apply time via `google_secret_manager_secret_version` data sources; app deploys fetch them via `gcloud secrets versions access` and inject into the `.env` consumed by docker-compose. IAM grants are per-secret, scoped to the specific service account that needs access. Naming convention: `cmgd-<purpose>` for app-specific, `cdsci-<purpose>` for shared infra.
+
+Token scopes:
+
+- **`cmgd-raw` / `cmgd-public`**: read tokens are unnecessary (public). Write tokens scoped per-bucket and held by the daemon / publishing pipeline. Stored as `cmgd-r2-write-token` in GCP SM.
+- **`cdsci-lake`**: per-project R/W tokens scoped to that project's schema-shaped prefix. Read-only token published to external consumers as needed. Stored as `cmgd-lake-rw-token`, `cmgd-lake-readonly-token`, etc.
+- **`cdsci-backups`**: dedicated write-only token. Restore uses a separate, rarely-issued admin token. Object Lock makes accidental deletion impossible during the retention window. Stored as `cdsci-backups-write-token` (the restore admin token is operator-only and not in GCP SM).
