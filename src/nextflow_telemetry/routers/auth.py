@@ -60,7 +60,7 @@ def create_auth_router(engine: AsyncEngine) -> APIRouter:
             raise HTTPException(status_code=400, detail="Google response missing email")
 
         request.session["email"] = email
-        return RedirectResponse(url="/")
+        return RedirectResponse(url=settings.FRONTEND_URL)
 
     @router.get(
         "/me",

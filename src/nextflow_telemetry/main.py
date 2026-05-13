@@ -65,6 +65,11 @@ app.add_middleware(
     https_only=False,    # set via reverse proxy in prod (Traefik terminates TLS)
     same_site="lax",     # needed so the post-Google redirect carries the cookie
     max_age=60 * 60 * 24 * 30,  # 30 days
+    # Empty SESSION_COOKIE_DOMAIN → host-only cookie (correct for local dev).
+    # In prod, set to ".cancerdatasci.org" so the SPA at cmgd.cancerdatasci.org
+    # sends the cookie to the API at nf-telemetry.cancerdatasci.org. Both are
+    # same-site (shared eTLD+1), so SameSite=Lax still works.
+    domain=settings.SESSION_COOKIE_DOMAIN or None,
 )
 
 app.add_middleware(

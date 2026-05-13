@@ -27,6 +27,15 @@ class Settings:
     # is permissive (logs a one-time warning) so daemons keep working during
     # the rollout window. Flip from empty → populated to enforce.
     DISPATCH_TOKEN: str
+    # Cookie domain — set to ".cancerdatasci.org" in prod so the cookie is
+    # sent by the SPA at cmgd.cancerdatasci.org to the API at
+    # nf-telemetry.cancerdatasci.org (same eTLD+1, so SameSite=Lax works).
+    # Empty in local dev makes the cookie host-only.
+    SESSION_COOKIE_DOMAIN: str
+    # Where to send the user after a successful OAuth callback. Typically
+    # the frontend origin in prod; "/" works in dev when the SPA is
+    # proxied through the same origin.
+    FRONTEND_URL: str
 
 settings = Settings(
     SQLALCHEMY_URI=_normalize_sqlalchemy_uri(
@@ -39,4 +48,6 @@ settings = Settings(
     OAUTH_REDIRECT_URI=os.environ.get("OAUTH_REDIRECT_URI", "http://localhost:8000/auth/callback"),
     SESSION_SECRET=os.environ.get("SESSION_SECRET", "dev-insecure-do-not-use-in-prod"),
     DISPATCH_TOKEN=os.environ.get("DISPATCH_TOKEN", ""),
+    SESSION_COOKIE_DOMAIN=os.environ.get("SESSION_COOKIE_DOMAIN", ""),
+    FRONTEND_URL=os.environ.get("FRONTEND_URL", "/"),
 )

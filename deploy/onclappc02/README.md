@@ -131,7 +131,17 @@ look is whether `.env` is in sync with the latest secret version.
    uv run alembic upgrade head
    ```
 
-4. **Build + bring up**:
+4. **Fetch OAuth + session secrets** from GCP Secret Manager into
+   `.env.secrets` (gitignored, mode 600). Requires `gcloud auth login`
+   with `secretAccessor` on the three secrets in the `cdsci-infra`
+   project:
+   ```sh
+   cd deploy/onclappc02
+   ./fetch-secrets.sh
+   ```
+   Re-run whenever a secret rotates, then recycle the API container.
+
+5. **Build + bring up**:
    ```sh
    cd deploy/onclappc02
    docker compose build
