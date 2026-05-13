@@ -8,11 +8,13 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
 from .log import logger
 from . import models
 from .routers.admin import create_admin_router
+from .routers.auth import create_auth_router
 from .routers.cohorts import create_cohorts_router
 from .routers.curated import create_curated_router
 from .routers.daemons import create_daemons_router
@@ -47,6 +49,23 @@ app = FastAPI(
 )
 
 engine = create_async_engine(settings.SQLALCHEMY_URI)
+# Expose engine on app.state so dependencies (e.g. get_current_user) can
+# resolve services without importing the global engine and breaking unit
+# tests that monkeypatch it.
+app.state.engine = engine
+
+# SessionMiddleware signs an HttpOnly cookie used for OAuth state and the
+# logged-in user's email. Must be added BEFORE any route that reads
+# `request.session` runs, which in practice means before any dependency
+# resolves a request — order here works because we add it during module
+# init, before any request is served.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SESSION_SECRET,
+    https_only=False,    # set via reverse proxy in prod (Traefik terminates TLS)
+    same_site="lax",     # needed so the post-Google redirect carries the cookie
+    max_age=60 * 60 * 24 * 30,  # 30 days
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -151,6 +170,10 @@ app.include_router(create_daemons_router(engine), prefix="/api")
 app.include_router(create_curated_router(engine), prefix="/api")
 app.include_router(create_runs_router(engine), prefix="/api")
 app.include_router(create_cohorts_router(engine), prefix="/api")
+# /auth/* lives at root (not under /api) so the OAuth redirect URI is a
+# tidy origin-relative path that fits naturally into Google's allowed-redirect
+# list and avoids stuffing /api into user-facing URLs.
+app.include_router(create_auth_router(engine))
 
 
 @app.get(
