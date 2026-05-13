@@ -3,6 +3,7 @@ import { T } from '../tokens'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { fmtNum, fmtDate, fmtAgo } from '../lib/format'
 import { api } from '../lib/api'
+import { useRole } from '../lib/auth'
 import Btn from '../components/Btn'
 import Badge from '../components/Badge'
 import Input from '../components/Input'
@@ -75,6 +76,7 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
   const [allRows,  setAllRows]  = useState<SampleResponse[]>([])
   const [showForm, setShowForm] = useState(false)
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
+  const isAdmin = useRole('admin')
 
   useEffect(() => {
     api.samples.list(0, 1000).then(setAllRows).catch(console.error)
@@ -122,7 +124,7 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {lastUpdated && <span style={{ fontSize: 11, color: T.muted }}>{fmtUpdated(lastUpdated)}</span>}
           <button onClick={refresh} style={{ background: T.elevated, border: `1px solid ${T.border}`, color: T.muted, fontSize: 11, cursor: 'pointer', borderRadius: 4, padding: '3px 8px' }}>↻</button>
-          <Btn onClick={() => setShowForm(true)}>+ Register Sample</Btn>
+          {isAdmin && <Btn onClick={() => setShowForm(true)}>+ Register Sample</Btn>}
         </div>
       </div>
 

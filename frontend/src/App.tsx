@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { LayoutDashboard, BarChart2, GitBranch, FlaskConical, SendHorizonal, Server, Users, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, BarChart2, GitBranch, FlaskConical, SendHorizonal, Server, Users, LogIn, LogOut, type LucideIcon } from 'lucide-react'
 import { T } from './tokens'
 import { MOCK_HEALTH } from './lib/mock-data'
+import { AuthProvider, useAuth } from './lib/auth'
 import OverviewPage from './pages/OverviewPage'
 import MetricsPage from './pages/MetricsPage'
 import WorkflowsPage from './pages/WorkflowsPage'
@@ -21,6 +22,57 @@ const NAV: Array<{ id: NavId; label: string; icon: LucideIcon; sub: string }> = 
   { id: 'dispatch',  label: 'Dispatch',         icon: SendHorizonal,   sub: '& Admin'              },
   { id: 'infra',     label: 'Infrastructure',   icon: Server,          sub: 'Daemon fleet'         },
 ]
+
+function UserChip() {
+  const { user, loading, signIn, signOut } = useAuth()
+  if (loading) return null
+  if (!user) {
+    return (
+      <button onClick={signIn} style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        width: '100%', padding: '8px 10px',
+        background: 'oklch(0.65 0.16 160 / 0.12)',
+        border: '1px solid oklch(0.65 0.16 160 / 0.25)',
+        color: T.accent, fontSize: 12, fontWeight: 600,
+        borderRadius: 6, cursor: 'pointer', textAlign: 'left',
+        fontFamily: 'DM Sans, sans-serif',
+      }}>
+        <LogIn size={14} />
+        Sign in with Google
+      </button>
+    )
+  }
+  // Local part of the email keeps the chip compact when sidebar is narrow.
+  const display = user.email.split('@')[0]
+  const roleColor = user.role === 'admin' ? T.green
+                  : user.role === 'contributor' ? T.amber
+                  : T.muted
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8,
+      padding: '6px 8px', background: 'rgba(255,255,255,0.04)',
+      border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6,
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: T.text, fontWeight: 600,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          title={user.email}>
+          {display}
+        </div>
+        <div style={{ fontSize: 9, color: roleColor, letterSpacing: '0.05em',
+          textTransform: 'uppercase', marginTop: 1 }}>
+          {user.role ?? 'no role'}
+        </div>
+      </div>
+      <button onClick={() => { void signOut() }} title="Sign out" style={{
+        background: 'transparent', border: 'none', color: T.muted,
+        cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center',
+      }}>
+        <LogOut size={13} />
+      </button>
+    </div>
+  )
+}
 
 function HealthDot() {
   const h = MOCK_HEALTH
@@ -107,6 +159,7 @@ function Sidebar({ active, onNav, pollInterval, onPollInterval }: {
         padding: '14px 16px', borderTop: '1px solid rgba(255,255,255,0.06)',
         display: 'flex', flexDirection: 'column', gap: 10,
       }}>
+        <UserChip />
         <HealthDot />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: 10, color: 'rgba(107,122,150,0.7)' }}>Auto-refresh</span>
@@ -144,11 +197,13 @@ export default function App() {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar active={page} onNav={setPage} pollInterval={pollInterval} onPollInterval={setPollInterval} />
-      <main style={{ flex: 1, overflowY: 'auto', background: '#080c14' }}>
-        {pageMap[page]}
-      </main>
-    </div>
+    <AuthProvider>
+      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+        <Sidebar active={page} onNav={setPage} pollInterval={pollInterval} onPollInterval={setPollInterval} />
+        <main style={{ flex: 1, overflowY: 'auto', background: '#080c14' }}>
+          {pageMap[page]}
+        </main>
+      </div>
+    </AuthProvider>
   )
 }

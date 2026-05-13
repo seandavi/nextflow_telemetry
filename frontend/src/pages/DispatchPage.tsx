@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { T } from '../tokens'
 import { api } from '../lib/api'
+import { useAuth, useRole } from '../lib/auth'
 import Btn from '../components/Btn'
 import Badge from '../components/Badge'
 import Input from '../components/Input'
@@ -212,6 +213,44 @@ const TABS: Array<{ id: Tab; label: string }> = [
 
 export default function DispatchPage() {
   const [tab, setTab] = useState<Tab>('dispatch')
+  const isAdmin = useRole('admin')
+  const { signIn, user } = useAuth()
+
+  if (!isAdmin) {
+    return (
+      <PageWrap>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>Dispatch & Admin</div>
+          <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
+            Claim batches, confirm submissions, requeue expired claims, reconcile jobs
+          </div>
+        </div>
+        <Panel>
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 14,
+            padding: '20px 4px', maxWidth: 560,
+          }}>
+            <div style={{ fontSize: 14, color: T.text, fontWeight: 600 }}>
+              Admin access required
+            </div>
+            <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
+              This page mutates dispatch state (claim batches, confirm submissions,
+              requeue, reconcile). It's available to administrators only.
+              {user ? (
+                <> You're signed in as <strong>{user.email}</strong> with role{' '}
+                  <strong>{user.role ?? 'none'}</strong> — ask an admin to grant
+                  access if you need it.</>
+              ) : null}
+            </div>
+            {!user && (
+              <div><Btn onClick={signIn}>Sign in with Google</Btn></div>
+            )}
+          </div>
+        </Panel>
+      </PageWrap>
+    )
+  }
+
   return (
     <PageWrap>
       <div>
