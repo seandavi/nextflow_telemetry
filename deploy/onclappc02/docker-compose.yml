@@ -32,11 +32,11 @@ services:
     environment:
       SQLALCHEMY_URI: ${SQLALCHEMY_URI}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://${FRONTEND_HOST:-cmgd.cancerdatasci.org}}
-      # OAuth — values come from .env.secrets, plumbed through here so the
-      # full set of API env vars is visible in one place.
-      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID}
-      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET}
-      SESSION_SECRET: ${SESSION_SECRET}
+      # OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET / SESSION_SECRET come from
+      # .env.secrets via env_file. Do NOT list them in `environment:` —
+      # compose interpolates `${VAR}` from the shell + the auto-loaded
+      # .env (NOT from env_file), so listing them with `${VAR}` would
+      # overwrite the env_file values with empty strings.
       OAUTH_REDIRECT_URI: https://${API_HOST:-nf-telemetry.cancerdatasci.org}/auth/callback
       # Frontend and API live on different subdomains of the same parent;
       # scoping the cookie to the parent lets the SPA send it to the API
