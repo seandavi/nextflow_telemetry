@@ -82,7 +82,13 @@ services:
       - "traefik.http.routers.nf-telemetry-frontend.rule=Host(`${FRONTEND_HOST:-cmgd.cancerdatasci.org}`)"
       - "traefik.http.routers.nf-telemetry-frontend.entrypoints=websecure"
       - "traefik.http.routers.nf-telemetry-frontend.tls=true"
-      - "traefik.http.routers.nf-telemetry-frontend.tls.certresolver=cloudflare"
+      # NO certresolver: this hostname is proxied at Cloudflare (orange
+      # cloud), so the LE TLS-ALPN-01 challenge cannot reach origin
+      # (CF terminates TLS at the edge). Traefik falls back to the
+      # default cert configured in
+      # monode/infrastructure/compose/traefik/config/tls.yml — the
+      # Cloudflare Origin Certificate (*.cancerdatasci.org, 15yr,
+      # trusted only by CF). CF→origin runs in "Full (strict)" mode.
       - "traefik.http.services.nf-telemetry-frontend.loadbalancer.server.port=80"
 
 networks:
