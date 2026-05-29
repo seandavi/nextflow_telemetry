@@ -239,7 +239,7 @@ The production stack runs on Google Cloud:
 
 A self-hosted alternative is in flight — see `deploy/onclappc02/` for the Docker Compose
 stack that runs the same image behind Traefik on the existing
-`pgducklake` / Postgres-18 instance. Cutover plan tracked in the project's GitHub issues
+`pg_main` / Postgres-18 instance. Cutover plan tracked in the project's GitHub issues
 (meta issue: self-host migration).
 
 ### Prerequisites
