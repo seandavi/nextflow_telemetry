@@ -192,3 +192,4 @@ trace.txt*
 results/
 .playwright-mcp/
 .firebase/
+.claude/
