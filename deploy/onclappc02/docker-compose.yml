@@ -1,12 +1,12 @@
 # Production compose for nextflow_telemetry on onclappc02 (cancerdatasci.org).
 #
-# Companion services (Traefik, Postgres + pg_duckdb) live in
+# Companion services (Traefik, the pg_main Postgres cluster) live in
 # monode/infrastructure/compose and are deployed independently. This file
 # only adds the telemetry API and the static-frontend container, both of
 # which join the existing `proxy` network so Traefik routes them
 # transparently.
 #
-# DB connectivity: the pg_duckdb container exposes :5432 on the host. The
+# DB connectivity: the pg_main container exposes :5432 on the host. The
 # API reaches it via `host.docker.internal`, which is wired up by
 # `extra_hosts: host-gateway` (Linux Docker doesn't resolve it natively).
 #
@@ -28,7 +28,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://${FRONTEND_HOST:-cmgd.cancerdatasci.org}}
     extra_hosts:
       # Lets `host.docker.internal` resolve to the docker host's gateway
-      # IP, so the SQLALCHEMY_URI can point at the pg_duckdb container
+      # IP, so the SQLALCHEMY_URI can point at the pg_main container
       # listening on :5432 of the host without putting it on the proxy
       # network.
       - "host.docker.internal:host-gateway"
