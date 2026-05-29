@@ -3,7 +3,7 @@
 Production compose for the telemetry API + frontend, served via the
 existing Traefik on `cancerdatasci.org`. The Postgres backend lives in
 the shared `pg_main` cluster (see
-`monode/infrastructure/compose/pg_ducklake_stack/`), one database per
+`monode/infrastructure/compose/pg_main_stack/`), one database per
 app — this app owns the `nf_telemetry` database on host port 5432.
 
 ## Files
