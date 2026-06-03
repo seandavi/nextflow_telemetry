@@ -25,10 +25,10 @@ app — this app owns the `nf_telemetry` database on host port 5432.
 ## Current backend state on onclappc02
 
 ```
-pg_main                host:5432  → /data/postgres_ducklake/    (shared cluster, db nf_telemetry)
-nf_telemetry_api       proxy net  → host.docker.internal:5432/nf_telemetry
-nf_telemetry_frontend  proxy net  → built with VITE_API_URL=https://nf-telemetry.cancerdatasci.org
-traefik                host net   → routes both hostnames by Docker labels
+pg_main                127.0.0.1:5432  → /data/postgres_ducklake/  (shared cluster, db nf_telemetry)
+nf_telemetry_api       proxy + pg_main_stack_default  → pg_main:5432/nf_telemetry
+nf_telemetry_frontend  proxy net       → built with VITE_API_URL=https://nf-telemetry.cancerdatasci.org
+traefik                host net        → routes both hostnames by Docker labels
 ```
 
 Internal smoke (works today):
@@ -118,14 +118,21 @@ look is whether `.env` is in sync with the latest secret version.
 2. **`.env`** — copy `.env.example` to `.env` (already gitignored), fetch
    the password from SM, and substitute it into `SQLALCHEMY_URI`. Shape:
    ```
-   postgresql+asyncpg://nf_telemetry:<pw-from-sm>@host.docker.internal:5432/nf_telemetry
+   postgresql+asyncpg://nf_telemetry:<pw-from-sm>@pg_main:5432/nf_telemetry
    ```
+   The `pg_main` host only resolves from inside the
+   `pg_main_stack_default` docker network (which the API container joins).
+   pg_main binds `127.0.0.1:5432` on the host, so anything run **from the
+   host** instead — e.g. the migration step below — must use
+   `@127.0.0.1:5432` rather than `@pg_main`.
 
 3. **Apply migrations**:
    ```sh
    cd /home/davsean/Documents/git/nextflow_telemetry
+   # Run from the host: pg_main only resolves inside docker, so override
+   # the container-scoped host with 127.0.0.1 (pg_main's host binding).
    set -a; source deploy/onclappc02/.env; set +a
-   uv run alembic upgrade head
+   SQLALCHEMY_URI="${SQLALCHEMY_URI/@pg_main:/@127.0.0.1:}" uv run alembic upgrade head
    ```
 
 4. **Fetch OAuth + session secrets** from GCP Secret Manager into
