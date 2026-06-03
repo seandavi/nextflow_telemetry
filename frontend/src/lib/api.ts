@@ -58,6 +58,11 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+    // Send the session cookie on cross-origin requests so the API can
+    // resolve the current user. CORS on the API side already sets
+    // Access-Control-Allow-Credentials: true with an explicit origin
+    // (not "*"), which is what makes this combination valid.
+    credentials: 'include',
   })
   if (!res.ok) throw new Error(`${method} ${path} → ${res.status}`)
   return res.json() as Promise<T>

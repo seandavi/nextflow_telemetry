@@ -234,6 +234,19 @@ curated_sample_annotations_tbl = Table(
 )
 
 # ---------------------------------------------------------------------------
+# Users — Google-authenticated identities with a role
+# Unknown Google identities can log in but get no row here until invited;
+# write endpoints check role and return 403 for missing rows.
+# ---------------------------------------------------------------------------
+users_tbl = Table(
+    "users",
+    metadata,
+    Column("email", String, primary_key=True),
+    Column("role", String, nullable=False),  # "admin" | "contributor"
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+# ---------------------------------------------------------------------------
 # Daemon agent registry — upserted by nf-client on every heartbeat
 # ---------------------------------------------------------------------------
 daemon_agents_tbl = Table(

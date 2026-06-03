@@ -30,6 +30,9 @@ help:
 	@echo "  just up-api        Start API profile only (uses SQLALCHEMY_URI from .env)."
 	@echo "  just down          Stop and remove compose services/containers."
 	@echo "  just logs          Tail API container logs for troubleshooting."
+	@echo ""
+	@echo "Production deploy (onclappc02)"
+	@echo "  just deploy-onclappc02   Fetch OAuth secrets from GCP SM, rebuild+restart the API."
 
 # Install project + dev dependencies into .venv using uv.
 sync:
@@ -139,3 +142,22 @@ deploy-frontend:
 # Usage: SQLALCHEMY_URI=postgresql://... just migrate-prod
 migrate-prod:
 	uv run alembic upgrade head
+
+# ── onclappc02 (self-hosted) ──────────────────────────────────────────────────
+
+# End-to-end deploy of a code change to the onclappc02 stack:
+#   1. fetch OAuth/session secrets from GCP Secret Manager → .env.secrets
+#   2. rebuild the API image with the current working tree
+#   3. recycle the API container
+#
+# Run from any branch — the build context is the repo root, so whatever
+# you have checked out is what gets deployed. Migrations are NOT run here;
+# do `SQLALCHEMY_URI=$(grep ^SQLALCHEMY_URI deploy/onclappc02/.env | cut -d= -f2-) just migrate-prod`
+# from this host first if you've added one.
+deploy-onclappc02:
+	cd deploy/onclappc02 && ./fetch-secrets.sh
+	cd deploy/onclappc02 && docker compose build nf_telemetry_api
+	cd deploy/onclappc02 && docker compose up -d nf_telemetry_api
+	@echo ""
+	@echo "Container restarted. Watch it become healthy:"
+	@echo "  docker ps --filter name=nf_telemetry_api"

@@ -3,6 +3,7 @@ import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { T } from '../tokens'
 import { fmtNum, fmtDate, fmtAgo } from '../lib/format'
 import { api } from '../lib/api'
+import { useRole } from '../lib/auth'
 import Btn from '../components/Btn'
 import Badge from '../components/Badge'
 import Input from '../components/Input'
@@ -136,6 +137,7 @@ function WorkflowCard({
   onEdit: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const isAdmin = useRole('admin')
 
   const nextStatuses: Record<WfStatus, WfStatus[]> = {
     active:  ['paused', 'retired'],
@@ -197,17 +199,19 @@ function WorkflowCard({
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Btn variant="ghost" small onClick={onEdit}>Edit</Btn>
-            {nextStatuses[wf.status].map(s => (
-              <Btn key={s}
-                variant={s === 'retired' ? 'danger' : 'ghost'}
-                small
-                onClick={() => onStatusChange(wf.id, s)}>
-                → {s.charAt(0).toUpperCase() + s.slice(1)}
-              </Btn>
-            ))}
-          </div>
+          {isAdmin && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Btn variant="ghost" small onClick={onEdit}>Edit</Btn>
+              {nextStatuses[wf.status].map(s => (
+                <Btn key={s}
+                  variant={s === 'retired' ? 'danger' : 'ghost'}
+                  small
+                  onClick={() => onStatusChange(wf.id, s)}>
+                  → {s.charAt(0).toUpperCase() + s.slice(1)}
+                </Btn>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -221,6 +225,7 @@ export default function WorkflowsPage({ pollInterval = 30_000 }: { pollInterval?
   const [editWf, setEditWf]       = useState<WorkflowResponse | null>(null)
   const [statusFilter, setStatusFilter] = useState<WfStatus | ''>('')
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
+  const isAdmin = useRole('admin')
 
   const filtered = statusFilter ? workflows.filter(w => w.status === statusFilter) : workflows
   const counts = { active: 0, paused: 0, retired: 0 }
@@ -268,7 +273,7 @@ export default function WorkflowsPage({ pollInterval = 30_000 }: { pollInterval?
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {lastUpdated && <span style={{ fontSize: 11, color: T.muted }}>{fmtUpdated(lastUpdated)}</span>}
           <button onClick={refresh} style={{ background: T.elevated, border: `1px solid ${T.border}`, color: T.muted, fontSize: 11, cursor: 'pointer', borderRadius: 4, padding: '3px 8px' }}>↻</button>
-          <Btn onClick={() => { setEditWf(null); setShowForm(true) }}>+ Register Workflow</Btn>
+          {isAdmin && <Btn onClick={() => { setEditWf(null); setShowForm(true) }}>+ Register Workflow</Btn>}
         </div>
       </div>
 
