@@ -37,14 +37,30 @@ cat << 'METATSV' > metadata.tsv
 {{ metadata_tsv_content }}
 METATSV
 
-$NEXTFLOW run {{ workflow_repository }} \
-  -name {{ run_name }} \
-  -revision {{ workflow_revision }} \
-  -profile anvil \
-  -c nextflow_anvil_override.config \
-  --metadata_tsv metadata.tsv \
-  --run_name {{ run_name }} \
-  -with-weblog {{ weblog_url }}
+# Make nf_client importable on this compute node so run_wrapper can run.
+# Set submission.defaults.client_env_setup in the client config to whatever
+# activates the daemon's environment here (e.g. "source /anvil/.../venv/bin/activate"
+# or a module load). Without it, `python -m nf_client.run_wrapper` will not be
+# found and the run will fail before nextflow starts.
+{{ client_env_setup | default('') }}
+
+# Wrap nextflow in run_wrapper: it emits run-lifecycle telemetry
+# (wrapper_started / heartbeat / wrapper_exited) and uploads .nextflow.log to
+# the server on exit, so driver-level deaths are visible server-side instead of
+# only in a log file on this node. Telemetry failures are swallowed; the wrapper
+# propagates nextflow's exit code.
+python -m nf_client.run_wrapper \
+  --run-name {{ run_name }} \
+  --telemetry-url {{ server_url }} \
+  -- \
+  $NEXTFLOW run {{ workflow_repository }} \
+    -name {{ run_name }} \
+    -revision {{ workflow_revision }} \
+    -profile anvil \
+    -c nextflow_anvil_override.config \
+    --metadata_tsv metadata.tsv \
+    --run_name {{ run_name }} \
+    -with-weblog {{ weblog_url }}
 
 NF_EXIT=$?
 echo "Nextflow exited with code $NF_EXIT"
