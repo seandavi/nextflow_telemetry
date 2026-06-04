@@ -10,7 +10,7 @@ import KPICard from '../components/KPICard'
 import SectionHeader from '../components/SectionHeader'
 import Panel from '../components/Panel'
 import PageWrap from '../components/PageWrap'
-import type { DispatchBatchResponse, ReconcileResult, RequeueResult, WorkflowResponse } from '../types'
+import type { DispatchBatchResponse, ReconcileResult, RequeueResult, RequeueDlqResult, WorkflowResponse } from '../types'
 
 function DispatchBatchPanel() {
   const [wfId,      setWfId]      = useState('')
@@ -203,12 +203,49 @@ function ReconcilePanel() {
   )
 }
 
-type Tab = 'dispatch' | 'submitted' | 'requeue' | 'reconcile'
+function RequeueDlqPanel() {
+  const [result,  setResult]  = useState<RequeueDlqResult | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  function run() {
+    setLoading(true)
+    api.admin.requeueDeadLetter()
+      .then(r => { setResult(r); setLoading(false) })
+      .catch(e => { console.error(e); setLoading(false) })
+  }
+
+  return (
+    <Panel>
+      <SectionHeader title="POST /admin/requeue-dead-letter"
+        sub="Move every unresolved dead-letter job back to pending — use after fixing an infra-level cause" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 520 }}>
+        <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
+          Resets all unresolved <Badge label="dead_letter" variant="error" /> jobs to{' '}
+          <Badge label="pending" variant="neutral" /> (clears{' '}
+          <code style={{ fontFamily: 'DM Mono, monospace', color: T.accent }}>retry_count</code>,{' '}
+          <code style={{ fontFamily: 'DM Mono, monospace', color: T.accent }}>run_name</code>, failure fields)
+          and marks the dead-letter rows resolved. All-or-nothing — there is no per-job filter.
+          Fix the root cause first, or the jobs just re-fail and re-dead-letter.
+        </div>
+        <div><Btn onClick={run} disabled={loading}>{loading ? 'Requeuing…' : 'Requeue Dead-Letter'}</Btn></div>
+        {result && (
+          <div style={{ display: 'flex', gap: 12 }}>
+            <KPICard label="Jobs requeued" value={result.requeued.toLocaleString()}
+              sub="dead_letter → pending" accent={T.green} />
+          </div>
+        )}
+      </div>
+    </Panel>
+  )
+}
+
+type Tab = 'dispatch' | 'submitted' | 'requeue' | 'reconcile' | 'requeue-dlq'
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'dispatch',  label: 'Dispatch Batch'    },
-  { id: 'submitted', label: 'Confirm Submitted' },
-  { id: 'requeue',   label: 'Requeue Expired'   },
-  { id: 'reconcile', label: 'Reconcile Jobs'    },
+  { id: 'dispatch',    label: 'Dispatch Batch'      },
+  { id: 'submitted',   label: 'Confirm Submitted'   },
+  { id: 'requeue',     label: 'Requeue Expired'     },
+  { id: 'requeue-dlq', label: 'Requeue Dead-Letter' },
+  { id: 'reconcile',   label: 'Reconcile Jobs'      },
 ]
 
 export default function DispatchPage() {
@@ -272,8 +309,9 @@ export default function DispatchPage() {
       </div>
       {tab === 'dispatch'  && <DispatchBatchPanel />}
       {tab === 'submitted' && <SubmittedPanel />}
-      {tab === 'requeue'   && <RequeuePanel />}
-      {tab === 'reconcile' && <ReconcilePanel />}
+      {tab === 'requeue'     && <RequeuePanel />}
+      {tab === 'requeue-dlq' && <RequeueDlqPanel />}
+      {tab === 'reconcile'   && <ReconcilePanel />}
     </PageWrap>
   )
 }
