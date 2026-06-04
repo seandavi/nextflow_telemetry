@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { LayoutDashboard, BarChart2, GitBranch, FlaskConical, SendHorizonal, Server, Users, LogIn, LogOut, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, BarChart2, GitBranch, FlaskConical, SendHorizonal, Server, Users, Activity, LogIn, LogOut, type LucideIcon } from 'lucide-react'
 import { T } from './tokens'
 import { MOCK_HEALTH } from './lib/mock-data'
 import { AuthProvider, useAuth } from './lib/auth'
@@ -9,9 +9,10 @@ import WorkflowsPage from './pages/WorkflowsPage'
 import SamplesPage from './pages/SamplesPage'
 import CohortsPage from './pages/CohortsPage'
 import DispatchPage from './pages/DispatchPage'
+import RunsPage from './pages/RunsPage'
 import InfraPage from './pages/InfraPage'
 
-type NavId = 'overview' | 'metrics' | 'workflows' | 'samples' | 'cohorts' | 'dispatch' | 'infra'
+type NavId = 'overview' | 'metrics' | 'workflows' | 'samples' | 'cohorts' | 'dispatch' | 'runs' | 'infra'
 
 const NAV: Array<{ id: NavId; label: string; icon: LucideIcon; sub: string }> = [
   { id: 'overview',  label: 'Overview',        icon: LayoutDashboard, sub: 'Pipeline health'      },
@@ -20,6 +21,7 @@ const NAV: Array<{ id: NavId; label: string; icon: LucideIcon; sub: string }> = 
   { id: 'samples',   label: 'Samples',          icon: FlaskConical,    sub: 'Catalog'              },
   { id: 'cohorts',   label: 'Cohorts',          icon: Users,           sub: 'Collection summary'   },
   { id: 'dispatch',  label: 'Dispatch',         icon: SendHorizonal,   sub: '& Admin'              },
+  { id: 'runs',      label: 'Runs',             icon: Activity,        sub: 'Run health & deaths'  },
   { id: 'infra',     label: 'Infrastructure',   icon: Server,          sub: 'Daemon fleet'         },
 ]
 
@@ -193,6 +195,7 @@ export default function App() {
     samples:   <SamplesPage   pollInterval={pollInterval} />,
     cohorts:   <CohortsPage   pollInterval={pollInterval} />,
     dispatch:  <DispatchPage />,
+    runs:      <RunsPage      pollInterval={pollInterval} />,
     infra:     <InfraPage     pollInterval={pollInterval} />,
   }
 
