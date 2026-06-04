@@ -194,3 +194,20 @@ def test_daemon_survives_unreachable_api(tmp_path: Path):
         )
         # Must return cleanly after recovery, not raise.
         cli.daemon(config=cfg_file, batch_size=0, poll_interval=0.0, continuous=False)
+
+
+def test_run_wrapper_subcommand_propagates_exit_code():
+    """`nf-client run-wrapper -- <cmd>` execs the trailing command (single-dash
+    flags passed through) and returns its exit code; unreachable telemetry is
+    swallowed."""
+    from typer.testing import CliRunner
+    from nf_client.cli import app
+
+    runner = CliRunner()
+    U = "http://127.0.0.1:9/api"   # unreachable → telemetry no-op
+
+    ok = runner.invoke(app, ["run-wrapper", "--run-name", "t", "--telemetry-url", U, "--", "true"])
+    assert ok.exit_code == 0
+
+    fail = runner.invoke(app, ["run-wrapper", "--run-name", "t", "--telemetry-url", U, "--", "bash", "-c", "exit 3"])
+    assert fail.exit_code == 3

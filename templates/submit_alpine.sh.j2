@@ -36,11 +36,11 @@ cat << 'METATSV' > metadata.tsv
 {{ metadata_tsv_content }}
 METATSV
 
-# Make nf_client importable on this compute node so run_wrapper can run.
-# Set submission.defaults.client_env_setup in the client config to whatever
-# activates the daemon's environment here (e.g. "source /projects/.../venv/bin/activate"
-# or a module load). Without it, `python -m nf_client.run_wrapper` will not be
-# found and the run will fail before nextflow starts.
+# Put the nf-client executable on PATH for this job so `nf-client run-wrapper`
+# resolves. With `uv tool install`, nf-client lands in ~/.local/bin — set
+# submission.defaults.client_env_setup to e.g. "export PATH=$HOME/.local/bin:$PATH".
+# Without it the run_wrapper call below is not found and the run fails before
+# nextflow starts.
 {{ client_env_setup | default('') }}
 
 # Wrap nextflow in run_wrapper: it emits run-lifecycle telemetry
@@ -48,7 +48,7 @@ METATSV
 # the server on exit, so driver-level deaths are visible server-side instead of
 # only in a log file on this node. Telemetry failures are swallowed; the wrapper
 # propagates nextflow's exit code.
-python -m nf_client.run_wrapper \
+nf-client run-wrapper \
   --run-name {{ run_name }} \
   --telemetry-url {{ server_url }} \
   -- \
