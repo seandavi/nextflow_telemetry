@@ -16,6 +16,7 @@ import type {
   ReconcileResult,
   RequeueResult,
   RequeueDlqResult,
+  DispatchabilityResult,
   SampleResponse,
   SampleRegisterRequest,
   SubmittedRequest,
@@ -127,6 +128,7 @@ export const api = {
   admin: {
     reconcile: () => post<ReconcileResult>('/admin/reconcile-jobs'),
     requeueDeadLetter: () => post<RequeueDlqResult>('/admin/requeue-dead-letter'),
+    dispatchability: () => get<DispatchabilityResult>('/admin/dispatchability'),
   },
 
   daemons: {

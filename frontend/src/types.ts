@@ -293,6 +293,20 @@ export interface RunDetail extends RunListItem {
   wrapper_output_log_available: boolean
 }
 
+export interface StuckWorkflow {
+  workflow_id: string
+  workflow_pk: number
+  pending: number
+  reason: string
+}
+
+export interface DispatchabilityResult {
+  checked_at: string
+  active_daemons: number
+  stuck: StuckWorkflow[]
+  stuck_pending_total: number
+}
+
 export interface TaskLogEntry {
   id: number
   run_name: string

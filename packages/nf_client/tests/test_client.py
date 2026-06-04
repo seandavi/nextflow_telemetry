@@ -50,7 +50,7 @@ def config() -> ClientConfig:
 
 def test_config_from_dict(config: ClientConfig):
     assert config.server_url == "http://test.local"
-    assert config.dispatch.workflow_id == "curatedMetagenomics"
+    assert config.dispatch.workflow_id == ["curatedMetagenomics"]  # coerced str → list
     assert config.dispatch.batch_size == 50
 
 
@@ -162,3 +162,35 @@ def test_render_submission_script_raises_on_missing_var(tmp_path: Path):
     template.write_text("{{ missing_var }}")
     with pytest.raises(UndefinedError):
         render_submission_script(template, {})
+
+
+# ---------------------------------------------------------------------------
+# Daemon resilience: an unreachable API must not crash the loop
+# ---------------------------------------------------------------------------
+
+def test_daemon_survives_unreachable_api(tmp_path: Path):
+    """A failed batch fetch (server restart / network blip) must be caught and
+    retried on the next poll, not propagate and kill the daemon."""
+    from nf_client import cli
+
+    cfg_file = tmp_path / "client.yaml"
+    cfg_file.write_text(textwrap.dedent("""\
+        server_url: http://test.local
+        weblog_url: http://test.local/telemetry
+        continuous: false
+        dispatch:
+          batch_size: 2
+          workflow_id: wf
+        submission:
+          mode: local
+    """))
+
+    with respx.mock(assert_all_called=False) as mock:
+        # Heartbeat unreachable — must be swallowed.
+        mock.put("http://test.local/daemons/heartbeat").mock(side_effect=httpx.ConnectError("down"))
+        # First fetch errors (API down), second returns 204 (no pending work).
+        mock.post("http://test.local/dispatch/batch").mock(
+            side_effect=[httpx.ConnectError("down"), httpx.Response(204)]
+        )
+        # Must return cleanly after recovery, not raise.
+        cli.daemon(config=cfg_file, batch_size=0, poll_interval=0.0, continuous=False)

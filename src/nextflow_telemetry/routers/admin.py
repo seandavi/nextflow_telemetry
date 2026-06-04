@@ -7,8 +7,12 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import dead_letter_tbl, jobs_tbl, samples_tbl, workflow_runs_tbl, workflows_tbl
+from ..db import daemon_agents_tbl, dead_letter_tbl, jobs_tbl, samples_tbl, workflow_runs_tbl, workflows_tbl
 from ..services.reconcile import ReconcileService, sweep_run_incomplete
+
+# Keep in sync with routers/daemons.ACTIVE_THRESHOLD — a daemon is "active" if
+# its last heartbeat is within this window.
+_DAEMON_ACTIVE_THRESHOLD = datetime.timedelta(minutes=2)
 
 
 def create_admin_router(engine: AsyncEngine) -> APIRouter:
@@ -179,6 +183,68 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
             )
 
         return {"requeued": len(job_ids)}
+
+    @router.get(
+        "/dispatchability",
+        summary="Find pending work that no active daemon will claim",
+        description=(
+            "Cross-checks pending jobs on `active` workflows against the set of currently "
+            "active daemons (heartbeat within the last 2 minutes) and their `workflow_id` "
+            "claim filters. Returns the workflows that have pending jobs but no active daemon "
+            "configured to claim them — i.e. work that will silently sit forever. This is the "
+            "fast answer to 'why isn't anything running?' when a daemon has died."
+        ),
+    )
+    async def dispatchability():
+        now = datetime.datetime.now(datetime.timezone.utc)
+        async with engine.begin() as conn:
+            pending_rows = (await conn.execute(
+                select(
+                    jobs_tbl.c.workflow_pk,
+                    jobs_tbl.c.workflow_id,
+                    func.count().label("pending"),
+                )
+                .select_from(jobs_tbl.join(workflows_tbl, jobs_tbl.c.workflow_pk == workflows_tbl.c.id))
+                .where(jobs_tbl.c.status == "pending", workflows_tbl.c.status == "active")
+                .group_by(jobs_tbl.c.workflow_pk, jobs_tbl.c.workflow_id)
+            )).all()
+
+            daemon_rows = (await conn.execute(
+                select(daemon_agents_tbl.c.workflow_id, daemon_agents_tbl.c.last_seen_at)
+            )).all()
+
+        # An active daemon claims a workflow if its filter is empty (claims any)
+        # or the workflow_id is in its comma-separated filter list.
+        active_filters: list[set[str] | None] = []
+        for d in daemon_rows:
+            last_seen = d.last_seen_at
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=datetime.timezone.utc)
+            if (now - last_seen) >= _DAEMON_ACTIVE_THRESHOLD:
+                continue
+            wf = (d.workflow_id or "").strip()
+            active_filters.append({x.strip() for x in wf.split(",") if x.strip()} if wf else None)
+
+        def claimed_by_active(workflow_id: str) -> bool:
+            return any(f is None or workflow_id in f for f in active_filters)
+
+        stuck = [
+            {
+                "workflow_id": r.workflow_id,
+                "workflow_pk": r.workflow_pk,
+                "pending": r.pending,
+                "reason": "no active daemon claims this workflow",
+            }
+            for r in pending_rows
+            if not claimed_by_active(r.workflow_id)
+        ]
+
+        return {
+            "checked_at": now,
+            "active_daemons": len(active_filters),
+            "stuck": stuck,
+            "stuck_pending_total": sum(s["pending"] for s in stuck),
+        }
 
     @router.get(
         "/stats",

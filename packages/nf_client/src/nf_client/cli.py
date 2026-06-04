@@ -224,6 +224,13 @@ def daemon(
     hostname = socket.gethostname()
     agent_id = hostname
 
+    def _safe_heartbeat(cfg: ClientConfig, active: int, status: str) -> None:
+        """Heartbeat is observability only — never let it crash or stall the loop."""
+        try:
+            asyncio.run(_heartbeat(cfg, agent_id, active, status))
+        except Exception as e:
+            typer.echo(f"  WARN: heartbeat failed (API unreachable?): {e}", err=True)
+
     typer.echo(
         f"Daemon started — mode={cfg.submission.mode} batch_size={batch_size if batch_size > 0 else cfg.dispatch.batch_size}"
         + (f" max_concurrent_runs={cfg.submission.max_concurrent_runs}" if cfg.submission.max_concurrent_runs else "")
@@ -248,15 +255,22 @@ def daemon(
             active = _count_active_slurm_jobs()
             if active >= max_concurrent:
                 typer.echo(f"  {active} SLURM jobs active (limit {max_concurrent}) — waiting {poll_interval}s")
-                asyncio.run(_heartbeat(cfg, agent_id, active, "running"))
+                _safe_heartbeat(cfg, active, "running")
                 time.sleep(poll_interval)
                 continue
         else:
             active = 0
 
-        asyncio.run(_heartbeat(cfg, agent_id, active, "running" if active > 0 else "idle"))
+        _safe_heartbeat(cfg, active, "running" if active > 0 else "idle")
 
-        batch = asyncio.run(_fetch(cfg, effective_batch_size))
+        # The API being unreachable (server restart, network blip) must not kill
+        # the daemon — warn, back off, and retry on the next poll.
+        try:
+            batch = asyncio.run(_fetch(cfg, effective_batch_size))
+        except Exception as e:
+            typer.echo(f"  WARN: failed to reach API for next batch, retrying in {poll_interval}s: {e}", err=True)
+            time.sleep(poll_interval)
+            continue
 
         if batch is None:
             if run_continuous:
