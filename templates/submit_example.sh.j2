@@ -11,13 +11,14 @@ set -euo pipefail
 echo "Starting Nextflow run {{ run_name }} at $(date -u)"
 echo "Samples: {{ sample_ids }}"
 
-# nf_client.run_wrapper instruments the nextflow run with run-lifecycle
+# `nf-client run-wrapper` instruments the nextflow run with run-lifecycle
 # events (wrapper_started, pre_nextflow, heartbeat, wrapper_exited) and
 # uploads .nextflow.log on exit. Telemetry failures are swallowed inside
 # the wrapper — they never fail the run. The wrapper exits with
 # nextflow's exit code, which we propagate below.
+# Requires nf-client on PATH (e.g. `uv tool install` → ~/.local/bin).
 set +e
-python -m nf_client.run_wrapper \
+nf-client run-wrapper \
   --run-name {{ run_name }} \
   --telemetry-url {{ server_url }} \
   -- \

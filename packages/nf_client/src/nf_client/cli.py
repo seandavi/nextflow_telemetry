@@ -483,3 +483,36 @@ def upload_logs(
 
     asyncio.run(_upload_all())
     typer.echo(f"Done — uploaded: {uploaded}, skipped (too large): {skipped}, errors: {errors}")
+
+
+@app.command(
+    name="run-wrapper",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+    help=(
+        "Wrap a `nextflow run` command with run-lifecycle telemetry "
+        "(wrapper_started / heartbeat / wrapper_exited, and .nextflow.log upload). "
+        "Put the nextflow command after `--`, e.g.:\n\n"
+        "  nf-client run-wrapper --run-name R --telemetry-url URL -- nextflow run repo ..."
+    ),
+)
+def run_wrapper_cmd(
+    ctx: typer.Context,
+    run_name: str = typer.Option(..., "--run-name", help="Nextflow run name (-name)."),
+    telemetry_url: str = typer.Option(..., "--telemetry-url", help="Telemetry API base URL (same as ClientConfig.server_url)."),
+    heartbeat_seconds: float | None = typer.Option(None, "--heartbeat-seconds", help="Heartbeat interval in seconds; 0 disables. Omit for the default."),
+    nextflow_log: Path | None = typer.Option(None, "--nextflow-log", help="Path to .nextflow.log to upload on exit (default: cwd/.nextflow.log)."),
+) -> None:
+    """Thin front-end that delegates to run_wrapper.main, so the exec / signal-
+    forwarding / stream-capture machinery lives in exactly one place."""
+    from . import run_wrapper as _rw
+
+    argv: list[str] = ["--run-name", run_name, "--telemetry-url", telemetry_url]
+    if heartbeat_seconds is not None:
+        argv += ["--heartbeat-seconds", str(heartbeat_seconds)]
+    if nextflow_log is not None:
+        argv += ["--nextflow-log", str(nextflow_log)]
+    # Everything after the typer options (the nextflow command) lands in
+    # ctx.args. Re-insert `--` so argparse treats single-dash nextflow flags
+    # (-revision, -name, -profile, ...) as the positional command, not options.
+    argv += ["--", *ctx.args]
+    raise typer.Exit(_rw.main(argv))
