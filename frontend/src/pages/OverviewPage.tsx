@@ -10,7 +10,32 @@ import MiniBar from '../components/MiniBar'
 import DonutChart from '../components/DonutChart'
 import Panel from '../components/Panel'
 import PageWrap from '../components/PageWrap'
-import type { ProcessSummaryResponse, RunningProcessesResponse, RunningProcessRow, TopFailureRow, TopRetryRow, TopFailureExitCodeRow } from '../types'
+import type { ProcessSummaryResponse, RunningProcessesResponse, RunningProcessRow, TopFailureRow, TopRetryRow, TopFailureExitCodeRow, DispatchabilityResult } from '../types'
+
+function StuckWorkBanner({ data }: { data: DispatchabilityResult }) {
+  if (!data.stuck.length) return null
+  return (
+    <div style={{
+      background: 'rgba(245,101,101,0.12)', border: `1px solid ${T.red}`,
+      borderRadius: 8, padding: '12px 16px', marginBottom: 16,
+    }}>
+      <div style={{ color: T.red, fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+        ⚠ {fmtNum(data.stuck_pending_total)} pending job{data.stuck_pending_total === 1 ? '' : 's'} with no active daemon to claim them
+      </div>
+      <div style={{ color: T.text, fontSize: 13, lineHeight: 1.6 }}>
+        {data.active_daemons} active daemon{data.active_daemons === 1 ? '' : 's'} heartbeating.
+        These active workflows have pending work that nothing will pick up — usually a stopped daemon
+        or a daemon whose <code style={{ fontFamily: 'DM Mono, monospace', color: T.accent }}>workflow_id</code> filter
+        doesn't match:
+      </div>
+      <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: T.muted, fontSize: 12.5, fontFamily: 'DM Mono, monospace' }}>
+        {data.stuck.map(s => (
+          <li key={s.workflow_pk}>{s.workflow_id} — {fmtNum(s.pending)} pending</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
 function ExitCodeChart({ rows }: { rows: TopFailureExitCodeRow[] }) {
   const exitLabels: Record<string, string> = {
@@ -75,11 +100,13 @@ function RunningPanel({ data }: { data: RunningProcessesResponse }) {
 export default function OverviewPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
   const [summary, setSummary]   = useState<ProcessSummaryResponse | null>(null)
   const [running, setRunning]   = useState<RunningProcessesResponse | null>(null)
+  const [dispatchability, setDispatchability] = useState<DispatchabilityResult | null>(null)
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
   useEffect(() => {
     api.metrics.summary({ windowDays: 30 }).then(setSummary).catch(console.error)
     api.metrics.running().then(setRunning).catch(console.error)
+    api.admin.dispatchability().then(setDispatchability).catch(console.error)
   }, [tick])
 
   if (!summary || !running) {
@@ -100,6 +127,7 @@ export default function OverviewPage({ pollInterval = 30_000 }: { pollInterval?:
 
   return (
     <PageWrap>
+      {dispatchability && <StuckWorkBanner data={dispatchability} />}
       <div>
         <SectionHeader title="Process Execution"
           sub={`Last ${summary.window_days ?? 30} days · ${fmtNum(c.process_completed_rows)} task completions`}
