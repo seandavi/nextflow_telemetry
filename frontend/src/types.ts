@@ -255,6 +255,10 @@ export interface RequeueResult {
   requeued_runs: number
 }
 
+export interface RequeueDlqResult {
+  requeued: number
+}
+
 export interface TaskLogEntry {
   id: number
   run_name: string
