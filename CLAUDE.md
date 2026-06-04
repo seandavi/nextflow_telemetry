@@ -75,7 +75,7 @@ pending → claimed → submitted → running → completed
 
 ### nf-client
 
-Config via YAML (`ClientConfig`). Profile (e.g. `anvil`, `alpine`) lives in the client config — the same workflow runs on different HPC systems. Submission modes: `local`, `slurm`, `pbs`, `lsf`. SLURM template rendered via Jinja2 from `templates/`.
+Config via YAML (`ClientConfig`). Profile (e.g. `anvil`, `alpine`) lives in the client config — the same workflow runs on different HPC systems. Submission modes: `local`, `slurm`, `pbs`, `lsf`. The submit script is rendered via Jinja2 from the path in `submission.template_path`. **All submit templates live in the repo's top-level `templates/` directory** (`submit_alpine.sh.j2`, `submit_anvil.sh.j2`, and `submit_example.sh.j2` — the `run_wrapper` reference). There is no separate template folder inside `packages/nf_client/`.
 
 ### Tests
 
