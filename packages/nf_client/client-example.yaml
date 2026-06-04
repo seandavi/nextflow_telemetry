@@ -63,3 +63,8 @@ submission:
     nxf_home: "/scratch/myuser/nxf_home"
     nextflow_bin: "nextflow"                          # or absolute path if not on PATH
     google_credentials: "/home/myuser/gcp-key.json"  # omit if not using GCS
+    # Shell snippet run inside the submit job to make nf_client importable on
+    # the compute node, so run_wrapper can emit lifecycle telemetry and upload
+    # .nextflow.log. Point it at the daemon's environment. Required for the
+    # run_wrapper-based templates (submit_alpine / submit_anvil / submit_example).
+    client_env_setup: "source /scratch/myuser/nf_client/venv/bin/activate"
