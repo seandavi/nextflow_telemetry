@@ -35,6 +35,9 @@ submission:
   mode: slurm
 
   # Path to the Jinja2 submit script template (absolute path recommended).
+  # All submit templates live in the repo's top-level templates/ directory.
+  # Copy templates/submit_example.sh.j2 (the run_wrapper reference) or an
+  # existing cluster template (submit_alpine / submit_anvil) as a starting point.
   template_path: "/path/to/nextflow_telemetry/templates/submit_mycluster.sh.j2"
 
   # Maximum number of wrapper SLURM jobs (one per batch) allowed to run
