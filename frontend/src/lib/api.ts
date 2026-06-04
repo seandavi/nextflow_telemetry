@@ -20,6 +20,8 @@ import type {
   SampleRegisterRequest,
   SubmittedRequest,
   DaemonAgentResponse,
+  RunsListResponse,
+  RunDetail,
   CohortListItem,
   CohortSummaryResponse,
   CohortFailuresResponse,
@@ -130,6 +132,18 @@ export const api = {
   daemons: {
     list: (activeOnly = false) =>
       get<DaemonAgentResponse[]>(`/daemons/${activeOnly ? '?active_only=true' : ''}`),
+  },
+
+  runs: {
+    list: (opts: { status?: string; workflowId?: string; limit?: number } = {}) => {
+      const p = new URLSearchParams()
+      if (opts.status) p.set('status', opts.status)
+      if (opts.workflowId) p.set('workflow_id', opts.workflowId)
+      if (opts.limit) p.set('limit', String(opts.limit))
+      const qs = p.toString()
+      return get<RunsListResponse>(`/runs/${qs ? `?${qs}` : ''}`)
+    },
+    get: (runName: string) => get<RunDetail>(`/runs/${encodeURIComponent(runName)}`),
   },
 
   cohorts: {

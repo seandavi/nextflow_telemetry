@@ -21,9 +21,11 @@ import json
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, Path, UploadFile
+from datetime import timedelta
+
+from fastapi import APIRouter, File, Form, HTTPException, Path, Query, UploadFile
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import insert, select, text, update
+from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ..models import (
@@ -38,7 +40,51 @@ from ..models import (
     WrapperLogEvent,
     WrapperStartedEvent,
 )
-from ..db import telemetry_tbl, workflow_runs_tbl
+from ..db import task_logs_tbl, telemetry_tbl, workflow_runs_tbl
+
+
+# A non-terminal run with no heartbeat for longer than this is "stalled" —
+# the wrapper is gone but nothing closed the run. Heartbeats arrive far more
+# often than this in normal operation.
+_RUN_STALE_THRESHOLD = timedelta(minutes=15)
+
+
+def _classify_run(row: dict, now: datetime) -> str:
+    """Derive a human-meaningful run state from the workflow_runs columns.
+
+    Beyond raw status, this surfaces the two failure shapes that were painful
+    to diagnose by hand:
+      - 'wrapper-failed' : the driver exited non-zero (wrapper_exit_code).
+      - 'ended-no-log'   : the run reached a terminal state but the wrapper
+                           never uploaded its .nextflow.log — the signature of
+                           a driver/allocation that was hard-killed (OOM,
+                           scancel, node failure) before its exit handler ran.
+      - 'stalled'        : non-terminal but no recent heartbeat.
+    """
+    status = row.get("status")
+    wec = row.get("wrapper_exit_code")
+    log_at = row.get("nextflow_log_uploaded_at")
+
+    # A non-zero wrapper exit is authoritative regardless of the status column,
+    # which can lag (or never advance) when the driver dies.
+    if wec is not None and wec != 0:
+        return "wrapper-failed"
+
+    if status in ("claimed", "submitted", "running"):
+        hb = row.get("last_heartbeat_at") or row.get("submitted_at") or row.get("claimed_at")
+        if hb is not None:
+            if hb.tzinfo is None:
+                hb = hb.replace(tzinfo=timezone.utc)
+            if (now - hb) > _RUN_STALE_THRESHOLD:
+                return "stalled"
+        return "active"
+
+    # Terminal-ish: completed / failed / expired / anything else.
+    if log_at is None:
+        return "ended-no-log"
+    if status == "completed":
+        return "completed"
+    return status or "unknown"
 
 
 _MAX_NEXTFLOW_LOG_BYTES = 16 * 1024 * 1024  # 16 MB
@@ -263,6 +309,89 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
             nextflow_log_uploaded=log_uploaded,
             wrapper_output_log_uploaded=wrapper_output_log_uploaded,
         )
+
+    @router.get(
+        "/",
+        summary="List workflow runs with a derived state classification",
+        description=(
+            "Returns workflow_runs newest-first, each annotated with a `classification` "
+            "(active / stalled / completed / failed / expired / wrapper-failed / ended-no-log) "
+            "derived from status, wrapper_exit_code, heartbeat age, and whether the .nextflow.log "
+            "was uploaded. `ended-no-log` and `wrapper-failed` flag runs whose driver died — the "
+            "cases that otherwise require sacct to diagnose."
+        ),
+    )
+    async def list_runs(
+        status: str | None = Query(default=None, description="Filter by raw run status."),
+        workflow_id: str | None = Query(default=None, description="Filter by workflow_id."),
+        limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ):
+        now = datetime.now(timezone.utc)
+        stmt = select(workflow_runs_tbl).order_by(workflow_runs_tbl.c.claimed_at.desc().nullslast())
+        if status:
+            stmt = stmt.where(workflow_runs_tbl.c.status == status)
+        if workflow_id:
+            stmt = stmt.where(workflow_runs_tbl.c.workflow_id == workflow_id)
+        count_stmt = select(func.count()).select_from(workflow_runs_tbl)
+        if status:
+            count_stmt = count_stmt.where(workflow_runs_tbl.c.status == status)
+        if workflow_id:
+            count_stmt = count_stmt.where(workflow_runs_tbl.c.workflow_id == workflow_id)
+
+        async with engine.connect() as conn:
+            rows = (await conn.execute(stmt.limit(limit).offset(offset))).mappings().all()
+            total = (await conn.execute(count_stmt)).scalar_one()
+
+        runs = []
+        for r in rows:
+            d = dict(r)
+            d["classification"] = _classify_run(d, now)
+            runs.append(d)
+        return {"total": total, "limit": limit, "offset": offset, "runs": runs}
+
+    @router.get(
+        "/{run_name}",
+        summary="Run detail: lifecycle fields, task-status counts, log availability",
+        description=(
+            "Full workflow_runs row plus the derived `classification`, a breakdown of "
+            "process task statuses for the run (COMPLETED/FAILED/ABORTED — an all-ABORTED, "
+            "zero-FAILED run points at a driver death, not a pipeline bug), and whether the "
+            "nextflow_log / wrapper_output_log attachments are available to view."
+        ),
+    )
+    async def get_run(run_name: Annotated[str, Path(description="Nextflow run name.")]):
+        now = datetime.now(timezone.utc)
+        async with engine.connect() as conn:
+            row = (await conn.execute(
+                select(workflow_runs_tbl).where(workflow_runs_tbl.c.run_name == run_name)
+            )).mappings().first()
+            if not row:
+                raise HTTPException(status_code=404, detail=f"No workflow run with name '{run_name}'")
+
+            status_expr = telemetry_tbl.c.trace["status"].astext
+            task_counts = (await conn.execute(
+                select(status_expr.label("task_status"), func.count())
+                .where(
+                    telemetry_tbl.c.run_name == run_name,
+                    telemetry_tbl.c.event == "process_completed",
+                )
+                .group_by(status_expr)
+            )).all()
+
+            log_types = (await conn.execute(
+                select(task_logs_tbl.c.log_type).where(
+                    task_logs_tbl.c.run_name == run_name,
+                    task_logs_tbl.c.log_type.in_([_NEXTFLOW_LOG_TYPE, _WRAPPER_LOG_TYPE]),
+                )
+            )).scalars().all()
+
+        d = dict(row)
+        d["classification"] = _classify_run(d, now)
+        d["task_status_counts"] = {(s or "unknown"): n for s, n in task_counts}
+        d["nextflow_log_available"] = _NEXTFLOW_LOG_TYPE in log_types
+        d["wrapper_output_log_available"] = _WRAPPER_LOG_TYPE in log_types
+        return d
 
     return router
 

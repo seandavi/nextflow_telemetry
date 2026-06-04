@@ -259,6 +259,40 @@ export interface RequeueDlqResult {
   requeued: number
 }
 
+export interface RunListItem {
+  run_name: string
+  workflow_id: string
+  workflow_version: string
+  status: string
+  classification: string
+  claimed_at: string | null
+  submitted_at: string | null
+  started_at: string | null
+  completed_at: string | null
+  wrapper_exit_code: number | null
+  last_known_slurm_state: string | null
+  slurm_reason: string | null
+}
+
+export interface RunsListResponse {
+  total: number
+  limit: number
+  offset: number
+  runs: RunListItem[]
+}
+
+export interface RunDetail extends RunListItem {
+  run_id: string | null
+  revision: string | null
+  executor_job_id: string | null
+  last_heartbeat_at: string | null
+  nextflow_log_uploaded_at: string | null
+  wait_seconds: number | null
+  task_status_counts: Record<string, number>
+  nextflow_log_available: boolean
+  wrapper_output_log_available: boolean
+}
+
 export interface TaskLogEntry {
   id: number
   run_name: string

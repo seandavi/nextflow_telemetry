@@ -194,6 +194,57 @@ def test_slurm_state_records_state_and_reason(integration_client, db_url):
     assert rows[0]["slurm_reason"] == "WallTimeLimit"
 
 
+# ---------------------------------------------------------------------------
+# GET /runs/ list + /runs/{run_name} detail with classification
+# ---------------------------------------------------------------------------
+
+def test_list_runs_includes_classification(integration_client, db_url):
+    client, _ = integration_client
+    run_name = _make_run_name()
+    _seed_run(db_url, run_name, status="claimed")
+
+    resp = client.get("/api/runs/")
+    assert resp.status_code == 200
+    body = resp.json()
+    mine = next((r for r in body["runs"] if r["run_name"] == run_name), None)
+    assert mine is not None
+    # Just claimed, no heartbeat staleness → active.
+    assert mine["classification"] == "active"
+
+
+def test_get_run_classifies_wrapper_failed(integration_client, db_url):
+    client, _ = integration_client
+    run_name = _make_run_name()
+    _seed_run(db_url, run_name, status="running")
+
+    _post_event(client, run_name, {"type": "wrapper_exited", "utc_time": _ts(), "exit_code": 1})
+
+    resp = client.get(f"/api/runs/{run_name}")
+    assert resp.status_code == 200
+    body = resp.json()
+    # Non-zero wrapper exit is authoritative even though status never went terminal.
+    assert body["classification"] == "wrapper-failed"
+    assert body["wrapper_exit_code"] == 1
+    assert isinstance(body["task_status_counts"], dict)
+    assert body["nextflow_log_available"] is False
+
+
+def test_get_run_classifies_ended_no_log(integration_client, db_url):
+    client, _ = integration_client
+    run_name = _make_run_name()
+    # Terminal status but the wrapper never uploaded a .nextflow.log → driver
+    # hard-killed before its exit handler ran.
+    _seed_run(db_url, run_name, status="completed")
+
+    body = client.get(f"/api/runs/{run_name}").json()
+    assert body["classification"] == "ended-no-log"
+
+
+def test_get_run_404_for_unknown(integration_client):
+    client, _ = integration_client
+    assert client.get("/api/runs/does-not-exist").status_code == 404
+
+
 def test_wrapper_exited_records_exit_code(integration_client, db_url):
     from nextflow_telemetry.db import workflow_runs_tbl
 
