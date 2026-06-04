@@ -447,7 +447,7 @@ function fmtDuration(ms: number | null): string {
 
 function TaskLogViewer({ runName, taskHash }: { runName: string; taskHash: string }) {
   const [logs, setLogs] = useState<TaskLogsResponse | null>(null)
-  const [activeLog, setActiveLog] = useState<'command_sh' | 'command_err'>('command_err')
+  const [activeLog, setActiveLog] = useState<'command_sh' | 'command_out' | 'command_err'>('command_err')
 
   useEffect(() => {
     api.metrics.taskLogs(runName, taskHash).then(setLogs).catch(console.error)
@@ -468,7 +468,7 @@ function TaskLogViewer({ runName, taskHash }: { runName: string; taskHash: strin
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 4 }}>
-        {(['command_err', 'command_sh'] as const).map(lt => (
+        {(['command_err', 'command_out', 'command_sh'] as const).map(lt => (
           logTypes.includes(lt) && (
             <button key={lt} onClick={() => setActiveLog(lt)} style={{
               background: activeLog === lt ? T.accentDim : T.elevated,
@@ -476,7 +476,7 @@ function TaskLogViewer({ runName, taskHash }: { runName: string; taskHash: strin
               color: activeLog === lt ? T.accent : T.muted,
               borderRadius: 4, padding: '2px 10px', fontSize: 11,
               fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Mono, monospace',
-            }}>{lt === 'command_err' ? '.command.err' : '.command.sh'}</button>
+            }}>{lt === 'command_err' ? '.command.err' : lt === 'command_out' ? '.command.out' : '.command.sh'}</button>
           )
         ))}
       </div>
