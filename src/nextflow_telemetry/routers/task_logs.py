@@ -1,4 +1,4 @@
-"""Task log upload and retrieval — .command.sh and .command.err from Nextflow work dirs."""
+"""Task log upload and retrieval — .command.sh, .command.out and .command.err from Nextflow work dirs."""
 from __future__ import annotations
 
 import datetime
@@ -11,8 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from .. import models
 from ..db import task_logs_tbl
 
-_MAX_CONTENT_BYTES = 1 * 1024 * 1024  # 1 MB per log file
-_VALID_LOG_TYPES = {"command_sh", "command_err"}
+# Matches the client's default --max-size-kb (5 MB) so the two gates agree.
+# Anything bigger is almost certainly a kraken2 .command.out streaming per-read
+# classifications to stdout — that's data, not a log, so we drop it.
+_MAX_CONTENT_BYTES = 5 * 1024 * 1024  # 5 MB per log file
+_VALID_LOG_TYPES = {"command_sh", "command_out", "command_err"}
 
 
 def create_task_logs_router(engine: AsyncEngine) -> APIRouter:
@@ -24,7 +27,7 @@ def create_task_logs_router(engine: AsyncEngine) -> APIRouter:
         status_code=201,
         summary="Upload a task log file",
         description=(
-            "Upload the content of a .command.sh or .command.err file for a specific "
+            "Upload the content of a .command.sh, .command.out or .command.err file for a specific "
             "Nextflow task via multipart form data. Identified by (run_name, task_hash, log_type). "
             "Idempotent: re-uploading the same (run_name, task_hash, log_type) "
             "replaces the previous content."
@@ -80,7 +83,7 @@ def create_task_logs_router(engine: AsyncEngine) -> APIRouter:
         response_model=models.TaskLogsResponse,
         summary="Retrieve task logs",
         description=(
-            "Returns all uploaded log files (command_sh and command_err) for a specific "
+            "Returns all uploaded log files (command_sh, command_out and command_err) for a specific "
             "task, identified by run_name and the Nextflow work dir hash (e.g. 'ab/1234ef')."
         ),
     )

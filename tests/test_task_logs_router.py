@@ -65,6 +65,16 @@ def test_upload_task_log_returns_201():
     assert body["task_hash"] == "ab/1234ef"
 
 
+def test_upload_command_out_is_accepted():
+    row = {**_FAKE_ROW, "log_type": "command_out", "content": "kraken2 report on stdout"}
+    client = _client_with_mock_row(row)
+    r = client.post("/task-logs", **_multipart(
+        "happy-goldfish", "ab/1234ef", "command_out", "kraken2 report on stdout",
+    ))
+    assert r.status_code == 201
+    assert r.json()["log_type"] == "command_out"
+
+
 def test_invalid_log_type_is_rejected():
     engine, _ = _make_mock_engine()
     app = FastAPI()
@@ -79,7 +89,7 @@ def test_content_too_large_is_rejected():
     app = FastAPI()
     app.include_router(create_task_logs_router(engine))
     client = TestClient(app)
-    r = client.post("/task-logs", **_multipart("x", "ab/cd", "command_sh", "x" * (1024 * 1024 + 1)))
+    r = client.post("/task-logs", **_multipart("x", "ab/cd", "command_sh", "x" * (5 * 1024 * 1024 + 1)))
     assert r.status_code == 413
 
 

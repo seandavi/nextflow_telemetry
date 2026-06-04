@@ -177,7 +177,7 @@ task_logs_tbl = Table(
     Column("id", Integer, primary_key=True),
     Column("run_name", String, nullable=False),
     Column("task_hash", String, nullable=False),   # e.g. "ab/1234ef5678..."
-    Column("log_type", String, nullable=False),    # "command_sh" or "command_err"
+    Column("log_type", String, nullable=False),    # "command_sh", "command_out" or "command_err"
     Column("content", Text, nullable=False),
     Column("uploaded_at", DateTime(timezone=True), nullable=False),
     UniqueConstraint("run_name", "task_hash", "log_type", name="uq_task_log"),

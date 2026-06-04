@@ -381,25 +381,29 @@ def upload_logs(
     config: Path = config_option,
     run_name: str = typer.Option(..., "--run-name", "-r", help="Nextflow run name (value passed to -name)."),
     work_dir: Path = typer.Option(..., "--work-dir", "-w", help="Nextflow work directory (contains task subdirs)."),
-    max_size_kb: int = typer.Option(512, "--max-size-kb", help="Skip files larger than this many KB (default 512)."),
+    max_size_kb: int = typer.Option(5120, "--max-size-kb", help="Skip files larger than this many KB (default 5120 = 5 MB, matching the server cap). Lower it to trim noisy kraken2 stdout."),
     dry_run: bool = dry_run_option,
 ) -> None:
-    """Walk a Nextflow work directory and upload .command.sh and .command.err for each task.
+    """Walk a Nextflow work directory and upload .command.sh, .command.out and .command.err for each task.
 
     The Nextflow work directory structure is:
 
         work/<2-char-prefix>/<rest-of-hash>/
             .command.sh
+            .command.out
             .command.err
 
-    This command reconstructs the task_hash as "<prefix>/<rest>" and uploads both
-    files to the server as log_type "command_sh" and "command_err" respectively.
+    This command reconstructs the task_hash as "<prefix>/<rest>" and uploads each
+    file to the server as log_type "command_sh", "command_out" and "command_err"
+    respectively. Processes that log to stdout (e.g. kraken2's report) land in
+    .command.out — without it those tasks appear to have no logs at all.
 
     Intended to be called after a Nextflow run completes, typically from the SLURM
     job script or a Nextflow afterScript hook. Idempotent — safe to re-run.
     """
     _LOG_FILES = {
         ".command.sh":  "command_sh",
+        ".command.out": "command_out",
         ".command.err": "command_err",
     }
     max_bytes = max_size_kb * 1024
