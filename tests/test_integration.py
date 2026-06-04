@@ -303,6 +303,55 @@ def test_reconcile_skips_paused_workflows(integration_client, db_url):
 
 
 # ---------------------------------------------------------------------------
+# Dispatchability (no-active-daemon detection)
+# ---------------------------------------------------------------------------
+
+def _heartbeat(client, *, agent_id: str, workflow_id: str | None) -> None:
+    client.put("/api/daemons/heartbeat", json={
+        "agent_id": agent_id,
+        "hostname": agent_id,
+        "workflow_id": workflow_id,   # None = claims any workflow
+        "mode": "slurm",
+        "batch_size": 10,
+        "status": "running",
+    })
+
+
+def test_dispatchability_flags_pending_with_no_active_daemon(integration_client):
+    client, _ = integration_client
+    _sample, wf_id, _pk = _seed_job(client, workflow_id=f"stuck-{uuid.uuid4().hex[:6]}")
+
+    resp = client.get("/api/admin/dispatchability")
+    assert resp.status_code == 200
+    stuck_ids = {s["workflow_id"] for s in resp.json()["stuck"]}
+    # No daemon heartbeated → our active workflow's pending jobs are unclaimed.
+    assert wf_id in stuck_ids
+
+
+def test_dispatchability_cleared_by_matching_daemon(integration_client):
+    client, _ = integration_client
+    _sample, wf_id, _pk = _seed_job(client, workflow_id=f"claimed-{uuid.uuid4().hex[:6]}")
+
+    # A daemon whose filter includes this workflow (plus an unrelated one).
+    _heartbeat(client, agent_id=f"agent-{uuid.uuid4().hex[:6]}",
+               workflow_id=f"{wf_id},some-other-wf")
+
+    stuck_ids = {s["workflow_id"] for s in client.get("/api/admin/dispatchability").json()["stuck"]}
+    assert wf_id not in stuck_ids
+
+
+def test_dispatchability_cleared_by_claim_any_daemon(integration_client):
+    client, _ = integration_client
+    _sample, wf_id, _pk = _seed_job(client, workflow_id=f"any-{uuid.uuid4().hex[:6]}")
+
+    # A daemon with no workflow filter claims any workflow.
+    _heartbeat(client, agent_id=f"agent-any-{uuid.uuid4().hex[:6]}", workflow_id=None)
+
+    stuck_ids = {s["workflow_id"] for s in client.get("/api/admin/dispatchability").json()["stuck"]}
+    assert wf_id not in stuck_ids
+
+
+# ---------------------------------------------------------------------------
 # Dispatch protocol (Phase 2)
 # ---------------------------------------------------------------------------
 
