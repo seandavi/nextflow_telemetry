@@ -229,102 +229,51 @@ with configurable probability (default 30%) to generate realistic retry telemetr
 
 ## Production Deployment
 
-The production stack runs on Google Cloud:
+Production runs **self-hosted on `onclappc02`** as a Docker Compose stack behind the
+shared Traefik reverse proxy on `cancerdatasci.org`, using the shared `pg_main` Postgres
+cluster (one database per app — this app owns `nf_telemetry`). The migration off Cloud Run
++ Cloud SQL completed in May 2026.
 
 | Component | Service |
 |-----------|---------|
-| API | Cloud Run (`nf-telemetry.cancerdatasci.org`) |
-| Frontend | Firebase Hosting (`curatedmetagenomicdata.web.app`) |
-| Database | Cloud SQL (PostgreSQL) |
+| API | `nf_telemetry_api` container, Traefik route `nf-telemetry.cancerdatasci.org` |
+| Frontend | `nf_telemetry_frontend` container (nginx), Traefik route `cmgd.cancerdatasci.org` (Cloudflare-proxied) |
+| Database | shared `pg_main` cluster, database `nf_telemetry` |
+| Host | `onclappc02` (`140.226.4.71`) |
 
-A self-hosted alternative is in flight — see `deploy/onclappc02/` for the Docker Compose
-stack that runs the same image behind Traefik on the existing
-`pg_main` / Postgres-18 instance. Cutover plan tracked in the project's GitHub issues
-(meta issue: self-host migration).
+**The canonical runbook is [`deploy/onclappc02/README.md`](deploy/onclappc02/README.md)** —
+first-time setup, secrets, DB topology, and the routine deploy. Read it before deploying.
 
-### Prerequisites
+### Routine deploy
 
-- `gcloud` CLI authenticated to the target project
-- `firebase` CLI (`npm install -g firebase-tools`)
-- Docker (for local image builds)
-- [just](https://github.com/casey/just)
-
-### GCP setup (one-time)
-
-1. Enable APIs: Cloud Run, Artifact Registry, Cloud Build, Secret Manager.
-2. Create an Artifact Registry Docker repository named `nextflow-telemetry`.
-3. Create a service account for the Cloud Run service and grant it:
-   - `roles/secretmanager.secretAccessor`
-   - `roles/cloudsql.client` (if using Cloud SQL IAM auth later)
-4. Store the Cloud SQL connection string in Secret Manager:
-   ```bash
-   echo -n "postgresql://user:pass@HOST:5432/dbname" | \
-     gcloud secrets create nextflow-telemetry-db-uri --data-file=-
-   ```
-5. Update the placeholder values in `deploy/cloudrun.yaml` and `deploy/.firebaserc`:
-   - `YOUR_GCP_PROJECT` → your GCP project ID
-   - `YOUR_REGION` → e.g. `us-central1`
-   - `YOUR_FIREBASE_PROJECT` → your Firebase project ID
-   - Service account name in `cloudrun.yaml`
-
-### Database migration
-
-Run Alembic against Cloud SQL before the first deploy and after any schema change:
+From a checkout on `onclappc02`:
 
 ```bash
-SQLALCHEMY_URI=postgresql://user:pass@HOST:5432/dbname just migrate-prod
+git checkout main && git pull          # the build context is the working tree
+just deploy-onclappc02                  # fetch secrets → build API image → recycle container
 ```
 
-Cloud SQL uses a public IP, so this can be run directly from a machine with network
-access to the instance (no Cloud SQL Proxy required).
-
-### Deploying the API
+`just deploy-onclappc02` refreshes `.env.secrets` from GCP Secret Manager, rebuilds the API
+image from the working tree, and recreates the container (~30s of 503 while it restarts;
+clients retry). Verify:
 
 ```bash
-export GCP_PROJECT=your-project
-export REGION=us-central1
-
-just build-api       # build image and push to Artifact Registry
-just deploy-api      # update the Cloud Run service
+docker ps --filter name=nf_telemetry_api                # healthy?
+curl -sS https://nf-telemetry.cancerdatasci.org/health   # 200
 ```
 
-The `deploy/cloudrun.yaml` service definition pulls `SQLALCHEMY_URI` from Secret Manager
-and sets `CORS_ORIGINS` to the frontend's domain (see DNS section below).
+### Database migrations
 
-### Deploying the frontend
+Not run by the deploy target. If a change adds a migration, run it from the host first
+(`pg_main` only resolves inside Docker, so use `127.0.0.1` from the host) — see the
+runbook's migrations section.
 
-```bash
-just deploy-frontend   # vite build + firebase deploy
-```
+### Secrets
 
-Firebase Hosting serves the React SPA with a global CDN, automatic HTTPS, and a catch-all
-rewrite to `index.html` for client-side routing. Static assets under `/assets/` are cached
-with immutable headers; `index.html` itself is not cached so new deploys take effect
-immediately.
-
-### DNS
-
-The system uses two stable public hostnames, both custom domains rather than the default
-Cloud Run / Firebase subdomains so that HPC-submitted jobs always reach the right endpoint
-regardless of future infrastructure moves.
-
-| Hostname | Currently points to | Purpose |
-|----------|---------------------|---------|
-| `nf-telemetry.cancerdatasci.org` | Cloud Run (custom domain mapping) | All API traffic, including Nextflow weblog and wrapper-event POSTs from HPC |
-| `cmgd.cancerdatasci.org` | Firebase Hosting (custom domain) | React dashboard |
-
-**To add a custom domain to Cloud Run:**
-```bash
-gcloud run domain-mappings create \
-  --service nf-telemetry \
-  --domain nf-telemetry.cancerdatasci.org \
-  --region $REGION
-```
-Cloud Run will issue a managed TLS certificate automatically. Add the CNAME shown in the
-output to your DNS provider (Cloudflare, DNS-only on the campus network).
-
-**To add a custom domain to Firebase Hosting:** run `firebase hosting:channel:deploy` or
-use the Firebase console; Firebase provisions the cert and provides the DNS records.
+Source of truth is **GCP Secret Manager** (project `cdsci-infra`). Two derived, gitignored
+runtime files: `.env` (DB URI + hostnames) and `.env.secrets` (OAuth + session, generated
+by `deploy/onclappc02/fetch-secrets.sh`). Never hand-maintain a parallel copy. Full table
+and rotation steps are in the runbook.
 
 > **Important — weblog URL stability:** the weblog URL (`-with-weblog <url>`) is baked
 > into SLURM scripts at submission time. Changing the API hostname mid-batch will silently
@@ -335,7 +284,7 @@ use the Firebase console; Firebase provisions the cert and provides the DNS reco
 ### CORS
 
 The API reads allowed origins from the `CORS_ORIGINS` environment variable
-(comma-separated). Set this in `deploy/cloudrun.yaml` to the frontend's domain:
+(comma-separated), set via the compose `environment:` block to the frontend's domain:
 
 ```
 CORS_ORIGINS=https://cmgd.cancerdatasci.org
@@ -343,3 +292,11 @@ CORS_ORIGINS=https://cmgd.cancerdatasci.org
 
 Nextflow weblog POSTs and `nf_client.run_wrapper` events are server-to-server and are not
 subject to CORS, so the HPC endpoint does not need to be in the allowlist.
+
+### Legacy: Cloud Run + Cloud SQL (retired May 2026)
+
+The stack originally ran on Cloud Run (`nf-telemetry`, us-central1) with Cloud SQL and
+Firebase Hosting. That path is retired; the `just build-api` / `deploy-api` /
+`deploy-frontend` recipes, `deploy/cloudrun.yaml`, and `cloudbuild.yaml` remain only for
+historical reference and possible rollback while the GCP resources still exist (teardown
+status tracked in `deploy/onclappc02/README.md`).

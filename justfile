@@ -108,7 +108,11 @@ seed:
 daemon:
 	uv run nf-client daemon --config client-local.yaml --batch-size 10
 
-# ── Cloud deployment ──────────────────────────────────────────────────────────
+# ── LEGACY Cloud Run deployment (RETIRED May 2026) ─────────────────────────────
+# Production now runs on onclappc02 via `just deploy-onclappc02` (see
+# deploy/onclappc02/README.md). The build-api / deploy-api / deploy-frontend
+# recipes below target the retired Cloud Run + Firebase stack and are kept only
+# for historical reference / possible rollback while the GCP resources exist.
 # Set GCP_PROJECT and REGION env vars (or export them) before using these.
 
 GCP_PROJECT := env_var_or_default("GCP_PROJECT", "curatedmetagenomicdata")

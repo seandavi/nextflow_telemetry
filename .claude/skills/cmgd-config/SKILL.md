@@ -63,7 +63,8 @@ See `alpine-daemon` for the full field rundown.
 
 ## 3. Telemetry server (env vars → `config.py` `Settings`)
 
-Set in the deploy environment (Cloud Run), not a file in the repo:
+Set in the deploy environment — on onclappc02 via the compose `env_file:`/`environment:`
+(`deploy/onclappc02/.env` + `.env.secrets`), not committed to the repo:
 - `SQLALCHEMY_URI` — DB DSN. `postgresql://` is auto-upgraded to
   `postgresql+asyncpg://`. Default dev: local postgres `cmdg_dev`.
 - `CORS_ORIGINS`, `FRONTEND_URL`, `SESSION_COOKIE_DOMAIN`.
