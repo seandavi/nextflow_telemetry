@@ -33,7 +33,9 @@ def _weblog_payload(
     workflow_id: str = "curatedMetagenomics",
     workflow_version: str = "1.0.0",
 ) -> dict:
-    tag = f"{sample_id}:{run_name}" if sample_id else None
+    # Nextflow tags processes with a bare `${meta.sample}` (the sample id, no
+    # run suffix) — mirror that here so the suite exercises the real wire format.
+    tag = sample_id if sample_id else None
     return {
         "runId": run_id,
         "runName": run_name,

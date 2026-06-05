@@ -17,14 +17,24 @@ from .reconcile import sweep_run_incomplete
 
 
 def _parse_tag(tag: str | None) -> str | None:
-    """Extract sample_id from a tag of the form 'sample_id:run_name'.
+    """Extract sample_id from a Nextflow process tag.
 
-    Returns None if the tag is absent or does not match the convention.
+    The pipeline tags every process with a bare ``"${meta.sample}"`` (the sample
+    id, no suffix), so the sample id is the whole tag. We also tolerate a
+    historical ``"sample_id:run_name"`` form and take the part before the first
+    colon — the run is already disambiguated by ``run_name`` everywhere we match
+    on the sample.
+
+    Returns None only if the tag is absent.
+
+    NOTE: requiring the colon form here was a latent bug — it returned None for
+    the bare tags the pipeline actually emits, so MARK_COMPLETE never set
+    sample_id and per-sample completion never fired (jobs swept to the DLQ
+    despite clean runs). Sample ids do not contain ':'.
     """
     if not tag:
         return None
-    parts = tag.split(":", 1)
-    return parts[0] if len(parts) == 2 else None
+    return tag.split(":", 1)[0]
 
 
 @dataclass
