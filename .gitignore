@@ -192,4 +192,7 @@ trace.txt*
 results/
 .playwright-mcp/
 .firebase/
-.claude/
+# Ignore agent-local .claude state (worktrees, settings) but DO check in
+# shared, version-controlled skills under .claude/skills/.
+.claude/*
+!.claude/skills/
