@@ -83,6 +83,22 @@ function RunDrawer({ runName, onClose }: { runName: string; onClose: () => void 
             </div>
           )}
 
+          {detail.job_status_counts && Object.keys(detail.job_status_counts).length > 0 && (
+            <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.01)', border: `1px solid ${T.border}`, borderRadius: 6 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text, marginBottom: 8 }}>Sample Processing Progress</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {Object.entries(detail.job_status_counts).map(([status, n]) => (
+                  <span key={status} style={{
+                    fontSize: 11, background: T.elevated, border: `1px solid ${T.border}`,
+                    borderRadius: 4, padding: '3px 8px', color: status === 'completed' ? T.green : status === 'failed' ? T.red : status === 'running' ? T.accent : T.text
+                  }}>
+                    {status}: <strong style={{ marginLeft: 3 }}>{fmtNum(n)}</strong>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ fontSize: 12.5, color: T.text, fontFamily: 'DM Mono, monospace', lineHeight: 1.8 }}>
             <div>claimed:   {ts(detail.claimed_at)}</div>
             <div>submitted: {ts(detail.submitted_at)}</div>
@@ -93,6 +109,36 @@ function RunDrawer({ runName, onClose }: { runName: string; onClose: () => void 
             <div>wrapper_exit_code: {detail.wrapper_exit_code ?? '—'}</div>
             <div>slurm_state: {detail.last_known_slurm_state ?? '—'}{detail.slurm_reason ? ` (${detail.slurm_reason})` : ''}</div>
           </div>
+
+          {detail.failed_tasks && detail.failed_tasks.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: T.red, marginBottom: 8 }}>Failed / Aborted Tasks ({detail.failed_tasks.length})</div>
+              <div style={{ overflowX: 'auto', border: `1px solid ${T.border}`, borderRadius: 6, background: T.elevated }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${T.border}`, color: T.muted }}>
+                      <th style={{ padding: '6px 8px' }}>Process</th>
+                      <th style={{ padding: '6px 8px' }}>Sample ID</th>
+                      <th style={{ padding: '6px 8px' }}>Attempt</th>
+                      <th style={{ padding: '6px 8px' }}>Exit</th>
+                      <th style={{ padding: '6px 8px' }}>Error Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.failed_tasks.map((task, idx) => (
+                      <tr key={idx} style={{ borderBottom: idx < detail.failed_tasks!.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                        <td style={{ padding: '6px 8px', fontFamily: 'DM Mono, monospace', color: T.accent }}>{task.process}</td>
+                        <td style={{ padding: '6px 8px', fontFamily: 'DM Mono, monospace' }}>{task.sample_id ?? '—'}</td>
+                        <td style={{ padding: '6px 8px' }}>{task.attempt}</td>
+                        <td style={{ padding: '6px 8px', fontFamily: 'DM Mono, monospace', color: T.red }}>{task.exit_code ?? '—'}</td>
+                        <td style={{ padding: '6px 8px', color: T.amber }}>{task.error_action ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: 12, fontSize: 12.5 }}>
             <span style={{ color: detail.nextflow_log_available ? T.green : T.muted }}>

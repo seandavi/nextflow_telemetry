@@ -281,6 +281,15 @@ export interface RunsListResponse {
   runs: RunListItem[]
 }
 
+export interface FailedTask {
+  process: string
+  sample_id: string | null
+  exit_code: string | null
+  task_hash: string | null
+  attempt: number
+  error_action: string | null
+}
+
 export interface RunDetail extends RunListItem {
   run_id: string | null
   revision: string | null
@@ -289,6 +298,8 @@ export interface RunDetail extends RunListItem {
   nextflow_log_uploaded_at: string | null
   wait_seconds: number | null
   task_status_counts: Record<string, number>
+  job_status_counts?: Record<string, number>
+  failed_tasks?: FailedTask[]
   nextflow_log_available: boolean
   wrapper_output_log_available: boolean
 }

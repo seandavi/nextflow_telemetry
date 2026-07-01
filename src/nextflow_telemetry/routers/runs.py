@@ -40,7 +40,7 @@ from ..models import (
     WrapperLogEvent,
     WrapperStartedEvent,
 )
-from ..db import task_logs_tbl, telemetry_tbl, workflow_runs_tbl
+from ..db import task_logs_tbl, telemetry_tbl, workflow_runs_tbl, jobs_tbl, task_executions_tbl
 
 
 # A non-terminal run with no heartbeat for longer than this is "stalled" —
@@ -369,15 +369,33 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
             if not row:
                 raise HTTPException(status_code=404, detail=f"No workflow run with name '{run_name}'")
 
-            status_expr = telemetry_tbl.c.trace["status"].astext
             task_counts = (await conn.execute(
-                select(status_expr.label("task_status"), func.count())
-                .where(
-                    telemetry_tbl.c.run_name == run_name,
-                    telemetry_tbl.c.event == "process_completed",
-                )
-                .group_by(status_expr)
+                select(task_executions_tbl.c.status, func.count())
+                .where(task_executions_tbl.c.run_name == run_name)
+                .group_by(task_executions_tbl.c.status)
             )).all()
+
+            job_counts = (await conn.execute(
+                select(jobs_tbl.c.status, func.count())
+                .where(jobs_tbl.c.run_name == run_name)
+                .group_by(jobs_tbl.c.status)
+            )).all()
+
+            failed_tasks = (await conn.execute(
+                select(
+                    task_executions_tbl.c.process,
+                    task_executions_tbl.c.sample_id,
+                    task_executions_tbl.c.exit_code,
+                    task_executions_tbl.c.task_hash,
+                    task_executions_tbl.c.attempt,
+                    task_executions_tbl.c.error_action
+                )
+                .where(
+                    task_executions_tbl.c.run_name == run_name,
+                    task_executions_tbl.c.status.in_(["FAILED", "ABORTED"])
+                )
+                .order_by(task_executions_tbl.c.utc_time.desc())
+            )).mappings().all()
 
             log_types = (await conn.execute(
                 select(task_logs_tbl.c.log_type).where(
@@ -389,6 +407,8 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
         d = dict(row)
         d["classification"] = _classify_run(d, now)
         d["task_status_counts"] = {(s or "unknown"): n for s, n in task_counts}
+        d["job_status_counts"] = {(s or "unknown"): n for s, n in job_counts}
+        d["failed_tasks"] = [dict(r) for r in failed_tasks]
         d["nextflow_log_available"] = _NEXTFLOW_LOG_TYPE in log_types
         d["wrapper_output_log_available"] = _WRAPPER_LOG_TYPE in log_types
         return d
