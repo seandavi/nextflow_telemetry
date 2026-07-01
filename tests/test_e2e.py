@@ -119,12 +119,20 @@ def live_server(db_asyncpg_url):
     drain_thread.join(timeout=2)
 
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+class ApiClient(httpx.Client):
+    def request(self, method: str, url: httpx.URL | str, *args, **kwargs):
+        url_str = str(url)
+        if not url_str.startswith("/api") and not url_str.startswith("http") and url_str != "/telemetry":
+            url = "/api" + (url_str if url_str.startswith("/") else "/" + url_str)
+        return super().request(method, url, *args, **kwargs)
+
 def _api(server: LiveServer | str) -> httpx.Client:
-    return httpx.Client(base_url=str(server), timeout=30)
+    return ApiClient(base_url=str(server), timeout=30)
 
 
 def _register_workflow(client: httpx.Client, wf_id: str, version: str, max_retries: int = 2) -> int:
@@ -301,7 +309,7 @@ def test_e2e_happy_path(live_server: LiveServer, db_asyncpg_url, tmp_path):
         client.post("/admin/reconcile-jobs")
 
         batch = client.post("/dispatch/batch", json={
-            "workflow_id": wf_id, "workflow_version": wf_version, "limit": 500,
+            "workflow_id": [wf_id], "workflow_version": wf_version, "limit": 500,
         })
         assert batch.status_code == 200, batch.text
         data = batch.json()
@@ -411,7 +419,7 @@ def _query_dead_letter(db_asyncpg_url: str, sample_ids: list[str], wf_id: str) -
 def _dispatch_and_submit(client: httpx.Client, wf_id: str, wf_version: str, limit: int) -> tuple[str, list[str]]:
     """Claim a batch and immediately report submitted. Returns (run_name, sample_ids)."""
     batch = client.post("/dispatch/batch", json={
-        "workflow_id": wf_id, "workflow_version": wf_version, "limit": limit,
+        "workflow_id": [wf_id], "workflow_version": wf_version, "limit": limit,
     })
     assert batch.status_code == 200, f"Expected 200, got {batch.status_code}: {batch.text}"
     data = batch.json()
@@ -558,7 +566,7 @@ def test_e2e_retry_on_failure(live_server: LiveServer, db_asyncpg_url, tmp_path)
         client.post("/admin/reconcile-jobs")
 
         b1 = client.post("/dispatch/batch", json={
-            "workflow_id": wf_id, "workflow_version": wf_version, "limit": 500,
+            "workflow_id": [wf_id], "workflow_version": wf_version, "limit": 500,
         })
         assert b1.status_code == 200
         run1_name = b1.json()["run_name"]
@@ -596,7 +604,7 @@ def test_e2e_retry_on_failure(live_server: LiveServer, db_asyncpg_url, tmp_path)
     with _api(live_server) as client:
         # Second run: no failure injection → reaches MARK_COMPLETE
         b2 = client.post("/dispatch/batch", json={
-            "workflow_id": wf_id, "workflow_version": wf_version, "limit": 500,
+            "workflow_id": [wf_id], "workflow_version": wf_version, "limit": 500,
         })
         assert b2.status_code == 200, "Job should be available for retry"
         run2_name = b2.json()["run_name"]

@@ -8,6 +8,7 @@ from __future__ import annotations
 from sqlalchemy import (
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -40,6 +41,45 @@ telemetry_tbl = Table(
     Index("ix_telemetry_event", "event"),
     Index("ix_telemetry_utc_time", "utc_time"),
     Index("ix_telemetry_event_utc_time", "event", "utc_time"),
+)
+
+# ---------------------------------------------------------------------------
+# Structured task executions — one row per completed Nextflow process task.
+# Populated on ingest of 'process_completed' events.
+# ---------------------------------------------------------------------------
+task_executions_tbl = Table(
+    "task_executions",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("telemetry_id", Integer, ForeignKey("telemetry.id", ondelete="CASCADE"), nullable=False, unique=True),
+    Column("run_name", String, nullable=False, index=True),
+    Column("run_id", String, nullable=True),
+    Column("sample_id", String, nullable=True, index=True),
+    Column("workflow_id", String, nullable=True, index=True),
+    Column("workflow_version", String, nullable=True),
+    Column("utc_time", DateTime(timezone=True), nullable=False),
+    Column("task_id", String, nullable=False),
+    Column("task_hash", String, nullable=True),
+    Column("process", String, nullable=False, index=True),
+    Column("name", String, nullable=True),
+    Column("status", String, nullable=False, index=True),
+    Column("attempt", Integer, nullable=False, default=1),
+    Column("exit_code", String, nullable=True),
+    Column("error_action", String, nullable=True),
+    Column("realtime_ms", Float, nullable=True),
+    Column("requested_cpus", Float, nullable=True),
+    Column("requested_memory_bytes", Float, nullable=True),
+    Column("requested_time_ms", Float, nullable=True),
+    Column("pct_cpu", Float, nullable=True),
+    Column("pct_mem", Float, nullable=True),
+    Column("peak_rss", Float, nullable=True),
+    Column("read_bytes", Float, nullable=True),
+    Column("write_bytes", Float, nullable=True),
+    Column("rchar", Float, nullable=True),
+    Column("wchar", Float, nullable=True),
+    Index("ix_task_executions_process_status", "process", "status"),
+    Index("ix_task_executions_utc_time", "utc_time"),
+    Index("ix_task_executions_composite_metrics", "workflow_id", "workflow_version", "status"),
 )
 
 # ---------------------------------------------------------------------------

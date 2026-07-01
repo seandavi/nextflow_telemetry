@@ -54,7 +54,7 @@ class ProcessMetricsService:
         sample_id: str | None = None,
         table_alias: str = "t",
     ) -> tuple[str, dict[str, Any]]:
-        """Build a composable WHERE fragment and bind-params dict for telemetry queries."""
+        """Build a composable WHERE fragment and bind-params dict for telemetry/task_executions queries."""
         clauses: list[str] = []
         params: dict[str, Any] = {}
         a = table_alias
@@ -145,26 +145,22 @@ class ProcessMetricsService:
               select
                 t.run_id,
                 t.utc_time,
-                t.trace->>'process' as process,
-                coalesce(t.trace->>'status','') as status,
-                coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt,
-                nullif(t.trace->>'peak_rss','')::double precision as peak_rss,
-                nullif(t.trace->>'memory','')::double precision as requested_memory_bytes
-              from telemetry t
-              where t.event = 'process_completed'
-                and t.trace is not null
+                t.process,
+                t.status,
+                t.attempt,
+                t.peak_rss,
+                t.requested_memory_bytes
+              from task_executions t
+              where true
                 {fc}
             )
             select
               count(*) as process_completed_rows,
               count(distinct run_id) as distinct_runs,
-              (select count(distinct t2.trace->>'process')
-               from telemetry t2
-               where t2.event in ('process_submitted','process_started','process_completed')
-                 and t2.trace is not null
-                 and t2.trace->>'process' is not null
-                 and t2.trace->>'process' not like '%MARK_COMPLETE'
-                 and t2.trace->>'process' not like '%FINISHED'
+              (select count(distinct t2.process)
+               from task_executions t2
+               where t2.process not like '%MARK_COMPLETE'
+                 and t2.process not like '%FINISHED'
                  {fc2}) as distinct_processes,
               count(*) filter (where status = 'COMPLETED') as success_rows,
               count(*) filter (where status in ('FAILED', 'ABORTED')) as failure_rows,
@@ -185,11 +181,10 @@ class ProcessMetricsService:
             f"""
             with x as (
               select
-                coalesce(t.trace->>'process','<null>') as process,
-                coalesce(t.trace->>'status','') as status
-              from telemetry t
-              where t.event = 'process_completed'
-                and t.trace is not null
+                t.process,
+                t.status
+              from task_executions t
+              where true
                 {fc}
             )
             select
@@ -209,12 +204,11 @@ class ProcessMetricsService:
             f"""
             with x as (
               select
-                coalesce(t.trace->>'process','<null>') as process,
-                coalesce(t.trace->>'status','') as status,
-                coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt
-              from telemetry t
-              where t.event = 'process_completed'
-                and t.trace is not null
+                t.process,
+                t.status,
+                t.attempt
+              from task_executions t
+              where true
                 {fc}
             )
             select
@@ -235,12 +229,10 @@ class ProcessMetricsService:
         top_exit_codes_sql = text(
             f"""
             select
-              coalesce(t.trace->>'exit','<null>') as exit_code,
+              coalesce(t.exit_code, '<null>') as exit_code,
               count(*) as failures
-            from telemetry t
-            where t.event = 'process_completed'
-              and t.trace is not null
-              and t.trace->>'status' in ('FAILED', 'ABORTED')
+            from task_executions t
+            where t.status in ('FAILED', 'ABORTED')
               {fc}
             group by exit_code
             order by failures desc, exit_code
@@ -248,6 +240,7 @@ class ProcessMetricsService:
             """
         )
 
+        # Uses raw telemetry table to get breakdown of all event types in flight/submitted
         event_mix_sql = text(
             f"""
             select t.event, count(*) as rows
@@ -311,11 +304,10 @@ class ProcessMetricsService:
             f"""
             with x as (
               select
-                coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt,
-                coalesce(t.trace->>'status','') as status
-              from telemetry t
-              where t.event = 'process_completed'
-                and t.trace is not null
+                t.attempt,
+                t.status
+              from task_executions t
+              where true
                 {fc}
             )
             select
@@ -334,12 +326,11 @@ class ProcessMetricsService:
             f"""
             with x as (
               select
-                coalesce(t.trace->>'process','<null>') as process,
-                coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt,
-                coalesce(t.trace->>'status','') as status
-              from telemetry t
-              where t.event = 'process_completed'
-                and t.trace is not null
+                t.process,
+                t.attempt,
+                t.status
+              from task_executions t
+              where true
                 {fc}
             )
             select
@@ -361,13 +352,12 @@ class ProcessMetricsService:
         by_attempt_sql = text(
             f"""
             select
-              coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt,
+              t.attempt,
               count(*) as rows,
-              count(*) filter (where coalesce(t.trace->>'status','') = 'COMPLETED') as success,
-              count(*) filter (where coalesce(t.trace->>'status','') in ('FAILED', 'ABORTED')) as failed
-            from telemetry t
-            where t.event = 'process_completed'
-              and t.trace is not null
+              count(*) filter (where t.status = 'COMPLETED') as success,
+              count(*) filter (where t.status in ('FAILED', 'ABORTED')) as failed
+            from task_executions t
+            where true
               {fc}
             group by attempt
             order by attempt
@@ -422,21 +412,19 @@ class ProcessMetricsService:
             f"""
             with x as (
               select
-                t.trace->>'process' as process,
-                coalesce(nullif(t.trace->>'attempt',''),'0')::int as attempt,
-                coalesce(t.trace->>'status','') as status,
-                nullif(t.trace->>'cpus','')::double precision as requested_cpus,
-                nullif(t.trace->>'memory','')::double precision as requested_memory_bytes,
-                nullif(t.trace->>'time','')::double precision as requested_time_ms,
-                nullif(t.trace->>'%cpu','')::double precision as pct_cpu,
-                nullif(t.trace->>'%mem','')::double precision as pct_mem,
-                nullif(t.trace->>'peak_rss','')::double precision as peak_rss,
-                nullif(t.trace->>'read_bytes','')::double precision as read_bytes,
-                nullif(t.trace->>'write_bytes','')::double precision as write_bytes
-              from telemetry t
-              where t.event = 'process_completed'
-                and t.trace is not null
-                and t.trace->>'process' is not null
+                t.process,
+                t.attempt,
+                t.status,
+                t.requested_cpus,
+                t.requested_memory_bytes,
+                t.requested_time_ms,
+                t.pct_cpu,
+                t.pct_mem,
+                t.peak_rss,
+                t.read_bytes,
+                t.write_bytes
+              from task_executions t
+              where t.process is not null
                 {fc}
             )
             select
@@ -510,13 +498,12 @@ class ProcessMetricsService:
             f"""
             with x as (
               select
-                coalesce(t.trace->>'process','<null>') as process,
-                coalesce(t.trace->>'status','') as status,
-                coalesce(t.trace->>'exit','<null>') as exit_code,
-                nullif(t.trace->>'error_action', '') as error_action
-              from telemetry t
-              where t.event = 'process_completed'
-                and t.trace is not null
+                t.process,
+                t.status,
+                t.exit_code,
+                t.error_action
+              from task_executions t
+              where true
                 {fc}
             ),
             grouped as (
@@ -609,17 +596,15 @@ class ProcessMetricsService:
         sql = text(
             f"""
             select
-              coalesce(t.trace->>'process','<null>') as process,
-              coalesce(t.trace->>'exit','<null>') as exit_code,
-              nullif(t.trace->>'error_action', '') as error_action,
+              t.process,
+              coalesce(t.exit_code, '<null>') as exit_code,
+              t.error_action,
               count(*) as failures
-            from telemetry t
-            where t.event = 'process_completed'
-              and t.trace is not null
-              and t.trace->>'status' in ('FAILED', 'ABORTED')
+            from task_executions t
+            where t.status in ('FAILED', 'ABORTED')
               {fc}
-            group by process, exit_code, error_action
-            order by failures desc, process, exit_code
+            group by t.process, exit_code, error_action
+            order by failures desc, t.process, exit_code
             limit :limit
             """
         )
@@ -661,7 +646,7 @@ class ProcessMetricsService:
 
         process_clause = ""
         if process is not None:
-            process_clause = "and t.trace->>'process' = :process"
+            process_clause = "and t.process = :process"
             params["process"] = process
 
         sql = text(
@@ -669,15 +654,14 @@ class ProcessMetricsService:
             select
               date_trunc(:bucket, t.utc_time) as bucket_start,
               count(*) as total,
-              count(*) filter (where coalesce(t.trace->>'status','') = 'COMPLETED') as success,
-              count(*) filter (where coalesce(t.trace->>'status','') in ('FAILED','ABORTED')) as failed,
+              count(*) filter (where t.status = 'COMPLETED') as success,
+              count(*) filter (where t.status in ('FAILED','ABORTED')) as failed,
               coalesce(round(
-                100.0 * count(*) filter (where coalesce(t.trace->>'status','') in ('FAILED','ABORTED'))::numeric
+                100.0 * count(*) filter (where t.status in ('FAILED','ABORTED'))::numeric
                 / nullif(count(*), 0), 2
               ), 0) as failure_pct
-            from telemetry t
-            where t.event = 'process_completed'
-              and t.trace is not null
+            from task_executions t
+            where true
               {fc}
               {process_clause}
             group by bucket_start
@@ -789,41 +773,40 @@ class ProcessMetricsService:
 
         extra_clauses = ""
         if process is not None:
-            extra_clauses += " and t.trace->>'process' = :process"
+            extra_clauses += " and t.process = :process"
             params["process"] = process
         if status is not None:
-            extra_clauses += " and t.trace->>'status' = :status"
+            extra_clauses += " and t.status = :status"
             params["status"] = status
 
         sql = text(
             f"""
             select
-              t.id                                                              as telemetry_id,
+              t.telemetry_id,
               t.run_name,
               t.run_id,
               t.sample_id,
               t.workflow_id,
               t.workflow_version,
               t.utc_time,
-              coalesce(t.trace->>'process','<null>')                           as process,
-              t.trace->>'name'                                                 as name,
-              coalesce(t.trace->>'status','')                                  as status,
-              coalesce(nullif(t.trace->>'attempt',''),'1')::int                as attempt,
-              nullif(t.trace->>'hash','')                                      as task_hash,
-              nullif(t.trace->>'exit','')                                      as exit_code,
-              nullif(t.trace->>'error_action','')                              as error_action,
-              nullif(t.trace->>'realtime','')::double precision                as realtime_ms,
-              nullif(t.trace->>'cpus','')::double precision                    as requested_cpus,
-              nullif(t.trace->>'memory','')::double precision / 1073741824.0  as requested_memory_gb,
-              nullif(t.trace->>'%cpu','')::double precision                    as pct_cpu,
-              nullif(t.trace->>'%mem','')::double precision                    as pct_mem,
-              nullif(t.trace->>'peak_rss','')::double precision / 1073741824.0 as peak_rss_gb,
-              nullif(t.trace->>'rchar','')::double precision / 1073741824.0    as read_gb,
-              nullif(t.trace->>'wchar','')::double precision / 1073741824.0    as write_gb,
+              t.process,
+              t.name,
+              t.status,
+              t.attempt,
+              t.task_hash,
+              t.exit_code,
+              t.error_action,
+              t.realtime_ms,
+              t.requested_cpus,
+              t.requested_memory_bytes / 1073741824.0  as requested_memory_gb,
+              t.pct_cpu,
+              t.pct_mem,
+              t.peak_rss / 1073741824.0 as peak_rss_gb,
+              t.rchar / 1073741824.0    as read_gb,
+              t.wchar / 1073741824.0    as write_gb,
               count(*) over ()                                                  as total_count
-            from telemetry t
-            where t.event = 'process_completed'
-              and t.trace is not null
+            from task_executions t
+            where true
               {fc}
               {extra_clauses}
             order by t.utc_time desc

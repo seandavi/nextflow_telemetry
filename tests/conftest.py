@@ -86,3 +86,23 @@ def integration_client(db_asyncpg_url: str):
 @pytest.fixture()
 def db_url(db_asyncpg_url: str) -> str:
     return db_asyncpg_url
+
+
+@pytest.fixture(autouse=True)
+def clean_db(request):
+    """Automatically clean the DB before any test that interacts with it."""
+    if any(f in request.fixturenames for f in ("db_asyncpg_url", "db_url", "integration_client", "live_server")):
+        db_asyncpg_url = request.getfixturevalue("db_asyncpg_url")
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from nextflow_telemetry.db import metadata
+        import asyncio
+
+        async def _clean():
+            engine = create_async_engine(db_asyncpg_url)
+            async with engine.begin() as conn:
+                for table in reversed(metadata.sorted_tables):
+                    await conn.execute(table.delete())
+            await engine.dispose()
+
+        asyncio.run(_clean())
+

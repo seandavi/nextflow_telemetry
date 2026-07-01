@@ -7,11 +7,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import jobs_tbl, telemetry_tbl, workflow_runs_tbl
+from ..db import jobs_tbl, telemetry_tbl, workflow_runs_tbl, task_executions_tbl
 from ..models import Telemetry
 from .reconcile import sweep_run_incomplete
 
@@ -35,6 +36,30 @@ def _parse_tag(tag: str | None) -> str | None:
     if not tag:
         return None
     return tag.split(":", 1)[0]
+
+
+def _parse_float(v: Any) -> float | None:
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_int(v: Any, default: int = 1) -> int:
+    if v is None or v == "":
+        return default
+    try:
+        return int(v)
+    except (ValueError, TypeError):
+        return default
+
+
+def _parse_str(v: Any) -> str | None:
+    if v is None or v == "":
+        return None
+    return str(v)
 
 
 @dataclass
@@ -63,8 +88,8 @@ class TelemetryService:
             workflow_version: str | None = _run["workflow_version"] if _run else None
 
             # 1. Append raw event
-            await conn.execute(
-                insert(telemetry_tbl).values(
+            telemetry_res = await conn.execute(
+                insert(telemetry_tbl).returning(telemetry_tbl.c.id).values(
                     run_id=event.run_id,
                     run_name=event.run_name,
                     event=event.event,
@@ -76,6 +101,41 @@ class TelemetryService:
                     trace=event.trace,
                 )
             )
+            telemetry_id = telemetry_res.scalar_one()
+
+            # 1b. Populate task_executions for completed processes
+            if event.event == "process_completed" and isinstance(event.trace, dict):
+                trace = event.trace
+                await conn.execute(
+                    insert(task_executions_tbl).values(
+                        telemetry_id=telemetry_id,
+                        run_name=event.run_name,
+                        run_id=event.run_id,
+                        sample_id=sample_id,
+                        workflow_id=workflow_id,
+                        workflow_version=workflow_version,
+                        utc_time=event.timestamp,
+                        task_id=str(trace.get("task_id", "")),
+                        task_hash=_parse_str(trace.get("hash")),
+                        process=_parse_str(trace.get("process", "")),
+                        name=_parse_str(trace.get("name")),
+                        status=_parse_str(trace.get("status", "")),
+                        attempt=_parse_int(trace.get("attempt")),
+                        exit_code=_parse_str(trace.get("exit")),
+                        error_action=_parse_str(trace.get("error_action")),
+                        realtime_ms=_parse_float(trace.get("realtime")),
+                        requested_cpus=_parse_float(trace.get("cpus")),
+                        requested_memory_bytes=_parse_float(trace.get("memory")),
+                        requested_time_ms=_parse_float(trace.get("time")),
+                        pct_cpu=_parse_float(trace.get("%cpu")),
+                        pct_mem=_parse_float(trace.get("%mem")),
+                        peak_rss=_parse_float(trace.get("peak_rss")),
+                        read_bytes=_parse_float(trace.get("read_bytes")),
+                        write_bytes=_parse_float(trace.get("write_bytes")),
+                        rchar=_parse_float(trace.get("rchar")),
+                        wchar=_parse_float(trace.get("wchar")),
+                    )
+                )
 
             # 2. Run-level started: transition workflow_run + jobs to running
             if event.event == "started":
