@@ -193,6 +193,14 @@ results/
 .playwright-mcp/
 .firebase/
 # Ignore agent-local .claude state (worktrees, settings) but DO check in
-# shared, version-controlled skills under .claude/skills/.
+# shared, version-controlled skills under .claude/skills/ and reusable
+# subagents under .claude/agents/.
 .claude/*
 !.claude/skills/
+!.claude/agents/
+
+# obscura headless-browser binaries (dropped into the repo dir by the installer;
+# used by scripts/ui_eval_capture.py's tooling — not project source)
+/obscura
+/obscura-worker
+/obscura-*.tar.gz
