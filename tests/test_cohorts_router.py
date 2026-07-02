@@ -139,6 +139,7 @@ def _seed_jobs(db_url: str, sample_id: str, status: str, *, workflow_id: str, wo
                     status=status,
                     retry_count=0,
                     created_at=now,
+                    completed_at=(now if status == "completed" else None),
                 )
             )
     try:
@@ -319,6 +320,48 @@ def test_summary_excludes_samples_not_in_cohort(integration_client, db_url, coho
     assert body["total_jobs"] == 1
     assert body["job_status_counts"]["completed"] == 1
     assert body["failure_by_process"] == []
+
+
+def test_leaderboard_ranks_cohorts_by_active_completion(integration_client, db_url, cohort_data):
+    """#119: one row per cohort, active-version completion, laggards first."""
+    client, _ = integration_client
+    tag = cohort_data
+    wf = f"wf-{tag}"
+
+    # Cohort A: 4 samples, 3 completed under active -> 75%.
+    cid_a = f"COHORT-A-{tag}"
+    a = [f"SA-{tag}-{i}" for i in range(4)]
+    _seed_cohort(db_url, collection_id=cid_a, sample_ids=a)
+    for s in a[:3]:
+        _seed_jobs(db_url, s, "completed", workflow_id=wf)
+    _seed_jobs(db_url, a[3], "running", workflow_id=wf)
+
+    # Cohort B: 2 samples, 0 completed under active (one completed only under a
+    # retired version) -> 0%, must sort ABOVE A (laggard first).
+    cid_b = f"COHORT-B-{tag}"
+    b = [f"SB-{tag}-{i}" for i in range(2)]
+    _seed_cohort(db_url, collection_id=cid_b, sample_ids=b)
+    _seed_jobs(db_url, b[0], "failed", workflow_id=wf)
+    _seed_jobs(db_url, b[1], "completed", workflow_id=wf, workflow_version="9.9.9")
+    _set_workflow_status(db_url, wf, "9.9.9", "retired")
+
+    rows = client.get("/api/cohorts/leaderboard").json()
+    by_id = {r["collection_id"]: r for r in rows}
+    assert by_id[cid_a]["sample_count"] == 4
+    assert by_id[cid_a]["samples_completed"] == 3
+    assert by_id[cid_a]["samples_running"] == 1
+    assert by_id[cid_a]["samples_remaining"] == 1
+    assert by_id[cid_a]["completion_pct"] == 75.0
+    assert by_id[cid_a]["last_completed_at"] is not None
+
+    assert by_id[cid_b]["samples_completed"] == 0      # retired-version completion excluded
+    assert by_id[cid_b]["samples_failed"] == 1
+    assert by_id[cid_b]["completion_pct"] == 0.0
+    assert by_id[cid_b]["last_completed_at"] is None
+
+    # Laggard-first ordering: B (0%) appears before A (75%).
+    ordered = [r["collection_id"] for r in rows if r["collection_id"] in (cid_a, cid_b)]
+    assert ordered.index(cid_b) < ordered.index(cid_a)
 
 
 def _set_workflow_status(db_url: str, workflow_id: str, version: str, status: str) -> None:

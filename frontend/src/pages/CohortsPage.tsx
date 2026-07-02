@@ -9,10 +9,139 @@ import SectionHeader from '../components/SectionHeader'
 import Btn from '../components/Btn'
 import type {
   CohortListItem,
+  CohortLeaderboardRow,
   CohortSummaryResponse,
   CohortFailureRow,
   WorkflowResponse,
 } from '../types'
+
+const STALL_DAYS = 7
+
+function isStalled(r: CohortLeaderboardRow): boolean {
+  if (r.samples_remaining <= 0) return false            // nothing left to do
+  if (!r.last_completed_at) return true                 // remaining, never completed
+  const days = (Date.now() - new Date(r.last_completed_at).getTime()) / 86_400_000
+  return days > STALL_DAYS
+}
+
+type LbSortKey = 'collection_id' | 'sample_count' | 'samples_completed' | 'samples_remaining' | 'completion_pct'
+
+function CompletionBar({ pct }: { pct: number }) {
+  const color = pct >= 99.5 ? T.green : pct >= 50 ? T.amber : T.red
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ position: 'relative', flex: 1, height: 6, background: T.border, borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${Math.min(100, pct)}%`, background: color }} />
+      </div>
+      <div style={{ fontSize: 12, color: T.text, fontFamily: 'DM Mono, monospace', minWidth: 48, textAlign: 'right' }}>
+        {pct.toFixed(1)}%
+      </div>
+    </div>
+  )
+}
+
+const LB_COLS = '1fr 70px 80px 80px 60px 60px 200px 96px'
+
+function LeaderboardTable({
+  rows, selected, onSelect,
+}: {
+  rows: CohortLeaderboardRow[]
+  selected: string
+  onSelect: (id: string) => void
+}) {
+  const [sortKey, setSortKey] = useState<LbSortKey>('completion_pct')
+  const [dir, setDir] = useState<'asc' | 'desc'>('asc')
+
+  const sorted = useMemo(() => {
+    const s = [...rows].sort((a, b) => {
+      const av = a[sortKey]
+      const bv = b[sortKey]
+      if (typeof av === 'string' && typeof bv === 'string') return av.localeCompare(bv)
+      return (av as number) - (bv as number)
+    })
+    return dir === 'asc' ? s : s.reverse()
+  }, [rows, sortKey, dir])
+
+  const toggle = (k: LbSortKey) => {
+    if (k === sortKey) setDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(k); setDir('asc') }
+  }
+
+  const Th = ({ k, label, align = 'right' }: { k: LbSortKey; label: string; align?: 'left' | 'right' }) => (
+    <button
+      type="button"
+      onClick={() => toggle(k)}
+      style={{
+        font: 'inherit', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+        fontSize: 10, color: sortKey === k ? T.text : T.muted, textTransform: 'uppercase', letterSpacing: '0.06em',
+        textAlign: align, justifySelf: align === 'right' ? 'end' : 'start',
+      }}
+    >
+      {label}{sortKey === k ? (dir === 'asc' ? ' ↑' : ' ↓') : ''}
+    </button>
+  )
+
+  if (rows.length === 0) {
+    return <div style={{ fontSize: 12, color: T.muted, padding: 14 }}>No cohorts yet.</div>
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{
+        display: 'grid', gridTemplateColumns: LB_COLS, gap: 12, padding: '8px 12px',
+        borderBottom: `1px solid ${T.border}`,
+      }}>
+        <Th k="collection_id" label="Study" align="left" />
+        <Th k="sample_count" label="Samples" />
+        <Th k="samples_completed" label="Done" />
+        <Th k="samples_remaining" label="Left" />
+        <div style={{ fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right' }}>Fail</div>
+        <div style={{ fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right' }}>Run</div>
+        <Th k="completion_pct" label="Completion (active)" align="left" />
+        <div style={{ fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right' }}>Last done</div>
+      </div>
+      {sorted.map(r => {
+        const stalled = isStalled(r)
+        const isSel = r.collection_id === selected
+        return (
+          <button
+            key={r.collection_id}
+            type="button"
+            onClick={() => onSelect(r.collection_id)}
+            aria-pressed={isSel}
+            style={{
+              display: 'grid', gridTemplateColumns: LB_COLS, gap: 12, padding: '10px 12px', alignItems: 'center',
+              borderBottom: `1px solid ${T.border}`, borderLeft: `2px solid ${isSel ? T.accent : 'transparent'}`,
+              background: isSel ? T.accentDim : 'transparent',
+              font: 'inherit', color: 'inherit', textAlign: 'inherit', width: '100%', cursor: 'pointer',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {r.collection_id}
+              </span>
+              {stalled && (
+                <span style={{
+                  fontSize: 9, color: T.red, border: `1px solid ${T.red}`, borderRadius: 3,
+                  padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0,
+                }}>
+                  Stalled
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: T.text, textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>{fmtNum(r.sample_count)}</div>
+            <div style={{ fontSize: 12, color: T.green, textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>{fmtNum(r.samples_completed)}</div>
+            <div style={{ fontSize: 12, color: T.muted, textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>{fmtNum(r.samples_remaining)}</div>
+            <div style={{ fontSize: 12, color: r.samples_failed ? T.red : T.muted, textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>{fmtNum(r.samples_failed)}</div>
+            <div style={{ fontSize: 12, color: r.samples_running ? T.amber : T.muted, textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>{fmtNum(r.samples_running)}</div>
+            <CompletionBar pct={r.completion_pct} />
+            <div style={{ fontSize: 10, color: T.muted, textAlign: 'right' }}>{r.last_completed_at ? fmtDate(r.last_completed_at) : '—'}</div>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 function StatusChip({ label, count, color }: { label: string; count: number; color: string }) {
   return (
@@ -130,6 +259,7 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
   const [cohorts, setCohorts] = useState<CohortListItem[]>([])
+  const [leaderboard, setLeaderboard] = useState<CohortLeaderboardRow[]>([])
   const [selectedCohort, setSelectedCohort] = useState<string>('')
   const [workflows, setWorkflows] = useState<WorkflowResponse[]>([])
   const [workflowKey, setWorkflowKey] = useState<string>('')  // "wf_id|version" or ""
@@ -140,6 +270,7 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
 
   useEffect(() => {
     api.cohorts.list().then(setCohorts).catch(console.error)
+    api.cohorts.leaderboard().then(setLeaderboard).catch(console.error)
     api.workflows.list().then(setWorkflows).catch(console.error)
   }, [tick])
 
@@ -254,6 +385,16 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
         </div>
       </Panel>
 
+      <Panel>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>Study leaderboard</div>
+          <div style={{ fontSize: 11, color: T.muted }}>
+            {leaderboard.length} stud{leaderboard.length === 1 ? 'y' : 'ies'} · completion in samples under the active workflow version
+          </div>
+        </div>
+        <LeaderboardTable rows={leaderboard} selected={selectedCohort} onSelect={setSelectedCohort} />
+      </Panel>
+
       {summary && (
         <>
           <Panel>
@@ -278,6 +419,9 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
                 <div style={{ fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Completion</div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: T.green, fontFamily: 'DM Mono, monospace' }}>
                   {summary.completion_pct.toFixed(1)}%
+                </div>
+                <div style={{ fontSize: 10, color: T.muted, fontFamily: 'DM Mono, monospace' }}>
+                  {fmtNum(summary.samples_completed)} / {fmtNum(summary.sample_count)} samples
                 </div>
               </div>
             </div>

@@ -82,6 +82,70 @@ class CohortService:
             f"AND w.status = 'active')"
         )
 
+    async def leaderboard(self) -> list[dict]:
+        """Return every cohort with active-version completion, one row each.
+
+        The cross-study view for #119: a PI monitoring many studies sees them
+        ranked by completeness without opening each. Completion is measured the
+        same way as summary() — distinct samples with a completed job under the
+        active workflow version ÷ distinct samples in the cohort — but computed
+        for all cohorts in a single query. Sorted laggards-first (least complete,
+        then largest) so the study that needs attention floats to the top.
+        """
+        sql = text(
+            """
+            SELECT c.collection_id,
+                   c.source,
+                   c.label,
+                   COUNT(DISTINCT cs.sample_id) AS sample_count,
+                   COUNT(DISTINCT cs.sample_id) FILTER (
+                       WHERE j.status = 'completed') AS samples_completed,
+                   COUNT(DISTINCT cs.sample_id) FILTER (
+                       WHERE j.status = 'failed') AS samples_failed,
+                   COUNT(DISTINCT cs.sample_id) FILTER (
+                       WHERE j.status = 'running') AS samples_running,
+                   MAX(j.completed_at) FILTER (
+                       WHERE j.status = 'completed') AS last_completed_at
+            FROM collections c
+            LEFT JOIN collection_samples cs USING (collection_id)
+            LEFT JOIN jobs j
+                   ON j.sample_id = cs.sample_id
+                  AND EXISTS (
+                      SELECT 1 FROM workflows w
+                      WHERE w.workflow_id = j.workflow_id
+                        AND w.version = j.workflow_version
+                        AND w.status = 'active')
+            GROUP BY c.collection_id, c.source, c.label
+            ORDER BY (CASE WHEN COUNT(DISTINCT cs.sample_id) = 0 THEN 0
+                           ELSE COUNT(DISTINCT cs.sample_id) FILTER (WHERE j.status = 'completed')::float
+                                / COUNT(DISTINCT cs.sample_id) END) ASC,
+                     sample_count DESC,
+                     c.collection_id ASC
+            """
+        )
+        async with self.engine.connect() as conn:
+            rows = (await conn.execute(sql)).mappings().all()
+        out: list[dict] = []
+        for r in rows:
+            total = r["sample_count"] or 0
+            completed = r["samples_completed"] or 0
+            pct = (completed / total * 100.0) if total > 0 else 0.0
+            out.append(
+                {
+                    "collection_id": r["collection_id"],
+                    "source": r["source"],
+                    "label": r["label"],
+                    "sample_count": total,
+                    "samples_completed": completed,
+                    "samples_failed": r["samples_failed"] or 0,
+                    "samples_running": r["samples_running"] or 0,
+                    "samples_remaining": total - completed,
+                    "completion_pct": round(pct, 2),
+                    "last_completed_at": r["last_completed_at"],
+                }
+            )
+        return out
+
     async def summary(
         self,
         collection_id: str,

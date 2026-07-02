@@ -29,6 +29,21 @@ class CohortListItem(BaseModel):
     updated_at: datetime.datetime
 
 
+class CohortLeaderboardRow(BaseModel):
+    collection_id: str
+    source: str
+    label: Optional[str] = None
+    sample_count: int
+    samples_completed: int
+    samples_failed: int
+    samples_running: int
+    samples_remaining: int
+    completion_pct: float = Field(description="samples_completed / sample_count × 100, active version.")
+    last_completed_at: Optional[datetime.datetime] = Field(
+        default=None, description="Most recent sample completion; null if none. Use to flag stalled studies."
+    )
+
+
 class CohortJobStatusCounts(BaseModel):
     pending: int = 0
     claimed: int = 0
@@ -99,6 +114,22 @@ def create_cohorts_router(engine: AsyncEngine) -> APIRouter:
     async def list_cohorts() -> list[CohortListItem]:
         rows = await svc.list_cohorts()
         return [CohortListItem(**r) for r in rows]
+
+    @router.get(
+        "/leaderboard",
+        response_model=list[CohortLeaderboardRow],
+        summary="Cross-study completeness leaderboard",
+        description=(
+            "One row per cohort with active-version completion, sorted "
+            "laggards-first (least complete, then largest). Lets an operator rank "
+            "many studies by completeness in a single call instead of opening each "
+            "cohort's summary. Completion semantics match /summary (distinct "
+            "samples completed under the active workflow version)."
+        ),
+    )
+    async def leaderboard() -> list[CohortLeaderboardRow]:
+        rows = await svc.leaderboard()
+        return [CohortLeaderboardRow(**r) for r in rows]
 
     @router.get(
         "/{collection_id}/summary",
