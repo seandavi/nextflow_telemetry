@@ -39,6 +39,24 @@ class SampleResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SampleListResponse(BaseModel):
+    """A page of samples plus the total count matching the current filters."""
+    items: list[SampleResponse]
+    total: int = Field(description="Total samples matching the filters (for pagination).")
+    limit: int
+    offset: int
+
+
+class CohortFacet(BaseModel):
+    cohort: str
+    count: int
+
+
+class CohortFacetsResponse(BaseModel):
+    total: int = Field(description="Total samples in the catalog (all cohorts, incl. none).")
+    cohorts: list[CohortFacet] = Field(description="Per-cohort counts across the whole catalog, largest first.")
+
+
 def _row_to_response(row: dict) -> SampleResponse:
     return SampleResponse(
         id=row["id"],
@@ -78,16 +96,40 @@ def create_samples_router(engine: AsyncEngine) -> APIRouter:
 
     @router.get(
         "",
-        response_model=list[SampleResponse],
-        summary="List samples",
-        description="Returns a paginated list of all samples, ordered by insertion time.",
+        response_model=SampleListResponse,
+        summary="List samples (paginated, filterable)",
+        description=(
+            "Returns a page of samples plus the total matching count. Filter "
+            "server-side with `search` (case-insensitive `sample_id` substring) "
+            "and `cohort` (exact `metadata.cohort`), so the catalog stays usable "
+            "well past the old client-side 1000-row ceiling (#118)."
+        ),
     )
     async def list_samples(
         limit: int = Query(default=100, ge=1, le=1000, description="Maximum number of samples to return."),
         offset: int = Query(default=0, ge=0, description="Number of samples to skip."),
+        search: str | None = Query(default=None, description="Case-insensitive substring match on sample_id."),
+        cohort: str | None = Query(default=None, description="Exact match on metadata.cohort."),
     ):
-        rows = await svc.list_samples(limit=limit, offset=offset)
-        return [_row_to_response(r) for r in rows]
+        rows, total = await svc.list_samples(limit=limit, offset=offset, search=search, cohort=cohort)
+        return SampleListResponse(
+            items=[_row_to_response(r) for r in rows],
+            total=total, limit=limit, offset=offset,
+        )
+
+    @router.get(
+        "/facets/cohorts",
+        response_model=CohortFacetsResponse,
+        summary="Cohort facet counts across the whole catalog",
+        description=(
+            "Per-cohort sample counts (from `metadata.cohort`) over ALL samples, "
+            "plus the grand total — powers the Samples-page cohort chips so they "
+            "stay correct regardless of the current page or filters."
+        ),
+    )
+    async def cohort_facets():
+        total, cohorts = await svc.cohort_facets()
+        return CohortFacetsResponse(total=total, cohorts=[CohortFacet(**c) for c in cohorts])
 
     @router.get(
         "/by-srr/{srr_accession}",

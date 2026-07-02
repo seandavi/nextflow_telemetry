@@ -134,8 +134,49 @@ def test_list_samples(integration_client):
 
     resp = client.get("/api/samples")
     assert resp.status_code == 200
-    ids = [r["sample_id"] for r in resp.json()]
-    assert sample_id in ids
+    body = resp.json()
+    assert sample_id in [r["sample_id"] for r in body["items"]]
+    assert body["total"] >= 1
+    assert body["limit"] == 100 and body["offset"] == 0
+
+
+def test_list_samples_search_and_cohort_filter(integration_client):
+    client, _ = integration_client
+    tag = uuid.uuid4().hex[:8]
+    coh = f"COH-{tag}"
+    ids = [f"SRR-{tag}-{i}" for i in range(3)]
+    for i, sid in enumerate(ids):
+        client.post("/api/samples", json={"sample_id": sid, "ncbi_accession": f"SRR00000{i+1}", "metadata": {"cohort": coh}})
+    client.post("/api/samples", json={"sample_id": f"OTHER-{tag}", "ncbi_accession": "SRR000009", "metadata": {"cohort": "different"}})
+
+    by_search = client.get(f"/api/samples?search=SRR-{tag}").json()
+    assert by_search["total"] == 3
+    assert {x["sample_id"] for x in by_search["items"]} == set(ids)
+
+    by_cohort = client.get(f"/api/samples?cohort={coh}").json()
+    assert by_cohort["total"] == 3
+    assert all(x["metadata"]["cohort"] == coh for x in by_cohort["items"])
+
+    # Pagination over the filtered set.
+    p0 = client.get(f"/api/samples?search=SRR-{tag}&limit=2&offset=0").json()
+    assert p0["total"] == 3 and len(p0["items"]) == 2
+    p1 = client.get(f"/api/samples?search=SRR-{tag}&limit=2&offset=2").json()
+    assert len(p1["items"]) == 1
+
+
+def test_cohort_facets(integration_client):
+    client, _ = integration_client
+    tag = uuid.uuid4().hex[:8]
+    coh = f"FAC-{tag}"
+    for i in range(2):
+        client.post("/api/samples", json={"sample_id": f"SRR-fac-{tag}-{i}", "ncbi_accession": f"SRR00000{i+1}", "metadata": {"cohort": coh}})
+
+    resp = client.get("/api/samples/facets/cohorts")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] >= 2
+    counts = {c["cohort"]: c["count"] for c in body["cohorts"]}
+    assert counts.get(coh) == 2
 
 
 def test_get_sample_not_found(integration_client):

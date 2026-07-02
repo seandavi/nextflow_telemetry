@@ -92,7 +92,11 @@ Built on B's corrected semantics. From the UI eval (#116–#122) + older UI issu
   + sortable leaderboard table on CohortsPage with a "stalled" flag (no completion in
   7d). Single-cohort drill-down kept below._
 - **#118** server-side pagination for Samples/Runs/cohort-failures (Samples is broken
-  past 1000 rows today).
+  past 1000 rows today). _Samples DONE: `GET /samples` returns a paginated envelope
+  `{items,total,limit,offset}` with server-side `search`+`cohort` filters, plus
+  `GET /samples/facets/cohorts` for whole-catalog chip counts; SamplesPage is now fully
+  server-driven (debounced search, server pagination). Runs/cohort-failures pagination
+  still TODO._
 - **#120** failure-triage drill-down: failed task → its log (`task_hash` exists,
   `<TaskLogViewer>` already built — wire it up).
 - **#121** legibility (human run-name labels, explain `ENDED-NO-LOG` / `exit

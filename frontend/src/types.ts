@@ -12,6 +12,18 @@ export interface SampleResponse {
   updated_at: string
 }
 
+export interface SampleListResponse {
+  items: SampleResponse[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface CohortFacetsResponse {
+  total: number
+  cohorts: Array<{ cohort: string; count: number }>
+}
+
 export interface WorkflowResponse {
   id: number
   workflow_id: string
