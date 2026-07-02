@@ -19,6 +19,8 @@ import type {
   WatchdogResult,
   DispatchabilityResult,
   SampleResponse,
+  SampleListResponse,
+  CohortFacetsResponse,
   SampleRegisterRequest,
   SubmittedRequest,
   DaemonAgentResponse,
@@ -90,12 +92,13 @@ export const api = {
   },
 
   samples: {
-    list:   (page: number, size: number, search?: string, cohort?: string) => {
-      const params = new URLSearchParams({ skip: String(page * size), limit: String(size) })
+    list:   (offset: number, limit: number, search?: string, cohort?: string) => {
+      const params = new URLSearchParams({ offset: String(offset), limit: String(limit) })
       if (search) params.set('search', search)
       if (cohort) params.set('cohort', cohort)
-      return get<SampleResponse[]>(`/samples?${params}`)
+      return get<SampleListResponse>(`/samples?${params}`)
     },
+    cohortFacets: () => get<CohortFacetsResponse>('/samples/facets/cohorts'),
     create: (body: SampleRegisterRequest) => post<SampleResponse>('/samples', body),
   },
 

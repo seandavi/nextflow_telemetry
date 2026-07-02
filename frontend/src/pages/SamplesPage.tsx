@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { T } from '../tokens'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { fmtNum, fmtDate, fmtAgo } from '../lib/format'
@@ -72,33 +72,39 @@ function SampleFormModal({
 export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
   const [page,     setPage]     = useState(0)
   const [search,   setSearch]   = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [cohort,   setCohort]   = useState('')
-  const [allRows,  setAllRows]  = useState<SampleResponse[]>([])
+  const [items,    setItems]    = useState<SampleResponse[]>([])
+  const [total,    setTotal]    = useState(0)
+  const [facets,   setFacets]   = useState<{ total: number; cohorts: Array<{ cohort: string; count: number }> }>({ total: 0, cohorts: [] })
   const [showForm, setShowForm] = useState(false)
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
   const isAdmin = useRole('admin')
 
+  // Debounce the search box so we don't fire a request per keystroke.
   useEffect(() => {
-    api.samples.list(0, 1000).then(setAllRows).catch(console.error)
+    const id = setTimeout(() => setDebouncedSearch(search), 250)
+    return () => clearTimeout(id)
+  }, [search])
+
+  // Server-side page fetch — filters + pagination happen in Postgres, so the
+  // catalog stays correct past the old 1000-row client ceiling (#118).
+  useEffect(() => {
+    let ignore = false
+    api.samples.list(page * PAGE_SIZE, PAGE_SIZE, debouncedSearch || undefined, cohort || undefined)
+      .then(r => { if (!ignore) { setItems(r.items); setTotal(r.total) } })
+      .catch(console.error)
+    return () => { ignore = true }
+  }, [page, debouncedSearch, cohort, tick])
+
+  // Cohort chips + grand total come from a whole-catalog facet query, so they
+  // don't shift as the user pages or filters.
+  useEffect(() => {
+    api.samples.cohortFacets().then(setFacets).catch(console.error)
   }, [tick])
 
-  const cohorts = useMemo(() => {
-    const seen = new Set<string>()
-    for (const r of allRows) {
-      const c = (r.metadata as Record<string, string> | null)?.['cohort']
-      if (c) seen.add(c)
-    }
-    return [...seen].sort()
-  }, [allRows])
-
-  const filtered = useMemo(() => allRows.filter(r => {
-    if (cohort && (r.metadata as Record<string, string> | null)?.['cohort'] !== cohort) return false
-    if (search && !r.sample_id.toLowerCase().includes(search.toLowerCase())) return false
-    return true
-  }), [allRows, cohort, search])
-
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
-  const rows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const rows = items
 
   const handleSearch = useCallback((v: string) => {
     setSearch(v)
@@ -117,7 +123,7 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
           <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>Sample Catalog</div>
           <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
             <span style={{ color: T.text, fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>
-              {allRows.length.toLocaleString()}
+              {facets.total.toLocaleString()}
             </span>{' '}total samples registered
           </div>
         </div>
@@ -129,24 +135,19 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
-        {cohorts.map(c => {
-          const cohortCount = allRows.filter(r =>
-            (r.metadata as Record<string, string> | null)?.['cohort'] === c
-          ).length
-          return (
-            <button key={c} onClick={() => handleCohort(c)} style={{
-              background: cohort === c ? T.accentDim : T.surface,
-              border: `1px solid ${cohort === c ? T.accent : T.border}`,
-              borderRadius: 6, padding: '10px 14px', cursor: 'pointer',
-              textAlign: 'left', transition: 'all 0.15s',
-            }}>
-              <div style={{ fontSize: 11, color: cohort === c ? T.accent : T.muted,
-                fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{c}</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginTop: 4,
-                fontFamily: 'DM Mono, monospace' }}>{fmtNum(cohortCount)}</div>
-            </button>
-          )
-        })}
+        {facets.cohorts.map(({ cohort: c, count }) => (
+          <button key={c} onClick={() => handleCohort(c)} style={{
+            background: cohort === c ? T.accentDim : T.surface,
+            border: `1px solid ${cohort === c ? T.accent : T.border}`,
+            borderRadius: 6, padding: '10px 14px', cursor: 'pointer',
+            textAlign: 'left', transition: 'all 0.15s',
+          }}>
+            <div style={{ fontSize: 11, color: cohort === c ? T.accent : T.muted,
+              fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{c}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginTop: 4,
+              fontFamily: 'DM Mono, monospace' }}>{fmtNum(count)}</div>
+          </button>
+        ))}
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -187,10 +188,10 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
           <span style={{ fontSize: 12, color: T.muted }}>
             Showing{' '}
             <span style={{ color: T.text, fontFamily: 'DM Mono, monospace' }}>
-              {filtered.length === 0 ? 0 : (page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, filtered.length).toLocaleString()}
+              {total === 0 ? 0 : (page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, total).toLocaleString()}
             </span>{' '}of{' '}
             <span style={{ color: T.text, fontFamily: 'DM Mono, monospace' }}>
-              {filtered.length.toLocaleString()}
+              {total.toLocaleString()}
             </span>
           </span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -213,10 +214,10 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
             if (phenotype) metadata['phenotype'] = phenotype
             if (source)    metadata['source']    = source
             api.samples.create({ sample_id: sampleId, metadata })
-              .then(created => {
-                setAllRows(rs => [...rs, created])
+              .then(() => {
                 api.admin.reconcile().catch(console.error)
                 setShowForm(false)
+                refresh()  // refetch page + facets to include the new sample
               })
               .catch(console.error)
           }}

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -62,13 +62,59 @@ class SampleService:
             result = await conn.execute(stmt)
             return dict(result.mappings().one())
 
-    async def list_samples(self, limit: int = 100, offset: int = 0) -> list[dict]:
+    async def list_samples(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        *,
+        search: str | None = None,
+        cohort: str | None = None,
+    ) -> tuple[list[dict], int]:
+        """Return (page_of_samples, total_matching_count).
+
+        Filtering is server-side so the catalog is usable past the old
+        client-side 1000-row ceiling (#118): ``search`` is a case-insensitive
+        substring match on ``sample_id``; ``cohort`` matches
+        ``metadata_->>'cohort'`` exactly.
+        """
+        conds = []
+        if search:
+            conds.append(samples_tbl.c.sample_id.ilike(f"%{search}%"))
+        if cohort:
+            conds.append(samples_tbl.c.metadata_["cohort"].astext == cohort)
+
         async with self.engine.connect() as conn:
-            result = await conn.execute(
-                select(samples_tbl).order_by(samples_tbl.c.created_at.desc())
+            page = await conn.execute(
+                select(samples_tbl).where(*conds)
+                .order_by(samples_tbl.c.created_at.desc())
                 .limit(limit).offset(offset)
             )
-            return [dict(r) for r in result.mappings()]
+            rows = [dict(r) for r in page.mappings()]
+            total = (await conn.execute(
+                select(func.count()).select_from(samples_tbl).where(*conds)
+            )).scalar_one()
+        return rows, total
+
+    async def cohort_facets(self) -> tuple[int, list[dict]]:
+        """Return (total_samples, [{cohort, count}]) across the whole catalog.
+
+        Powers the Samples-page cohort chips at scale — global counts that don't
+        shift as the user pages. Uses the current free-text ``metadata_->>'cohort''``
+        representation; this becomes membership-driven once the Epic A
+        consolidation lands (docs/study-sample-version-identity.md).
+        """
+        cohort_expr = samples_tbl.c.metadata_["cohort"].astext
+        async with self.engine.connect() as conn:
+            total = (await conn.execute(
+                select(func.count()).select_from(samples_tbl)
+            )).scalar_one()
+            rows = (await conn.execute(
+                select(cohort_expr.label("cohort"), func.count().label("count"))
+                .where(cohort_expr.isnot(None))
+                .group_by(cohort_expr)
+                .order_by(func.count().desc(), cohort_expr)
+            )).mappings().all()
+        return total, [{"cohort": r["cohort"], "count": r["count"]} for r in rows]
 
     async def get(self, sample_id: str) -> dict | None:
         async with self.engine.connect() as conn:
