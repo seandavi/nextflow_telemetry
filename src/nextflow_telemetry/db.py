@@ -17,6 +17,7 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -150,6 +151,16 @@ workflows_tbl = Table(
     UniqueConstraint("workflow_id", "version", name="uq_workflow_id_version"),
     Index("ix_workflows_status", "status"),
     Index("ix_workflows_workflow_id", "workflow_id"),
+    # At most one active version per workflow_id (Epic A identity model,
+    # docs/study-sample-version-identity.md). Makes "the active version"
+    # unambiguous for completion metrics. Maintained in the app by
+    # WorkflowService (register + promote auto-retire the prior active).
+    Index(
+        "uq_one_active_version_per_workflow",
+        "workflow_id",
+        unique=True,
+        postgresql_where=text("status = 'active'"),
+    ),
 )
 
 # ---------------------------------------------------------------------------

@@ -93,7 +93,7 @@ def _seed_cohort(db_url: str, *, collection_id: str, sample_ids: list[str]) -> N
     _run(_exec(db_url, *stmts))
 
 
-def _seed_jobs(db_url: str, sample_id: str, status: str, *, workflow_id: str, workflow_version: str = "1.0.0") -> None:
+def _seed_jobs(db_url: str, sample_id: str, status: str, *, workflow_id: str, workflow_version: str = "1.0.0", workflow_status: str = "active") -> None:
     from nextflow_telemetry.db import jobs_tbl, workflows_tbl
 
     now = _ts()
@@ -102,7 +102,9 @@ def _seed_jobs(db_url: str, sample_id: str, status: str, *, workflow_id: str, wo
 
     async def _do():
         async with engine.begin() as conn:
-            # upsert workflow
+            # upsert workflow. workflow_status lets a caller seed a retired
+            # version directly, avoiding a transient second-active row that the
+            # uq_one_active_version_per_workflow partial index would reject.
             existing = (await conn.execute(
                 select(workflows_tbl).where(
                     workflows_tbl.c.workflow_id == workflow_id,
@@ -117,7 +119,7 @@ def _seed_jobs(db_url: str, sample_id: str, status: str, *, workflow_id: str, wo
                         repository_url="https://example.com/wf",
                         revision="main",
                         max_retries=3,
-                        status="active",
+                        status=workflow_status,
                         created_at=now,
                         updated_at=now,
                     )
@@ -342,8 +344,7 @@ def test_leaderboard_ranks_cohorts_by_active_completion(integration_client, db_u
     b = [f"SB-{tag}-{i}" for i in range(2)]
     _seed_cohort(db_url, collection_id=cid_b, sample_ids=b)
     _seed_jobs(db_url, b[0], "failed", workflow_id=wf)
-    _seed_jobs(db_url, b[1], "completed", workflow_id=wf, workflow_version="9.9.9")
-    _set_workflow_status(db_url, wf, "9.9.9", "retired")
+    _seed_jobs(db_url, b[1], "completed", workflow_id=wf, workflow_version="9.9.9", workflow_status="retired")
 
     rows = client.get("/api/cohorts/leaderboard").json()
     by_id = {r["collection_id"]: r for r in rows}
@@ -391,10 +392,10 @@ def test_summary_completion_scoped_to_active_version(integration_client, db_url,
     _seed_jobs(db_url, samples[0], "completed", workflow_id=wf, workflow_version="2.0.0")
     _seed_jobs(db_url, samples[1], "completed", workflow_id=wf, workflow_version="2.0.0")
     _seed_jobs(db_url, samples[2], "pending",   workflow_id=wf, workflow_version="2.0.0")
-    # Retired version 1.0.0: ALL four completed (prior pipeline run).
+    # Retired version 1.0.0: ALL four completed (prior pipeline run). Seeded
+    # already-retired so 2.0.0 remains the sole active version.
     for s in samples:
-        _seed_jobs(db_url, s, "completed", workflow_id=wf, workflow_version="1.0.0")
-    _set_workflow_status(db_url, wf, "1.0.0", "retired")  # 2.0.0 stays active
+        _seed_jobs(db_url, s, "completed", workflow_id=wf, workflow_version="1.0.0", workflow_status="retired")
 
     # Default: active version only, completion in distinct samples.
     resp = client.get(f"/api/cohorts/{cid}/summary")

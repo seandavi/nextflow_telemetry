@@ -220,6 +220,50 @@ def test_workflow_invalid_status_rejected(integration_client):
     assert resp.status_code == 422
 
 
+def test_registering_new_version_auto_retires_prior_active(integration_client, db_url):
+    """Epic A invariant: registering a new version retires the prior active one
+    (and purges its pending jobs), keeping exactly one active per workflow_id."""
+    from nextflow_telemetry.db import jobs_tbl, workflows_tbl
+
+    client, _ = integration_client
+    tag = uuid.uuid4().hex[:6]
+    wf_id = f"autoretire-{tag}"
+    sample_id = f"SRR-ar-{tag}"
+    assert client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"}).status_code == 201
+    assert client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id, version="1.0.0")).status_code in (200, 201)
+    assert client.post("/api/admin/reconcile-jobs").status_code == 200
+
+    v1_before = _run(_query(db_url, select(jobs_tbl.c.status).where(
+        jobs_tbl.c.sample_id == sample_id, jobs_tbl.c.workflow_id == wf_id, jobs_tbl.c.workflow_version == "1.0.0")))
+    assert any(j["status"] == "pending" for j in v1_before)
+
+    # Register 2.0.0 -> 1.0.0 auto-retired, its pending job purged.
+    assert client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id, version="2.0.0")).status_code in (200, 201)
+
+    active = client.get("/api/workflows?status=active").json()
+    assert [w["version"] for w in active if w["workflow_id"] == wf_id] == ["2.0.0"]
+    statuses = {r["version"]: r["status"] for r in _run(_query(db_url, select(
+        workflows_tbl.c.version, workflows_tbl.c.status).where(workflows_tbl.c.workflow_id == wf_id)))}
+    assert statuses == {"1.0.0": "retired", "2.0.0": "active"}
+    v1_after = _run(_query(db_url, select(jobs_tbl.c.status).where(
+        jobs_tbl.c.sample_id == sample_id, jobs_tbl.c.workflow_id == wf_id, jobs_tbl.c.workflow_version == "1.0.0")))
+    assert v1_after == []
+
+
+def test_promoting_version_auto_retires_current_active(integration_client):
+    """Promoting a version to active retires whichever version was active."""
+    client, _ = integration_client
+    tag = uuid.uuid4().hex[:6]
+    wf_id = f"promote-{tag}"
+    pk1 = client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id, version="1.0.0")).json()["id"]
+    client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id, version="2.0.0"))  # retires 1.0.0
+
+    # Promote 1.0.0 back -> 2.0.0 must be retired so only one stays active.
+    assert client.patch(f"/api/workflows/{pk1}/status", json={"status": "active"}).status_code == 200
+    active = client.get("/api/workflows?status=active").json()
+    assert sorted(w["version"] for w in active if w["workflow_id"] == wf_id) == ["1.0.0"]
+
+
 def test_workflow_revision_update(integration_client):
     client, _ = integration_client
     resp = client.post("/api/workflows", json=_wf_payload(revision="v1.0"))
