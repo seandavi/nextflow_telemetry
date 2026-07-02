@@ -967,9 +967,10 @@ def test_admin_stats_shape_and_increments(integration_client):
     assert active_pending_after >= active_pending_before + 1
 
 
-def test_admin_stats_active_bucket_excludes_retired_versions(integration_client):
-    """#114/#116: jobs under a retired workflow version count in jobs_by_status
-    but NOT in jobs_by_status_active."""
+def test_retiring_workflow_purges_its_pending_jobs(integration_client):
+    """#114: retiring a workflow deletes its still-pending (never-dispatched)
+    jobs, so they vanish from BOTH the all-versions and active stats buckets —
+    the "298 pending" illusion is fixed at the source, not just hidden."""
     client, _ = integration_client
     sample_id = f"SRR-retstat-{uuid.uuid4().hex[:6]}"
     wf_id = f"retstat-{uuid.uuid4().hex[:6]}"
@@ -981,13 +982,13 @@ def test_admin_stats_active_bucket_excludes_retired_versions(integration_client)
     baseline = client.get("/api/admin/stats").json()
     all_pending = baseline["jobs_by_status"].get("pending", 0)
     active_pending = baseline["jobs_by_status_active"].get("pending", 0)
+    assert all_pending >= 1 and active_pending >= 1
 
-    # Retire the version: its pending job stays in `jobs` but must drop out of
-    # the active bucket. All-versions bucket is unchanged.
     wf_pk = client.get(f"/api/workflows?status=active").json()
     pk = next(w["id"] for w in wf_pk if w["workflow_id"] == wf_id)
     assert client.patch(f"/api/workflows/{pk}/status", json={"status": "retired"}).status_code == 200
 
     after = client.get("/api/admin/stats").json()
-    assert after["jobs_by_status"].get("pending", 0) == all_pending          # unchanged
-    assert after["jobs_by_status_active"].get("pending", 0) == active_pending - 1  # dropped
+    # The orphaned pending job is gone from both buckets.
+    assert after["jobs_by_status"].get("pending", 0) == all_pending - 1
+    assert after["jobs_by_status_active"].get("pending", 0) == active_pending - 1

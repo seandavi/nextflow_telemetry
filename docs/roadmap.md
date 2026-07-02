@@ -49,10 +49,10 @@ migration plan. Blocks B, D, E.
 
 ### Epic B — Operational-state correctness  (cheap, high-value, unblocks the UI)
 - **#114** retiring a workflow reconciles its pending jobs; bucket pending by
-  active/retired in stats (fixes the "298 pending" illusion). _Stats-bucketing half
-  DONE (branch `epic-b/completion-semantics`): `/admin/stats` now returns
-  `jobs_by_status_active` alongside the all-versions `jobs_by_status`. Still TODO: the
-  reconcile-on-retire behavior itself._
+  active/retired in stats (fixes the "298 pending" illusion). _DONE: `/admin/stats`
+  returns `jobs_by_status_active` alongside the all-versions `jobs_by_status` (#125);
+  and retiring a workflow now purges its still-pending (never-dispatched) jobs at the
+  source, leaving in-flight/completed jobs untouched (pausing purges nothing)._
 - **#116** per-sample completion under the **active** workflow version (depends on A).
   _DONE (branch `epic-b/completion-semantics`): cohort `summary()` now measures
   completion as distinct samples with a completed job under the active version
