@@ -434,11 +434,25 @@ export interface CohortSummaryResponse {
   workflow_id: string | null
   workflow_version: string | null
   sample_count: number
+  samples_completed: number
   total_jobs: number
   job_status_counts: CohortJobStatusCounts
   completion_pct: number
   failure_by_process: CohortFailureByProcessRow[]
   generated_at_utc: string
+}
+
+export interface CohortLeaderboardRow {
+  collection_id: string
+  source: string
+  label: string | null
+  sample_count: number
+  samples_completed: number
+  samples_failed: number
+  samples_running: number
+  samples_remaining: number
+  completion_pct: number
+  last_completed_at: string | null
 }
 
 export interface CohortFailureRow {

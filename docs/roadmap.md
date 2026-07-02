@@ -76,7 +76,10 @@ Tracker: **#62**. "Know when/why a run died."
 Built on B's corrected semantics. From the UI eval (#116–#122) + older UI issues.
 - **#117** completion timeline endpoint → burndown + ETA + rate-based stall alert
   (the single biggest missing thing for a 100k operator).
-- **#119** cross-study completeness leaderboard (depends on #116).
+- **#119** cross-study completeness leaderboard (depends on #116). _DONE: batched
+  `GET /api/cohorts/leaderboard` (active-version completion in samples, laggards-first)
+  + sortable leaderboard table on CohortsPage with a "stalled" flag (no completion in
+  7d). Single-cohort drill-down kept below._
 - **#118** server-side pagination for Samples/Runs/cohort-failures (Samples is broken
   past 1000 rows today).
 - **#120** failure-triage drill-down: failed task → its log (`task_hash` exists,

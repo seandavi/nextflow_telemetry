@@ -24,6 +24,7 @@ import type {
   RunsListResponse,
   RunDetail,
   CohortListItem,
+  CohortLeaderboardRow,
   CohortSummaryResponse,
   CohortFailuresResponse,
 } from '../types'
@@ -150,6 +151,7 @@ export const api = {
 
   cohorts: {
     list: () => get<CohortListItem[]>('/cohorts'),
+    leaderboard: () => get<CohortLeaderboardRow[]>('/cohorts/leaderboard'),
     summary: (collectionId: string, opts: { workflowId?: string; workflowVersion?: string } = {}) => {
       const p = new URLSearchParams()
       if (opts.workflowId)      p.set('workflow_id',      opts.workflowId)
