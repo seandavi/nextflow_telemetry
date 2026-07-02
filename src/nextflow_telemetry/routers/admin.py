@@ -14,6 +14,11 @@ from ..services.reconcile import ReconcileService, sweep_run_incomplete
 # its last heartbeat is within this window.
 _DAEMON_ACTIVE_THRESHOLD = datetime.timedelta(minutes=2)
 
+# Default staleness window for the heartbeat watchdog. Matches the read-only
+# "stalled" classifier in routers/runs.py (_RUN_STALE_THRESHOLD = 15 min). The
+# nf-client run wrapper heartbeats every 60s, so 15 min ≈ 15 missed beats.
+_HEARTBEAT_STALE_MINUTES_DEFAULT = 15.0
+
 
 def create_admin_router(engine: AsyncEngine) -> APIRouter:
     router = APIRouter(prefix="/admin", tags=["admin"])
@@ -144,6 +149,68 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
                 total_swept += await sweep_run_incomplete(conn, run_name, now)
 
         return {"stale_runs_closed": len(stale), "jobs_swept": total_swept}
+
+    @router.post(
+        "/heartbeat-watchdog",
+        summary="Fail zombie 'running' runs that stopped heartbeating",
+        description=(
+            "Finds runs in `running` state whose most recent liveness signal "
+            "(`last_heartbeat_at`, falling back to `started_at`) is older than "
+            "`stale_after_minutes`, marks each `failed`, and sweeps its jobs "
+            "through the retry/dead-letter logic. This is the real backstop for "
+            "SLURM walltime-TIMEOUT and node failures, where the run wrapper (and "
+            "its heartbeat thread) is killed but no Nextflow `completed` event is "
+            "ever sent — so the run would otherwise sit `running` forever. "
+            "Intended to be called periodically (cron / daemon loop). "
+            "Deliberately does NOT touch `submitted` runs: those are queued in "
+            "SLURM and legitimately have no heartbeat yet (queue wait, e.g. behind "
+            "a maintenance reservation); the coarse `expire-stale-runs` covers that."
+        ),
+    )
+    async def heartbeat_watchdog(stale_after_minutes: float = _HEARTBEAT_STALE_MINUTES_DEFAULT):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cutoff = now - datetime.timedelta(minutes=stale_after_minutes)
+        # Fresh heartbeats keep this in the future of the cutoff; a wrapper that
+        # died stops updating it, so it falls behind. started_at is the fallback
+        # for a run that reached 'running' before its first heartbeat landed.
+        signal = func.coalesce(
+            workflow_runs_tbl.c.last_heartbeat_at,
+            workflow_runs_tbl.c.started_at,
+        )
+        reason = f"heartbeat watchdog: no heartbeat for >{stale_after_minutes:g} min"
+        swept_runs: list[dict] = []
+        total_swept = 0
+
+        async with engine.begin() as conn:
+            stale = (await conn.execute(
+                select(workflow_runs_tbl.c.run_name, signal.label("last_signal"))
+                .where(
+                    workflow_runs_tbl.c.status == "running",
+                    signal < cutoff,
+                )
+            )).all()
+
+            for r in stale:
+                await conn.execute(
+                    update(workflow_runs_tbl)
+                    .where(workflow_runs_tbl.c.run_name == r.run_name)
+                    .values(status="failed", completed_at=now, slurm_reason=reason)
+                )
+                jobs = await sweep_run_incomplete(conn, r.run_name, now)
+                total_swept += jobs
+                swept_runs.append({
+                    "run_name": r.run_name,
+                    "last_signal_at": r.last_signal,
+                    "jobs_swept": jobs,
+                })
+
+        return {
+            "checked_at": now,
+            "stale_after_minutes": stale_after_minutes,
+            "stale_runs_failed": len(stale),
+            "jobs_swept": total_swept,
+            "runs": swept_runs,
+        }
 
     @router.post(
         "/requeue-dead-letter",

@@ -61,6 +61,10 @@ migration plan. Blocks B, D, E.
   labels + the #119 leaderboard on top of the corrected semantics._
 - **#115** server-side heartbeat-staleness watchdog — makes `running` honest; a
   walltime-killed run currently sits `running` forever (observed live 2026-07-01).
+  _DONE: `POST /admin/heartbeat-watchdog?stale_after_minutes=15` fails `running` runs
+  whose `last_heartbeat_at` (fallback `started_at`) is stale and sweeps their jobs
+  through retry/DLQ; queued `submitted` runs (no heartbeat by design) are untouched.
+  Operator-invokable via a new Dispatch → Heartbeat Watchdog tab; cron-safe._
 
 ### Epic C — Run-lifecycle observability  (finish the #62 epic)
 Tracker: **#62**. "Know when/why a run died."

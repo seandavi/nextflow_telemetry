@@ -16,6 +16,7 @@ import type {
   ReconcileResult,
   RequeueResult,
   RequeueDlqResult,
+  WatchdogResult,
   DispatchabilityResult,
   SampleResponse,
   SampleRegisterRequest,
@@ -129,6 +130,8 @@ export const api = {
   admin: {
     reconcile: () => post<ReconcileResult>('/admin/reconcile-jobs'),
     requeueDeadLetter: () => post<RequeueDlqResult>('/admin/requeue-dead-letter'),
+    heartbeatWatchdog: (staleAfterMinutes?: number) =>
+      post<WatchdogResult>(`/admin/heartbeat-watchdog${staleAfterMinutes != null ? `?stale_after_minutes=${staleAfterMinutes}` : ''}`),
     dispatchability: () => get<DispatchabilityResult>('/admin/dispatchability'),
   },
 

@@ -259,6 +259,14 @@ export interface RequeueDlqResult {
   requeued: number
 }
 
+export interface WatchdogResult {
+  checked_at: string
+  stale_after_minutes: number
+  stale_runs_failed: number
+  jobs_swept: number
+  runs: Array<{ run_name: string; last_signal_at: string | null; jobs_swept: number }>
+}
+
 export interface RunListItem {
   run_name: string
   workflow_id: string

@@ -10,7 +10,7 @@ import KPICard from '../components/KPICard'
 import SectionHeader from '../components/SectionHeader'
 import Panel from '../components/Panel'
 import PageWrap from '../components/PageWrap'
-import type { DispatchBatchResponse, ReconcileResult, RequeueResult, RequeueDlqResult, WorkflowResponse } from '../types'
+import type { DispatchBatchResponse, ReconcileResult, RequeueResult, RequeueDlqResult, WatchdogResult, WorkflowResponse } from '../types'
 
 function DispatchBatchPanel() {
   const [wfId,      setWfId]      = useState('')
@@ -239,13 +239,56 @@ function RequeueDlqPanel() {
   )
 }
 
-type Tab = 'dispatch' | 'submitted' | 'requeue' | 'reconcile' | 'requeue-dlq'
+function WatchdogPanel() {
+  const [minutes, setMinutes] = useState('15')
+  const [result,  setResult]  = useState<WatchdogResult | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  function run() {
+    setLoading(true)
+    const m = Number(minutes)
+    api.admin.heartbeatWatchdog(Number.isFinite(m) && m > 0 ? m : undefined)
+      .then(r => { setResult(r); setLoading(false) })
+      .catch(e => { console.error(e); setLoading(false) })
+  }
+
+  return (
+    <Panel>
+      <SectionHeader title="POST /admin/heartbeat-watchdog"
+        sub="Fail zombie 'running' runs that stopped heartbeating — the SLURM walltime/OOM backstop; safe to call from cron" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560 }}>
+        <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
+          Finds <Badge label="running" variant="neutral" /> runs whose last{' '}
+          <code style={{ fontFamily: 'DM Mono, monospace', color: T.accent }}>heartbeat</code>{' '}
+          is older than the window, marks them <Badge label="failed" variant="error" />, and sweeps
+          their jobs through retry / dead-letter. Queued{' '}
+          <Badge label="submitted" variant="neutral" /> runs (no heartbeat by design) are left alone.
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          <Input label="Stale after (min)" value={minutes} onChange={setMinutes} type="number" mono />
+          <Btn onClick={run} disabled={loading}>{loading ? 'Scanning…' : 'Run Watchdog'}</Btn>
+        </div>
+        {result && (
+          <div style={{ display: 'flex', gap: 12 }}>
+            <KPICard label="Runs failed" value={result.stale_runs_failed}
+              sub={`no heartbeat > ${result.stale_after_minutes}m`} accent={result.stale_runs_failed ? T.red : T.green} />
+            <KPICard label="Jobs swept" value={result.jobs_swept.toLocaleString()}
+              sub="retry / dead-letter" accent={T.amber} />
+          </div>
+        )}
+      </div>
+    </Panel>
+  )
+}
+
+type Tab = 'dispatch' | 'submitted' | 'requeue' | 'reconcile' | 'requeue-dlq' | 'watchdog'
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'dispatch',    label: 'Dispatch Batch'      },
   { id: 'submitted',   label: 'Confirm Submitted'   },
   { id: 'requeue',     label: 'Requeue Expired'     },
   { id: 'requeue-dlq', label: 'Requeue Dead-Letter' },
   { id: 'reconcile',   label: 'Reconcile Jobs'      },
+  { id: 'watchdog',    label: 'Heartbeat Watchdog'  },
 ]
 
 export default function DispatchPage() {
@@ -312,6 +355,7 @@ export default function DispatchPage() {
       {tab === 'requeue'     && <RequeuePanel />}
       {tab === 'requeue-dlq' && <RequeueDlqPanel />}
       {tab === 'reconcile'   && <ReconcilePanel />}
+      {tab === 'watchdog'    && <WatchdogPanel />}
     </PageWrap>
   )
 }
