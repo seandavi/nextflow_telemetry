@@ -943,9 +943,10 @@ def test_admin_stats_shape_and_increments(integration_client):
     before = client.get("/api/admin/stats")
     assert before.status_code == 200
     pre = before.json()
-    for key in ("samples", "workflows", "jobs_by_status", "runs_by_status", "dead_letter_unresolved"):
+    for key in ("samples", "workflows", "jobs_by_status", "jobs_by_status_active", "runs_by_status", "dead_letter_unresolved"):
         assert key in pre
     assert isinstance(pre["jobs_by_status"], dict)
+    assert isinstance(pre["jobs_by_status_active"], dict)
     assert isinstance(pre["runs_by_status"], dict)
 
     sample_id = f"SRR-stats-{uuid.uuid4().hex[:6]}"
@@ -960,3 +961,33 @@ def test_admin_stats_shape_and_increments(integration_client):
     pending_before = pre["jobs_by_status"].get("pending", 0)
     pending_after = after["jobs_by_status"].get("pending", 0)
     assert pending_after >= pending_before + 1
+    # The new workflow is active, so the active-scoped bucket increments too.
+    active_pending_before = pre["jobs_by_status_active"].get("pending", 0)
+    active_pending_after = after["jobs_by_status_active"].get("pending", 0)
+    assert active_pending_after >= active_pending_before + 1
+
+
+def test_admin_stats_active_bucket_excludes_retired_versions(integration_client):
+    """#114/#116: jobs under a retired workflow version count in jobs_by_status
+    but NOT in jobs_by_status_active."""
+    client, _ = integration_client
+    sample_id = f"SRR-retstat-{uuid.uuid4().hex[:6]}"
+    wf_id = f"retstat-{uuid.uuid4().hex[:6]}"
+    assert client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"}).status_code == 201
+    # Active version -> reconcile creates a pending job under it.
+    assert client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id, version="1.0.0")).status_code in (200, 201)
+    assert client.post("/api/admin/reconcile-jobs").status_code == 200
+
+    baseline = client.get("/api/admin/stats").json()
+    all_pending = baseline["jobs_by_status"].get("pending", 0)
+    active_pending = baseline["jobs_by_status_active"].get("pending", 0)
+
+    # Retire the version: its pending job stays in `jobs` but must drop out of
+    # the active bucket. All-versions bucket is unchanged.
+    wf_pk = client.get(f"/api/workflows?status=active").json()
+    pk = next(w["id"] for w in wf_pk if w["workflow_id"] == wf_id)
+    assert client.patch(f"/api/workflows/{pk}/status", json={"status": "retired"}).status_code == 200
+
+    after = client.get("/api/admin/stats").json()
+    assert after["jobs_by_status"].get("pending", 0) == all_pending          # unchanged
+    assert after["jobs_by_status_active"].get("pending", 0) == active_pending - 1  # dropped

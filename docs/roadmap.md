@@ -33,6 +33,12 @@ move in the whole backlog.
 ### Epic A — Data-model foundation  ⟵ START HERE
 Settle identity/semantics before adding columns. Deliverable: design doc(s), then a
 migration plan. Blocks B, D, E.
+- **Study/sample/version identity** settled in `docs/study-sample-version-identity.md`
+  (2026-07-02). Resolved: sample↔study is **many-to-many** (kills `metadata.cohort` as
+  source of truth; join table wins); **one unified study entity** (cMD study =
+  `collections` row with `source='cmd'`); **exactly one active version per
+  `workflow_id`**; completion measured in **distinct samples under the active version**.
+  Migration plan sketched there; not yet written.
 - **#55** sample metadata data model + agentic (LLM) harmonization — write
   `docs/sample-metadata-design.md` answering: annotation key `(sample_id)` vs
   `(sample_id, study)`; provenance (`source`/`evidence`/`confidence`); publications
@@ -43,8 +49,16 @@ migration plan. Blocks B, D, E.
 
 ### Epic B — Operational-state correctness  (cheap, high-value, unblocks the UI)
 - **#114** retiring a workflow reconciles its pending jobs; bucket pending by
-  active/retired in stats (fixes the "298 pending" illusion).
+  active/retired in stats (fixes the "298 pending" illusion). _Stats-bucketing half
+  DONE (branch `epic-b/completion-semantics`): `/admin/stats` now returns
+  `jobs_by_status_active` alongside the all-versions `jobs_by_status`. Still TODO: the
+  reconcile-on-retire behavior itself._
 - **#116** per-sample completion under the **active** workflow version (depends on A).
+  _DONE (branch `epic-b/completion-semantics`): cohort `summary()` now measures
+  completion as distinct samples with a completed job under the active version
+  (`completion_pct = samples_completed / sample_count`); `all_workflows=true` opts into
+  the old across-versions view. Read-path only; tested. TODO: frontend samples-based
+  labels + the #119 leaderboard on top of the corrected semantics._
 - **#115** server-side heartbeat-staleness watchdog — makes `running` honest; a
   walltime-killed run currently sits `running` forever (observed live 2026-07-01).
 

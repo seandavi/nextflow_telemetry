@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import insert, select, text
+from sqlalchemy import insert, select, text, update
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
@@ -319,6 +319,58 @@ def test_summary_excludes_samples_not_in_cohort(integration_client, db_url, coho
     assert body["total_jobs"] == 1
     assert body["job_status_counts"]["completed"] == 1
     assert body["failure_by_process"] == []
+
+
+def _set_workflow_status(db_url: str, workflow_id: str, version: str, status: str) -> None:
+    from nextflow_telemetry.db import workflows_tbl
+
+    _run(_exec(
+        db_url,
+        update(workflows_tbl)
+        .where(workflows_tbl.c.workflow_id == workflow_id, workflows_tbl.c.version == version)
+        .values(status=status),
+    ))
+
+
+def test_summary_completion_scoped_to_active_version(integration_client, db_url, cohort_data):
+    """#116: completed work under a RETIRED version must not dilute or inflate
+    completion. Default view scopes to the active version and measures distinct
+    samples; all_workflows=true opts back into the across-all-versions view.
+    """
+    client, _ = integration_client
+    tag = cohort_data
+    cid = f"COHORT-{tag}"
+    wf = f"wf-{tag}"
+    samples = [f"S-{tag}-{i}" for i in range(4)]
+    _seed_cohort(db_url, collection_id=cid, sample_ids=samples)
+
+    # Active version 2.0.0: two completed, one pending, one with no job at all.
+    _seed_jobs(db_url, samples[0], "completed", workflow_id=wf, workflow_version="2.0.0")
+    _seed_jobs(db_url, samples[1], "completed", workflow_id=wf, workflow_version="2.0.0")
+    _seed_jobs(db_url, samples[2], "pending",   workflow_id=wf, workflow_version="2.0.0")
+    # Retired version 1.0.0: ALL four completed (prior pipeline run).
+    for s in samples:
+        _seed_jobs(db_url, s, "completed", workflow_id=wf, workflow_version="1.0.0")
+    _set_workflow_status(db_url, wf, "1.0.0", "retired")  # 2.0.0 stays active
+
+    # Default: active version only, completion in distinct samples.
+    resp = client.get(f"/api/cohorts/{cid}/summary")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["sample_count"] == 4
+    assert body["total_jobs"] == 3            # only the 2.0.0 jobs
+    assert body["job_status_counts"]["completed"] == 2
+    assert body["job_status_counts"]["pending"] == 1
+    assert body["samples_completed"] == 2
+    assert body["completion_pct"] == 50.0     # 2 of 4 samples, NOT 6/7 job rows
+
+    # Opt-in to all versions: retired-version completions reappear.
+    resp_all = client.get(f"/api/cohorts/{cid}/summary?all_workflows=true")
+    body_all = resp_all.json()
+    assert body_all["total_jobs"] == 7        # 3 active + 4 retired
+    assert body_all["job_status_counts"]["completed"] == 6
+    assert body_all["samples_completed"] == 4  # all four completed under 1.0.0
+    assert body_all["completion_pct"] == 100.0
 
 
 # ---------------------------------------------------------------------------

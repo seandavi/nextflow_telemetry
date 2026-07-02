@@ -252,8 +252,12 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
         description=(
             "Returns total sample/workflow counts, jobs grouped by status, "
             "workflow runs grouped by status, and the count of unresolved "
-            "dead-letter entries. Lightweight — used by `nf-client stats` "
-            "to give operators a one-shot system overview."
+            "dead-letter entries. `jobs_by_status` counts every job across all "
+            "workflow versions (including retired ones); `jobs_by_status_active` "
+            "counts only jobs under a currently-active workflow version — the "
+            "actionable numbers, undiluted by orphaned retired-version jobs "
+            "(#114/#116). Lightweight — used by `nf-client stats` to give "
+            "operators a one-shot system overview."
         ),
     )
     async def stats():
@@ -266,6 +270,17 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
             )).scalar_one()
             jobs_rows = (await conn.execute(
                 select(jobs_tbl.c.status, func.count())
+                .group_by(jobs_tbl.c.status)
+            )).all()
+            # Same breakdown, but only jobs whose workflow version is active.
+            # workflow_pk identifies the exact (workflow_id, version) row, so the
+            # join is precise — retired-version jobs are excluded (#114/#116).
+            jobs_active_rows = (await conn.execute(
+                select(jobs_tbl.c.status, func.count())
+                .select_from(
+                    jobs_tbl.join(workflows_tbl, jobs_tbl.c.workflow_pk == workflows_tbl.c.id)
+                )
+                .where(workflows_tbl.c.status == "active")
                 .group_by(jobs_tbl.c.status)
             )).all()
             runs_rows = (await conn.execute(
@@ -281,6 +296,7 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
             "samples": samples_total,
             "workflows": workflows_total,
             "jobs_by_status": {status: count for status, count in jobs_rows},
+            "jobs_by_status_active": {status: count for status, count in jobs_active_rows},
             "runs_by_status": {status: count for status, count in runs_rows},
             "dead_letter_unresolved": dlq_unresolved,
         }
