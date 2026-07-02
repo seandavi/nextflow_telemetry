@@ -46,6 +46,13 @@ migration plan. Blocks B, D, E.
   re-run semantics; human-in-the-loop review. Scope: human + mouse hosts only.
 - Make **study/collection first-class and consistent** (one source of truth for
   membership; subsumes the data-model half of #116/#119).
+- **Single-active-version enforcement** DONE: partial unique index
+  `uq_one_active_version_per_workflow` (in `db.py` + migration `f4a5b6c7` with data
+  cleanup + orphan-pending purge); `WorkflowService.register`/`update_status` auto-retire
+  the prior active version (and purge its pending jobs) so the invariant holds at
+  runtime. Migration verified end-to-end against real Postgres. Remaining Epic A:
+  the membership-consolidation migrations (collections as SoT, demote `metadata.cohort`,
+  unify `curated_studies`).
 
 ### Epic B — Operational-state correctness  (cheap, high-value, unblocks the UI)
 - **#114** retiring a workflow reconciles its pending jobs; bucket pending by
