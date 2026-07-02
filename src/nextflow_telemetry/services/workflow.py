@@ -4,13 +4,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+import logging
+
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import workflows_tbl
+from ..db import jobs_tbl, workflows_tbl
 
 VALID_STATUSES = {"active", "paused", "retired"}
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -62,7 +66,15 @@ class WorkflowService:
             return dict(result.mappings().one())
 
     async def update_status(self, workflow_pk: int, status: str) -> dict | None:
-        """Transition workflow lifecycle: active → paused → retired."""
+        """Transition workflow lifecycle: active → paused → retired.
+
+        Retiring is permanent and excludes the workflow from reconciliation and
+        dispatch, so its still-`pending` jobs are orphans that would never run —
+        they are purged here (the actionable half of #114, so the "298 pending"
+        illusion is fixed at the source, not just hidden in stats). In-flight
+        jobs (claimed/submitted/running) and completed/failed history are left
+        untouched; pausing is reversible and purges nothing.
+        """
         if status not in VALID_STATUSES:
             raise ValueError(f"status must be one of {VALID_STATUSES}")
         now = datetime.now(timezone.utc)
@@ -74,7 +86,25 @@ class WorkflowService:
                 .returning(*workflows_tbl.c)
             )
             row = result.mappings().one_or_none()
-            return dict(row) if row else None
+            if not row:
+                return None
+            purged = 0
+            if status == "retired":
+                purge = await conn.execute(
+                    delete(jobs_tbl).where(
+                        jobs_tbl.c.workflow_pk == workflow_pk,
+                        jobs_tbl.c.status == "pending",
+                    )
+                )
+                purged = purge.rowcount or 0
+                if purged:
+                    logger.info(
+                        "retired workflow_pk=%s purged %d pending jobs",
+                        workflow_pk, purged,
+                    )
+            out = dict(row)
+            out["purged_pending_jobs"] = purged
+            return out
 
     async def update_revision(self, workflow_pk: int, revision: str) -> dict | None:
         """Update the git revision for a workflow without forcing reruns."""
