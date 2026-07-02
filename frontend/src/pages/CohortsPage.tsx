@@ -27,15 +27,24 @@ function isStalled(r: CohortLeaderboardRow): boolean {
 
 type LbSortKey = 'collection_id' | 'sample_count' | 'samples_completed' | 'samples_remaining' | 'completion_pct'
 
-function CompletionBar({ pct }: { pct: number }) {
-  const color = pct >= 99.5 ? T.green : pct >= 50 ? T.amber : T.red
+// Stacked bar coloured by sample STATE, not by a completion threshold:
+// green = completed, amber = running, red = failed, grey track = pending/remaining.
+// The green fraction is the completion %. This keeps "red" meaning failed rather
+// than "low completion".
+function CompletionBar({ r }: { r: CohortLeaderboardRow }) {
+  const total = r.sample_count || 1
+  const pctOf = (n: number) => `${Math.max(0, Math.min(100, (n / total) * 100))}%`
+  const seg = (width: string, color: string, title: string) =>
+    width === '0%' ? null : <div title={title} style={{ width, height: '100%', background: color }} />
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <div style={{ position: 'relative', flex: 1, height: 6, background: T.border, borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${Math.min(100, pct)}%`, background: color }} />
+      <div style={{ display: 'flex', flex: 1, height: 6, background: T.border, borderRadius: 3, overflow: 'hidden' }}>
+        {seg(pctOf(r.samples_completed), T.green, `${r.samples_completed} completed`)}
+        {seg(pctOf(r.samples_running),   T.amber, `${r.samples_running} running`)}
+        {seg(pctOf(r.samples_failed),    T.red,   `${r.samples_failed} failed`)}
       </div>
       <div style={{ fontSize: 12, color: T.text, fontFamily: 'DM Mono, monospace', minWidth: 48, textAlign: 'right' }}>
-        {pct.toFixed(1)}%
+        {r.completion_pct.toFixed(1)}%
       </div>
     </div>
   )
@@ -135,7 +144,7 @@ function LeaderboardTable({
             <div style={{ fontSize: 12, color: T.muted, textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>{fmtNum(r.samples_remaining)}</div>
             <div style={{ fontSize: 12, color: r.samples_failed ? T.red : T.muted, textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>{fmtNum(r.samples_failed)}</div>
             <div style={{ fontSize: 12, color: r.samples_running ? T.amber : T.muted, textAlign: 'right', fontFamily: 'DM Mono, monospace' }}>{fmtNum(r.samples_running)}</div>
-            <CompletionBar pct={r.completion_pct} />
+            <CompletionBar r={r} />
             <div style={{ fontSize: 10, color: T.muted, textAlign: 'right' }}>{r.last_completed_at ? fmtDate(r.last_completed_at) : '—'}</div>
           </button>
         )
