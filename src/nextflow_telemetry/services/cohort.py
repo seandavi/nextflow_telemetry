@@ -43,13 +43,59 @@ class CohortService:
         async with self.engine.connect() as conn:
             return [dict(r) for r in (await conn.execute(sql)).mappings()]
 
+    @staticmethod
+    def _workflow_scope(
+        alias: str,
+        workflow_id: str | None,
+        workflow_version: str | None,
+        include_all_workflows: bool,
+    ) -> str:
+        """Build the workflow-scoping SQL fragment for a job/telemetry alias.
+
+        Three modes, matching the study/sample/version identity design
+        (docs/study-sample-version-identity.md, Decision 3):
+
+        - **explicit**: caller passed workflow_id and/or workflow_version — scope
+          to exactly that, including retired versions (opt into a specific view).
+        - **all**: include_all_workflows=True — no version scoping (the old
+          behaviour, now an explicit opt-in, never the default denominator).
+        - **active (default)**: only jobs/events whose (workflow_id, version) is a
+          currently-active workflow. Retired-version rows left in `jobs` after a
+          workflow is retired no longer pollute the counts (fixes #116).
+
+        Uses a correlated EXISTS rather than a JOIN so the aggregate row counts
+        are unaffected by the workflows table's cardinality.
+        """
+        if workflow_id or workflow_version:
+            frag = ""
+            if workflow_id:
+                frag += f" AND {alias}.workflow_id = :workflow_id"
+            if workflow_version:
+                frag += f" AND {alias}.workflow_version = :workflow_version"
+            return frag
+        if include_all_workflows:
+            return ""
+        return (
+            f" AND EXISTS (SELECT 1 FROM workflows w "
+            f"WHERE w.workflow_id = {alias}.workflow_id "
+            f"AND w.version = {alias}.workflow_version "
+            f"AND w.status = 'active')"
+        )
+
     async def summary(
         self,
         collection_id: str,
         workflow_id: str | None,
         workflow_version: str | None,
+        include_all_workflows: bool = False,
     ) -> dict | None:
-        """Return cohort summary or None if the collection does not exist."""
+        """Return cohort summary or None if the collection does not exist.
+
+        Completion is measured in **distinct samples** under the **active**
+        workflow version by default: ``completion_pct`` is the fraction of the
+        cohort's samples that have a completed job in scope, not completed job
+        rows over total job rows. See docs/study-sample-version-identity.md.
+        """
         async with self.engine.connect() as conn:
             exists = (
                 await conn.execute(
@@ -73,23 +119,28 @@ class CohortService:
             ).scalar() or 0
 
             params: dict = {"cid": collection_id}
-            wf_filter = ""
             if workflow_id:
-                wf_filter += " AND j.workflow_id = :workflow_id"
                 params["workflow_id"] = workflow_id
             if workflow_version:
-                wf_filter += " AND j.workflow_version = :workflow_version"
                 params["workflow_version"] = workflow_version
+            job_scope = self._workflow_scope(
+                "j", workflow_id, workflow_version, include_all_workflows
+            )
+            tel_scope = self._workflow_scope(
+                "t", workflow_id, workflow_version, include_all_workflows
+            )
 
             status_rows = (
                 await conn.execute(
                     text(
                         f"""
-                        SELECT j.status, COUNT(*) AS n
+                        SELECT j.status,
+                               COUNT(*) AS n,
+                               COUNT(DISTINCT j.sample_id) AS n_samples
                         FROM jobs j
                         JOIN collection_samples cs ON cs.sample_id = j.sample_id
                         WHERE cs.collection_id = :cid
-                          {wf_filter}
+                          {job_scope}
                         GROUP BY j.status
                         """
                     ),
@@ -97,11 +148,19 @@ class CohortService:
                 )
             ).mappings().all()
             counts = {s: 0 for s in _JOB_STATUSES}
+            samples_completed = 0
             for r in status_rows:
                 if r["status"] in counts:
                     counts[r["status"]] = r["n"]
+                if r["status"] == "completed":
+                    samples_completed = r["n_samples"]
             total = sum(counts.values())
-            completion_pct = (counts["completed"] / total * 100.0) if total > 0 else 0.0
+            # Completeness of the STUDY: distinct completed samples over all
+            # samples in the cohort — a sample with no job yet counts as
+            # incomplete. Denominator is sample_count, not total_jobs (#116).
+            completion_pct = (
+                (samples_completed / sample_count * 100.0) if sample_count > 0 else 0.0
+            )
 
             failure_rows = (
                 await conn.execute(
@@ -115,8 +174,7 @@ class CohortService:
                         WHERE cs.collection_id = :cid
                           AND t.event = 'process_completed'
                           AND t.trace->>'status' IN ('FAILED', 'ABORTED')
-                          {("AND t.workflow_id = :workflow_id" if workflow_id else "")}
-                          {("AND t.workflow_version = :workflow_version" if workflow_version else "")}
+                          {tel_scope}
                           AND t.trace->>'process' IS NOT NULL
                         GROUP BY t.trace->>'process'
                         ORDER BY failed_count DESC, process
@@ -133,6 +191,7 @@ class CohortService:
             "workflow_id": workflow_id,
             "workflow_version": workflow_version,
             "sample_count": sample_count,
+            "samples_completed": samples_completed,
             "job_status_counts": counts,
             "total_jobs": total,
             "completion_pct": round(completion_pct, 2),
@@ -157,6 +216,7 @@ class CohortService:
         workflow_id: str | None,
         workflow_version: str | None,
         limit: int = 200,
+        include_all_workflows: bool = False,
     ) -> list[dict]:
         """Return failed task occurrences for a given (cohort, process).
 
@@ -164,15 +224,17 @@ class CohortService:
         so the UI can link straight to the existing log viewer. Caller is
         responsible for checking that the cohort exists (use cohort_exists)
         — this method returns an empty list for unknown cohorts.
+
+        Scoped to the active workflow version by default, matching summary().
         """
         params: dict = {"cid": collection_id, "process": process, "limit": limit}
-        wf_filter = ""
         if workflow_id:
-            wf_filter += " AND t.workflow_id = :workflow_id"
             params["workflow_id"] = workflow_id
         if workflow_version:
-            wf_filter += " AND t.workflow_version = :workflow_version"
             params["workflow_version"] = workflow_version
+        wf_filter = self._workflow_scope(
+            "t", workflow_id, workflow_version, include_all_workflows
+        )
 
         sql = text(
             f"""
