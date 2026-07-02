@@ -19,7 +19,8 @@ const STALL_DAYS = 7
 
 function isStalled(r: CohortLeaderboardRow): boolean {
   if (r.samples_remaining <= 0) return false            // nothing left to do
-  if (!r.last_completed_at) return true                 // remaining, never completed
+  if (r.samples_running > 0) return false               // actively progressing, not stalled
+  if (!r.last_completed_at) return true                 // remaining, nothing running, never completed
   const days = (Date.now() - new Date(r.last_completed_at).getTime()) / 86_400_000
   return days > STALL_DAYS
 }
