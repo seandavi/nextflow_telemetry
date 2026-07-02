@@ -992,3 +992,74 @@ def test_retiring_workflow_purges_its_pending_jobs(integration_client):
     # The orphaned pending job is gone from both buckets.
     assert after["jobs_by_status"].get("pending", 0) == all_pending - 1
     assert after["jobs_by_status_active"].get("pending", 0) == active_pending - 1
+
+
+def test_heartbeat_watchdog_fails_zombie_running_runs(integration_client, db_url):
+    """#115: a 'running' run whose wrapper died (no heartbeat) is failed and its
+    jobs swept; a freshly-heartbeating 'running' run is left alone; a queued
+    'submitted' run (no heartbeat by design) is never touched."""
+    from datetime import timedelta
+    from sqlalchemy import update
+    from nextflow_telemetry.db import jobs_tbl, workflow_runs_tbl
+
+    client, _ = integration_client
+    tag = uuid.uuid4().hex[:8]
+    now = datetime.now(timezone.utc)
+
+    # One sample + active workflow -> one pending job.
+    sample_id = f"SRR-hbwd-{tag}"
+    wf_id = f"hbwd-{tag}"
+    assert client.post("/api/samples", json={"sample_id": sample_id, "ncbi_accession": "SRR000001"}).status_code == 201
+    assert client.post("/api/workflows", json=_wf_payload(workflow_id=wf_id, version="1.0.0")).status_code in (200, 201)
+    assert client.post("/api/admin/reconcile-jobs").status_code == 200
+
+    rn_zombie = f"run-zombie-{tag}"
+    rn_fresh = f"run-fresh-{tag}"
+    rn_queued = f"run-queued-{tag}"
+
+    def _seed_run(run_name, status, *, heartbeat=None, started=None, submitted=None):
+        return insert(workflow_runs_tbl).values(
+            run_name=run_name, workflow_id=wf_id, workflow_version="1.0.0",
+            status=status, claimed_at=now - timedelta(hours=1),
+            submitted_at=submitted, started_at=started, last_heartbeat_at=heartbeat,
+        )
+
+    _run(_exec(
+        db_url,
+        # Zombie: running, last heartbeat 30 min ago (wrapper died).
+        _seed_run(rn_zombie, "running", heartbeat=now - timedelta(minutes=30), started=now - timedelta(minutes=40)),
+        # Fresh: running, heartbeat 1 min ago (alive) — must be left alone.
+        _seed_run(rn_fresh, "running", heartbeat=now - timedelta(minutes=1), started=now - timedelta(minutes=40)),
+        # Queued: submitted 45 min ago, never heartbeated — must be left alone.
+        _seed_run(rn_queued, "submitted", submitted=now - timedelta(minutes=45)),
+        # Attach the pending job to the zombie run and mark it running.
+        update(jobs_tbl).where(jobs_tbl.c.sample_id == sample_id, jobs_tbl.c.workflow_id == wf_id)
+        .values(status="running", run_name=rn_zombie),
+    ))
+
+    resp = client.post("/api/admin/heartbeat-watchdog?stale_after_minutes=15")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    swept_names = {r["run_name"] for r in body["runs"]}
+    assert rn_zombie in swept_names
+    assert rn_fresh not in swept_names and rn_queued not in swept_names
+
+    run_rows = _run(_query(
+        db_url,
+        select(workflow_runs_tbl.c.run_name, workflow_runs_tbl.c.status, workflow_runs_tbl.c.slurm_reason)
+        .where(workflow_runs_tbl.c.run_name.in_([rn_zombie, rn_fresh, rn_queued])),
+    ))
+    by_run = {r["run_name"]: r for r in run_rows}
+    assert by_run[rn_zombie]["status"] == "failed"
+    assert "heartbeat" in (by_run[rn_zombie]["slurm_reason"] or "")
+    assert by_run[rn_fresh]["status"] == "running"      # alive, untouched
+    assert by_run[rn_queued]["status"] == "submitted"   # queued, untouched
+
+    # The zombie's job was swept back to pending (retries remain).
+    job_rows = _run(_query(
+        db_url,
+        select(jobs_tbl.c.status, jobs_tbl.c.run_name)
+        .where(jobs_tbl.c.sample_id == sample_id, jobs_tbl.c.workflow_id == wf_id),
+    ))
+    assert job_rows[0]["status"] == "pending"
+    assert job_rows[0]["run_name"] is None
