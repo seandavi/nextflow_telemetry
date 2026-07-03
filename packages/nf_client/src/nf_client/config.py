@@ -54,7 +54,13 @@ class SubmissionConfig(BaseModel):
 
 class ClientConfig(BaseModel):
     server_url: str
-    weblog_url: str
+    # Only the daemon/run-wrapper needs a weblog sink; operator/CI commands
+    # (study submissions, reconcile, introspection) don't, so it's optional.
+    weblog_url: str = ""
+    # Bearer token for operator/CI mutating endpoints (POST /submissions, …).
+    # Usually supplied via the NF_OPERATOR_TOKEN env var rather than YAML;
+    # the env var overrides this field. Empty ⇒ no Authorization header sent.
+    token: str | None = None
     profile: str = Field(default="standard", description="Nextflow profile passed as -profile to nextflow run. HPC-specific (e.g. 'anvil', 'alpine').")
     continuous: bool = Field(default=False, description="Keep daemon running when queue is empty, polling for new jobs.")
     dispatch: DispatchConfig = Field(default_factory=DispatchConfig)

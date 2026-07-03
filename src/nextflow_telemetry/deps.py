@@ -29,6 +29,17 @@ class CurrentUser:
     role: str | None  # None when the email isn't in users_tbl (logged in but no role)
 
 
+@dataclass
+class Principal:
+    """Who performed a mutating action — a logged-in user or a service token.
+
+    ``identity`` is written to submissions.submitted_by for provenance:
+    the user's email, or "operator-token" for a valid OPERATOR_TOKEN caller.
+    """
+    identity: str
+    is_service: bool
+
+
 # Cache the "service auth disabled" warning so we log it exactly once at first hit.
 _service_auth_warned = False
 
@@ -64,6 +75,44 @@ def require_role(required: str):
         if required == "contributor" and user.role == "contributor":
             return user
         raise HTTPException(status_code=403, detail=f"Role '{required}' required")
+
+    return _dep
+
+
+def _bearer(authorization: str | None) -> str | None:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    return authorization.split(" ", 1)[1].strip()
+
+
+def require_role_or_token(required: str):
+    """Dep factory: accept a session with ``required`` role OR a valid OPERATOR_TOKEN.
+
+    Lets both a browser (session cookie) and CI/CLI (bearer token) drive the same
+    mutating endpoint. Returns a Principal identifying the caller. Anonymous and
+    tokenless → 401; wrong role and bad token → 403.
+    """
+    if required not in {"admin", "contributor"}:
+        raise ValueError(f"Unknown role: {required}")
+
+    async def _dep(
+        authorization: str | None = Header(default=None),
+        user: CurrentUser | None = Depends(get_current_user),
+    ) -> Principal:
+        if user is not None and (
+            user.role == "admin" or (required == "contributor" and user.role == "contributor")
+        ):
+            return Principal(identity=user.email, is_service=False)
+
+        token = _bearer(authorization)
+        if token and settings.OPERATOR_TOKEN and hmac.compare_digest(token, settings.OPERATOR_TOKEN):
+            return Principal(identity="operator-token", is_service=True)
+
+        # 403 only for a logged-in person who lacks the role; anonymous (incl. a
+        # bad/absent token) is unauthenticated → 401, matching require_service.
+        if user is not None:
+            raise HTTPException(status_code=403, detail=f"Role '{required}' or a valid operator token required")
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     return _dep
 

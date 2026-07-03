@@ -1,0 +1,26 @@
+name: Add study
+description: Request registration of a study/BioProject's samples by INSDC accession.
+title: "[add-study] "
+labels: ["add-study"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Submitting this issue triggers a **dry-run preview** (how many samples the
+        accession expands to, and how many are new). A maintainer then applies the
+        `approved` label to register them for real.
+  - type: input
+    id: accession
+    attributes:
+      label: Accession
+      description: An INSDC study or BioProject accession.
+      placeholder: PRJNA694605  (also SRP…, ERP…, DRP…)
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes (optional)
+      description: Anything a reviewer should know (cohort, context, urgency).
+    validations:
+      required: false

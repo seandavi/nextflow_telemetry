@@ -30,6 +30,7 @@ trap 'rm -f "$tmp"' EXIT
     echo "OAUTH_CLIENT_ID=$(get cancerdatasci-oauth-client-id)"
     echo "OAUTH_CLIENT_SECRET=$(get cancerdatasci-oauth-client-secret)"
     echo "SESSION_SECRET=$(get cmgd-api-session-secret)"
+    echo "OPERATOR_TOKEN=$(get cmgd-api-operator-token)"
 } > "$tmp"
 
 chmod 600 "$tmp"

@@ -27,6 +27,11 @@ class Settings:
     # is permissive (logs a one-time warning) so daemons keep working during
     # the rollout window. Flip from empty → populated to enforce.
     DISPATCH_TOKEN: str
+    # Operator/CI auth for mutating catalog endpoints (e.g. POST /submissions).
+    # Separate from DISPATCH_TOKEN so operator/CI credentials and the daemon's
+    # dispatch credential can be revoked independently. Empty ⇒ token auth is
+    # disabled and those endpoints require a logged-in contributor/admin session.
+    OPERATOR_TOKEN: str
     # Cookie domain — set to ".cancerdatasci.org" in prod so the cookie is
     # sent by the SPA at cmgd.cancerdatasci.org to the API at
     # nf-telemetry.cancerdatasci.org (same eTLD+1, so SameSite=Lax works).
@@ -48,6 +53,7 @@ settings = Settings(
     OAUTH_REDIRECT_URI=os.environ.get("OAUTH_REDIRECT_URI", "http://localhost:8000/auth/callback"),
     SESSION_SECRET=os.environ.get("SESSION_SECRET", "dev-insecure-do-not-use-in-prod"),
     DISPATCH_TOKEN=os.environ.get("DISPATCH_TOKEN", ""),
+    OPERATOR_TOKEN=os.environ.get("OPERATOR_TOKEN", ""),
     SESSION_COOKIE_DOMAIN=os.environ.get("SESSION_COOKIE_DOMAIN", ""),
     FRONTEND_URL=os.environ.get("FRONTEND_URL", "/"),
 )

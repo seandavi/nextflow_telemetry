@@ -112,7 +112,8 @@ collections_tbl = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("collection_id", String, nullable=False, unique=True),
-    Column("source", String, nullable=False),   # "bioproject" | "sra_study" | "manual"
+    Column("source", String, nullable=False),   # provenance: "bioproject" | "sra_study" | "manual"
+    Column("type", String, nullable=True),       # kind: "meta" | "study" | "project"
     Column("label", String, nullable=True),
     Column("metadata_", JSONB, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -126,6 +127,34 @@ collection_samples_tbl = Table(
     Column("collection_id", String, ForeignKey("collections.collection_id"), nullable=False),
     Column("sample_id", String, ForeignKey("samples.sample_id"), nullable=False),
     UniqueConstraint("collection_id", "sample_id", name="uq_collection_sample"),
+)
+
+# ---------------------------------------------------------------------------
+# Submissions — the append-only event log of "register these samples" actions.
+# One row per registration attempt (accession or TSV), regardless of whether it
+# added anything. This is the provenance/audit source of truth; collections and
+# samples are the current-state projections. A no-op re-submission is still a
+# row (samples_added = 0), which the state tables can't otherwise express.
+# ---------------------------------------------------------------------------
+submissions_tbl = Table(
+    "submissions",
+    metadata,
+    Column("submission_id", String, primary_key=True),   # uuid4 hex, minted per attempt
+    Column("method", String, nullable=False),            # "ena_accession" | "curation_tsv" | "manual"
+    Column("accession", String, nullable=True),          # the input accession, when method is accession-based
+    Column("collection_id", String, nullable=True),      # the collection this attempt targeted/created
+    Column("source", String, nullable=True),             # collection source at submit time (bioproject/sra_study)
+    Column("type", String, nullable=True),               # collection kind (project/study/meta)
+    Column("submitted_by", String, nullable=False),      # user email, or "operator-token" for CI
+    Column("status", String, nullable=False),            # "succeeded" | "failed"
+    Column("samples_found", Integer, nullable=True),
+    Column("samples_added", Integer, nullable=True),
+    Column("samples_existing", Integer, nullable=True),
+    Column("error", Text, nullable=True),                # message when status = failed
+    Column("metadata_", JSONB, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Index("ix_submissions_collection_id", "collection_id"),
+    Index("ix_submissions_created_at", "created_at"),
 )
 
 # ---------------------------------------------------------------------------

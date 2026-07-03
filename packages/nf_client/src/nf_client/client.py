@@ -37,7 +37,10 @@ class JobClient:
         # trailing slash, the last segment of base_url is replaced. Force a trailing
         # slash so callers can pass `.../api` or `.../api/` interchangeably.
         base_url = self._config.server_url.rstrip("/") + "/"
-        self._http = httpx.AsyncClient(base_url=base_url, timeout=30)
+        headers = {}
+        if self._config.token:
+            headers["Authorization"] = f"Bearer {self._config.token}"
+        self._http = httpx.AsyncClient(base_url=base_url, timeout=30, headers=headers)
         return self
 
     async def __aexit__(self, *_) -> None:
@@ -104,6 +107,36 @@ class JobClient:
     async def get_stats(self) -> dict:
         """Return the server's summary stats payload (samples, workflows, jobs/runs by status, DLQ)."""
         response = await self._client.get("admin/stats")
+        response.raise_for_status()
+        return response.json()
+
+    # ------------------------------------------------------------------
+    # Operator / CI methods (require a bearer token for the mutating ones)
+    # ------------------------------------------------------------------
+
+    async def create_submission(self, accession: str, *, dry_run: bool = False) -> dict:
+        """Register a study/BioProject by accession (or preview it with dry_run)."""
+        response = await self._client.post(
+            "submissions", json={"accession": accession, "dry_run": dry_run}
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def get_submission(self, submission_id: str) -> dict:
+        """Fetch a submission record by id (provenance receipt)."""
+        response = await self._client.get(f"submissions/{submission_id}")
+        response.raise_for_status()
+        return response.json()
+
+    async def reconcile(self) -> dict:
+        """Create pending jobs for the samples × active workflows cross-product."""
+        response = await self._client.post("admin/reconcile-jobs")
+        response.raise_for_status()
+        return response.json()
+
+    async def requeue_dead_letter(self) -> dict:
+        """Requeue dead-letter jobs back to pending."""
+        response = await self._client.post("admin/requeue-dead-letter")
         response.raise_for_status()
         return response.json()
 
