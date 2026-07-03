@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
 from pathlib import Path
 
@@ -19,6 +20,10 @@ import httpx
 REPO_ROOT = Path(__file__).parent.parent
 DEFAULT_TSV = REPO_ROOT / "ArtachoA_2021_sample.tsv"
 DEFAULT_SERVER = "http://localhost:8000"
+
+# A real SRA / ENA / DDBJ run accession (SRR/ERR/DRR + digits). Used to reject
+# curation-TSV placeholders (e.g. "Not applicable") before seeding.
+_RUN_ACCESSION = re.compile(r"\b[SED]RR\d+\b")
 
 NF_TESTING_WORKFLOW = {
     "workflow_id": "nf_testing",
@@ -60,7 +65,12 @@ def main() -> None:
         ncbi_accession = row.get("ncbi_accession", "").strip()
         cohort = row.get("study_name", "").strip()
 
-        if not ncbi_accession:
+        # Hygiene: skip rows without a real run accession. Curation TSVs use
+        # placeholders like "Not applicable" in ncbi_accession, which parse_srrs
+        # is lenient enough to pass through — seeding one produces a sample whose
+        # fasterq_dump can never succeed. Require at least one SRA/ENA/DDBJ run
+        # accession token.
+        if not ncbi_accession or not _RUN_ACCESSION.search(ncbi_accession):
             skipped += 1
             continue
 
