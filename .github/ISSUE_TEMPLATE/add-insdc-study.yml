@@ -1,5 +1,5 @@
-name: Add study
-description: Request registration of a study/BioProject's samples by INSDC accession.
+name: Add Bioproject or SRA study
+description: Request registration of an SRA study/BioProject's samples by INSDC accession.
 title: "[add-study] "
 labels: ["add-study"]
 body:
