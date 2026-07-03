@@ -13,6 +13,8 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json as _json
+import os
 import re
 import socket
 import subprocess
@@ -61,6 +63,64 @@ def _count_active_slurm_jobs() -> int:
 
 config_option = typer.Option(..., "--config", "-c", help="Path to client YAML config")
 dry_run_option = typer.Option(False, "--dry-run", help="Print what would be submitted without executing")
+
+# Operator/CI commands don't need the full daemon YAML — server URL and token can
+# come from flags/env. Config is optional here (contrast with config_option above).
+opt_config = typer.Option(None, "--config", "-c", help="Path to client YAML config (optional for operator commands).")
+opt_server = typer.Option(None, "--server", help="Telemetry API base URL. Overrides config; falls back to $NF_TELEMETRY_URL.")
+json_option = typer.Option(False, "--json", help="Emit raw JSON (for scripts/CI) instead of human text.")
+
+ENV_SERVER = "NF_TELEMETRY_URL"
+ENV_TOKEN = "NF_OPERATOR_TOKEN"
+
+
+def _operator_config(config: Path | None, server: str | None) -> ClientConfig:
+    """Resolve a ClientConfig for an operator/CI command.
+
+    Server URL: --server > $NF_TELEMETRY_URL > config.server_url.
+    Token:      $NF_OPERATOR_TOKEN > config.token  (env overrides YAML, so most
+    uses need no config file at all — just the two env vars).
+    """
+    if config is not None:
+        cfg = ClientConfig.from_yaml(config)
+    else:
+        url = server or os.environ.get(ENV_SERVER)
+        if not url:
+            raise typer.BadParameter(
+                f"Provide --server, set ${ENV_SERVER}, or pass --config with a server_url."
+            )
+        cfg = ClientConfig(server_url=url)
+    if server:
+        cfg = cfg.model_copy(update={"server_url": server})
+    token = os.environ.get(ENV_TOKEN) or cfg.token
+    return cfg.model_copy(update={"token": token})
+
+
+def _run_operator(coro):
+    """Run an operator coroutine, mapping HTTP errors to clean stderr + exit 1 (CI-friendly)."""
+    import httpx
+
+    try:
+        return asyncio.run(coro)
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text
+        try:
+            detail = e.response.json().get("detail", detail)
+        except Exception:
+            pass
+        typer.echo(f"error: {e.response.status_code} {detail}", err=True)
+        raise typer.Exit(1)
+    except httpx.HTTPError as e:
+        typer.echo(f"error: request failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
+def _emit(payload: dict, as_json: bool, human) -> None:
+    """Print payload as JSON or via the human(payload) formatter."""
+    if as_json:
+        typer.echo(_json.dumps(payload, default=str))
+    else:
+        human(payload)
 
 
 @app.command()
@@ -360,34 +420,132 @@ def daemon(
 
 @app.command()
 def stats(
-    config: Path = config_option,
+    config: Path = opt_config,
+    server: str = opt_server,
+    as_json: bool = json_option,
 ) -> None:
     """Print a summary of system state: samples, workflows, jobs/runs by status, DLQ."""
 
     async def _run() -> dict:
-        cfg = ClientConfig.from_yaml(config)
+        cfg = _operator_config(config, server)
         async with JobClient(cfg) as client:
             return await client.get_stats()
 
-    payload = asyncio.run(_run())
+    payload = _run_operator(_run())
 
-    typer.echo(f"samples:   {payload['samples']}")
-    typer.echo(f"workflows: {payload['workflows']}")
-    typer.echo(f"dead-letter (unresolved): {payload['dead_letter_unresolved']}")
-
-    typer.echo("\njobs by status:")
-    if payload["jobs_by_status"]:
-        for status, count in sorted(payload["jobs_by_status"].items()):
+    def human(p: dict) -> None:
+        typer.echo(f"samples:   {p['samples']}")
+        typer.echo(f"workflows: {p['workflows']}")
+        typer.echo(f"dead-letter (unresolved): {p['dead_letter_unresolved']}")
+        typer.echo("\njobs by status:")
+        for status, count in sorted(p["jobs_by_status"].items()) or []:
             typer.echo(f"  {status:<10} {count}")
-    else:
-        typer.echo("  (none)")
-
-    typer.echo("\nruns by status:")
-    if payload["runs_by_status"]:
-        for status, count in sorted(payload["runs_by_status"].items()):
+        if not p["jobs_by_status"]:
+            typer.echo("  (none)")
+        typer.echo("\nruns by status:")
+        for status, count in sorted(p["runs_by_status"].items()) or []:
             typer.echo(f"  {status:<10} {count}")
-    else:
-        typer.echo("  (none)")
+        if not p["runs_by_status"]:
+            typer.echo("  (none)")
+
+    _emit(payload, as_json, human)
+
+
+@app.command(name="submit-study")
+def submit_study(
+    accession: str = typer.Argument(..., help="Study/BioProject accession (PRJNA…, SRP…, ERP…, DRP…)."),
+    config: Path = opt_config,
+    server: str = opt_server,
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview counts without registering anything."),
+    reconcile: bool = typer.Option(False, "--reconcile", help="After a real submit, create pending jobs (POST /admin/reconcile-jobs)."),
+    as_json: bool = json_option,
+) -> None:
+    """Register a study/BioProject's samples by accession (mints a submission_id).
+
+    Requires an operator token: set $NF_OPERATOR_TOKEN (or token: in --config).
+    Registration only unless --reconcile is passed.
+    """
+    async def _run() -> dict:
+        cfg = _operator_config(config, server)
+        async with JobClient(cfg) as client:
+            receipt = await client.create_submission(accession, dry_run=dry_run)
+            if reconcile and not dry_run:
+                receipt["reconcile"] = await client.reconcile()
+            return receipt
+
+    payload = _run_operator(_run())
+
+    def human(p: dict) -> None:
+        typer.echo(
+            f"{p['status']}: {p['collection_id']} "
+            f"({p.get('source')}/{p.get('type')}) — "
+            f"found {p['samples_found']}, added {p['samples_added']}, existing {p['samples_existing']}"
+        )
+        if p.get("submission_id"):
+            typer.echo(f"submission_id: {p['submission_id']}")
+        if "reconcile" in p:
+            typer.echo(f"reconcile: {p['reconcile']}")
+
+    _emit(payload, as_json, human)
+
+
+@app.command()
+def submission(
+    submission_id: str = typer.Argument(..., help="Submission id returned by submit-study."),
+    config: Path = opt_config,
+    server: str = opt_server,
+    as_json: bool = json_option,
+) -> None:
+    """Look up a submission record by id (provenance receipt)."""
+
+    async def _run() -> dict:
+        cfg = _operator_config(config, server)
+        async with JobClient(cfg) as client:
+            return await client.get_submission(submission_id)
+
+    payload = _run_operator(_run())
+
+    def human(p: dict) -> None:
+        for k in ("submission_id", "method", "accession", "collection_id", "submitted_by",
+                  "status", "samples_found", "samples_added", "samples_existing", "created_at", "error"):
+            if p.get(k) is not None:
+                typer.echo(f"{k}: {p[k]}")
+
+    _emit(payload, as_json, human)
+
+
+@app.command()
+def reconcile(
+    config: Path = opt_config,
+    server: str = opt_server,
+    as_json: bool = json_option,
+) -> None:
+    """Create pending jobs for the samples × active-workflows cross-product."""
+
+    async def _run() -> dict:
+        cfg = _operator_config(config, server)
+        async with JobClient(cfg) as client:
+            return await client.reconcile()
+
+    payload = _run_operator(_run())
+    _emit(payload, as_json, lambda p: typer.echo(_json.dumps(p, default=str)))
+
+
+@app.command(name="requeue-dlq")
+def requeue_dlq(
+    config: Path = opt_config,
+    server: str = opt_server,
+    as_json: bool = json_option,
+) -> None:
+    """Requeue dead-letter jobs back to pending."""
+
+    async def _run() -> dict:
+        cfg = _operator_config(config, server)
+        async with JobClient(cfg) as client:
+            return await client.requeue_dead_letter()
+
+    payload = _run_operator(_run())
+    _emit(payload, as_json, lambda p: typer.echo(_json.dumps(p, default=str)))
 
 
 @app.command(name="upload-logs")

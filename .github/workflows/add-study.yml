@@ -1,0 +1,111 @@
+# Study-submission workflow: an "add-study" issue drives a dry-run preview; a
+# maintainer's `approved` label registers the study for real via `nf-client`.
+#
+# Requires two repo settings:
+#   - Variable NF_TELEMETRY_URL  → the API base URL, e.g. https://nf-telemetry.cancerdatasci.org/api
+#   - Secret   NF_OPERATOR_TOKEN → mirror of GCP SM secret `cmgd-api-operator-token`
+name: add-study
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  preview:
+    # Any edit/open of an add-study issue (but NOT the `approved` label event,
+    # which the apply job handles) produces a fresh dry-run preview.
+    if: >
+      contains(github.event.issue.labels.*.name, 'add-study') &&
+      (github.event.action == 'opened' || github.event.action == 'edited' ||
+       (github.event.action == 'labeled' && github.event.label.name == 'add-study'))
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NF_TELEMETRY_URL: ${{ vars.NF_TELEMETRY_URL }}
+      NF_OPERATOR_TOKEN: ${{ secrets.NF_OPERATOR_TOKEN }}
+      ISSUE_BODY: ${{ github.event.issue.body }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ./packages/nf_client
+      - name: Extract accession
+        id: acc
+        run: |
+          # From env (never inline-interpolated) to avoid script injection.
+          ACC=$(printf '%s' "$ISSUE_BODY" | grep -oiE 'PRJ[EDN][A-Z]?[0-9]+|[SED]RP[0-9]+' | head -1 || true)
+          echo "accession=$ACC" >> "$GITHUB_OUTPUT"
+      - name: Dry-run preview
+        run: |
+          ACC="${{ steps.acc.outputs.accession }}"
+          if [ -z "$ACC" ]; then
+            gh issue comment "$ISSUE_NUMBER" --body "❌ Could not find a study/BioProject accession (PRJ… / SRP… / ERP… / DRP…) in this issue."
+            exit 1
+          fi
+          if OUT=$(nf-client submit-study "$ACC" --dry-run --json 2>err.txt); then
+            FOUND=$(printf '%s' "$OUT" | python -c "import sys,json;print(json.load(sys.stdin)['samples_found'])")
+            NEW=$(printf '%s' "$OUT"  | python -c "import sys,json;print(json.load(sys.stdin)['samples_added'])")
+            EXIST=$(printf '%s' "$OUT" | python -c "import sys,json;print(json.load(sys.stdin)['samples_existing'])")
+            gh issue comment "$ISSUE_NUMBER" --body "🔍 **Dry-run: \`$ACC\`** — found **$FOUND** samples (**$NEW** new, **$EXIST** already registered).
+
+          A maintainer: add the **\`approved\`** label to register these for real."
+          else
+            gh issue comment "$ISSUE_NUMBER" --body "❌ Dry-run for \`$ACC\` failed:
+          \`\`\`
+          $(cat err.txt)
+          \`\`\`"
+            exit 1
+          fi
+
+  apply:
+    # A maintainer applying `approved` to an add-study issue registers it for real.
+    if: >
+      github.event.action == 'labeled' && github.event.label.name == 'approved' &&
+      contains(github.event.issue.labels.*.name, 'add-study')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NF_TELEMETRY_URL: ${{ vars.NF_TELEMETRY_URL }}
+      NF_OPERATOR_TOKEN: ${{ secrets.NF_OPERATOR_TOKEN }}
+      ISSUE_BODY: ${{ github.event.issue.body }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ./packages/nf_client
+      - name: Extract accession
+        id: acc
+        run: |
+          ACC=$(printf '%s' "$ISSUE_BODY" | grep -oiE 'PRJ[EDN][A-Z]?[0-9]+|[SED]RP[0-9]+' | head -1 || true)
+          echo "accession=$ACC" >> "$GITHUB_OUTPUT"
+      - name: Register
+        run: |
+          ACC="${{ steps.acc.outputs.accession }}"
+          if [ -z "$ACC" ]; then
+            gh issue comment "$ISSUE_NUMBER" --body "❌ No accession found — cannot register."
+            exit 1
+          fi
+          if OUT=$(nf-client submit-study "$ACC" --json 2>err.txt); then
+            SID=$(printf '%s' "$OUT" | python -c "import sys,json;print(json.load(sys.stdin)['submission_id'])")
+            NEW=$(printf '%s' "$OUT" | python -c "import sys,json;print(json.load(sys.stdin)['samples_added'])")
+            EXIST=$(printf '%s' "$OUT" | python -c "import sys,json;print(json.load(sys.stdin)['samples_existing'])")
+            gh issue comment "$ISSUE_NUMBER" --body "✅ **Registered \`$ACC\`** — $NEW new samples, $EXIST already present.
+
+          Submission ID: \`$SID\`
+          Jobs are not dispatched automatically — run \`nf-client reconcile\` (or the reconcile endpoint) when ready."
+            gh issue close "$ISSUE_NUMBER"
+          else
+            gh issue comment "$ISSUE_NUMBER" --body "❌ Registration of \`$ACC\` failed:
+          \`\`\`
+          $(cat err.txt)
+          \`\`\`"
+            exit 1
+          fi

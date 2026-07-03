@@ -22,6 +22,7 @@ from .routers.dispatch import create_dispatch_router
 from .routers.process_metrics import create_process_metrics_router
 from .routers.runs import create_runs_router
 from .routers.samples import create_samples_router
+from .routers.submissions import create_submissions_router
 from .routers.task_logs import create_task_logs_router
 from .routers.workflows import create_workflows_router
 from .services.process_metrics import ProcessMetricsService
@@ -175,6 +176,7 @@ app.include_router(create_daemons_router(engine), prefix="/api")
 app.include_router(create_curated_router(engine), prefix="/api")
 app.include_router(create_runs_router(engine), prefix="/api")
 app.include_router(create_cohorts_router(engine), prefix="/api")
+app.include_router(create_submissions_router(engine), prefix="/api")
 # /auth/* lives at root (not under /api) so the OAuth redirect URI is a
 # tidy origin-relative path that fits naturally into Google's allowed-redirect
 # list and avoids stuffing /api into user-facing URLs.
