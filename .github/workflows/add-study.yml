@@ -100,6 +100,7 @@ jobs:
             gh issue comment "$ISSUE_NUMBER" --body "✅ **Registered \`$ACC\`** — $NEW new samples, $EXIST already present.
 
           Submission ID: \`$SID\`
+          Track progress in telemetry: https://cmgd.cancerdatasci.org
           Jobs are not dispatched automatically — run \`nf-client reconcile\` (or the reconcile endpoint) when ready."
             gh issue close "$ISSUE_NUMBER"
           else
