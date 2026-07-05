@@ -61,6 +61,28 @@ Path = base + `/api` + router-prefix + route.
 - `POST /batch` `/submitted` `/requeue-expired`
 
 ### process metrics (`/api/metrics/processes`) — per-process aggregates
+The backbone of any health/failure report. All GET. Common filters:
+`workflow_version`, `process`, `status` (`COMPLETED|FAILED`), `window_hours` /
+`window_days`, `limit`.
+- `GET /running` — live counts of in-flight/queued tasks by process (the "what
+  stage is the batch in" view)
+- `GET /summary` — KPI cards: totals, success/failure/retry rates, worst processes
+- `GET /failure-signatures` — failures grouped by `process` + `exit_code` +
+  `error_action` (the "what's breaking and how" table)
+- `GET /failures` — failure rate by process
+- `GET /timeline?bucket=hour|day|week` — success/failed counts per bucket (spike
+  vs steady-state)
+- `GET /tasks` — individual task rows (run_name, task_hash, exit_code, `attempt`,
+  wall/RSS). Filter to a process+status; `total` gives the count. `attempt`
+  distribution tells you whether retries are recovering.
+
+## Read-only vs. mutating (important for unattended runs)
+
+Everything above is **GET / read-only** and safe to poll on a schedule. These
+**mutate dispatch state** and must never fire in an unattended report —
+gate them behind a human:
+`POST /api/admin/reconcile-jobs`, `/reset-running`, `/requeue-dead-letter`,
+`/expire-stale-runs`, `/close-run`, and all `PATCH /api/workflows/*`.
 
 ## Quick recipes
 

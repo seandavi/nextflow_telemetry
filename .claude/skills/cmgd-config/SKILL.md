@@ -32,7 +32,9 @@ is the authoritative index of what lives where and how to change it.
 - Bottom: `includeConfig` lines pull in every `conf/profiles/*.config`.
 
 ### `conf/base.config` — process resources & error handling
-- `errorStrategy` (`finish` since 2.0.4), retries, per-`withName` cpu/mem/time.
+- `errorStrategy` — tiered: per-sample processes retry OOM/kill (137–140) up to
+  4×, else retry 2×, then `ignore` (drop the sample); DB-setup/finalize end in
+  `finish` (fail the run). Retries, per-`withName` cpu/mem/time.
 - Change resource escalation here (`memory = { N.GB * task.attempt }`).
 - **No `time > 24h`** on Alpine — escalate memory, not wall-time.
 
