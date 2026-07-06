@@ -22,6 +22,44 @@ can't SSH into clusters to push work. Instead daemons live on the clusters and
 make **outbound HTTPS** to the API. Anything that assumes "the server connects to
 the cluster" is wrong for this deployment.
 
+## Cluster inventory (SSH, users, paths)
+
+Two live SLURM clusters run `cmgd_nextflow`. Any triage/report agent needs this
+to reach `sacct` / `squeue` / `srun`. The live roster + each daemon's full config
+is also queryable at runtime — `GET /api/daemons/` returns `config_yaml`
+(`profile`, `template_path`, `slurm_export_none`, batch size) per daemon.
+
+| | Alpine (CU Boulder) | Anvil (Purdue) |
+|---|---|---|
+| SSH | `ssh alpine` (key-based, tailnet jump via dccapp720; works with `-o BatchMode=yes`) | `ssh anvil` (key-based; BatchMode ok) |
+| Login / daemon host | `login-ci4` | `login07.anvil.rcac.purdue.edu` |
+| Cluster user | `seda0001_amc` | `x-seandavi` |
+| SLURM account | (default) | `cis240955` |
+| Nextflow `-profile` | `alpine,gcs` | `anvil` |
+| `store_dir` (persistent) | `/projects/seda0001_amc/cmgd/store` | `/anvil/projects/x-cis240955/cmgd/store` |
+| Per-run workDir | `/scratch/alpine/$USER/nf_worker/$SLURM_JOB_ID` (ephemeral, `rm -rf` at job end; realpath `/gpfs/alpine1/scratch/...`) | `/anvil/scratch/x-seandavi/cmgd_data/work` |
+| `slurm_export_none` | `true` (login env leaks to compute) | `false` (clean) |
+| batch / max concurrent runs | 25 / 10 | 200 / 5 |
+| Submit template | `/projects/seda0001_amc/nf_client/nextflow_telemetry/templates/submit_alpine.sh.j2` | `/anvil/projects/x-cis240955/cmgd/nf_worker/templates/submit_anvil.sh.j2` |
+| Short test partition (`srun`) | `--partition=atesting --qos=testing` (1 h cap) | use a short-walltime partition |
+| GCS access | `rclone gs1:` only (no gcloud/gsutil) | — |
+
+`onclappc02` also appears in `/api/daemons/` — a dead `nf_testing` daemon; ignore
+it (and its perpetual entry in `dispatchability.stuck`).
+
+**Container repro must run on a compute node.** Login nodes have **no
+`singularity`/`apptainer`** (`module load singularity` fails there); the binary
+(`/usr/bin/singularity`) exists only on compute nodes. To reproduce a task's
+container command, `srun` into a short partition (Alpine: `atesting`) and exec
+there. Note `$TMPDIR` inside a task container points at a per-job path that is
+**not** bind-mounted — tools that write scratch there (KMA) fail with
+`Error: 2 (No such file or directory)` unless the process sets `TMPDIR="$PWD"`
+(fixed pipeline 2.2.1).
+
+**Anvil specifics:** nextflow is pinned to **23.10.1** (Java-11 only); the daemon
+runs in `tmux` on login07; project space `/anvil/projects/x-cis240955` is
+persistent (not scratch).
+
 ## Restart on Alpine
 
 ```bash
