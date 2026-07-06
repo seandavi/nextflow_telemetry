@@ -5,6 +5,8 @@ Two audiences: **submitters** (request a study) and **maintainers** (review,
 approve, and dispatch). The normal path is a GitHub issue; a direct API/CLI path
 is documented at the end.
 
+▶️ **[Open a new study request →](https://github.com/seandavi/nextflow_telemetry/issues/new?template=add-insdc-study.yml)** — opens the issue form with the right template.
+
 The flow, at a glance:
 
 ```
@@ -18,7 +20,9 @@ open "add-study" issue  →  dry-run preview comment  →  maintainer reviews
 
 ## For submitters — request a study
 
-1. Open a new issue with the **“Add Bioproject or SRA study”** template.
+1. Open a new issue with the **“Add Bioproject or SRA study”** template —
+   [**click here**](https://github.com/seandavi/nextflow_telemetry/issues/new?template=add-insdc-study.yml)
+   to jump straight to the pre-filled form.
 2. Put an **INSDC study or BioProject accession** in the Accession field —
    `PRJNA…`, `PRJEB…`, `PRJDB…`, or `SRP…` / `ERP…` / `DRP…`. A single run
    (`SRR…`) or sample (`SRS…`) accession is **not** accepted; a study/project is
