@@ -4,6 +4,10 @@ A dispatch and telemetry server for the curatedMetagenomics Nextflow pipeline. I
 real-time execution events from Nextflow, tracks sample-level processing outcomes, and
 presents the results through a live React dashboard.
 
+> **Adding samples?** See **[Adding studies](docs/adding-studies.md)** — how submitters
+> request an SRA study/BioProject by accession, and how maintainers review the preview,
+> approve, and dispatch.
+
 ![Dashboard overview](docs/dashboard-overview.png)
 
 ---
