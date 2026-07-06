@@ -89,6 +89,44 @@ def test_submission_registers_and_is_idempotent(db_url, monkeypatch):
         submissions_tbl.c.samples_added == 0))) == 1
 
 
+def test_library_composition_flags_amplicon():
+    wgs = [{"library_strategy": "WGS", "library_selection": "RANDOM",
+            "library_source": "METAGENOMIC", "instrument_platform": "ILLUMINA"}] * 3
+    comp = sub_mod._library_composition(wgs)
+    assert comp["library_strategy"] == {"WGS": 3}
+    assert comp["library_selection"] == {"RANDOM": 3}
+    assert comp["warnings"] == []
+
+    mixed = wgs + [{"library_strategy": "AMPLICON", "library_selection": "PCR"}]
+    comp2 = sub_mod._library_composition(mixed)
+    assert comp2["library_strategy"] == {"WGS": 3, "AMPLICON": 1}
+    assert comp2["warnings"] and "amplicon" in comp2["warnings"][0].lower()
+
+
+def test_composition_in_receipt(db_url, monkeypatch):
+    rows = [dict(r, library_strategy="WGS", library_selection="RANDOM",
+                 library_source="METAGENOMIC", instrument_platform="ILLUMINA")
+            for r in _ENA_ROWS]
+
+    async def fake_fetch(accession):
+        return rows
+
+    monkeypatch.setattr(sub_mod, "_fetch_runs", fake_fetch)
+
+    async def scenario():
+        engine = create_async_engine(db_url)
+        try:
+            svc = SubmissionService(engine=engine)
+            r = await svc.register_from_accession("PRJNA1", submitted_by="a@b.c", dry_run=True)
+            assert r["library_composition"]["library_strategy"] == {"WGS": 3}
+            assert r["library_composition"]["library_selection"] == {"RANDOM": 3}
+            assert r["warnings"] == []
+        finally:
+            await engine.dispose()
+
+    _run(scenario())
+
+
 def test_dry_run_previews_without_writing(db_url, monkeypatch):
     async def fake_fetch(accession):
         return _ENA_ROWS

@@ -38,6 +38,15 @@ class SubmissionReceipt(BaseModel):
     samples_found: int = Field(description="Distinct samples the accession expanded to.")
     samples_added: int = Field(description="Samples newly registered by this submission.")
     samples_existing: int = Field(description="Samples that already existed (membership added, metadata untouched).")
+    library_composition: dict[str, Any] | None = Field(
+        default=None,
+        description="Per-run library-metadata tallies (library_strategy/selection/source, instrument_platform) "
+        "so an approver can sanity-check the study is shotgun metagenomics, not 16S/amplicon.",
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Advisory flags (e.g. amplicon/16S runs detected). Never blocks a submission.",
+    )
 
 
 def create_submissions_router(engine: AsyncEngine) -> APIRouter:

@@ -49,12 +49,8 @@ jobs:
             exit 1
           fi
           if OUT=$(nf-client submit-study "$ACC" --dry-run --json 2>err.txt); then
-            FOUND=$(printf '%s' "$OUT" | python -c "import sys,json;print(json.load(sys.stdin)['samples_found'])")
-            NEW=$(printf '%s' "$OUT"  | python -c "import sys,json;print(json.load(sys.stdin)['samples_added'])")
-            EXIST=$(printf '%s' "$OUT" | python -c "import sys,json;print(json.load(sys.stdin)['samples_existing'])")
-            gh issue comment "$ISSUE_NUMBER" --body "🔍 **Dry-run: \`$ACC\`** — found **$FOUND** samples (**$NEW** new, **$EXIST** already registered).
-
-          A maintainer: add the **\`approved\`** label to register these for real."
+            BODY=$(printf '%s' "$OUT" | python scripts/format_study_preview.py "$ACC")
+            gh issue comment "$ISSUE_NUMBER" --body "$BODY"
           else
             gh issue comment "$ISSUE_NUMBER" --body "❌ Dry-run for \`$ACC\` failed:
           \`\`\`
