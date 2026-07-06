@@ -18,10 +18,13 @@ jobs:
   preview:
     # Any edit/open of an add-study issue (but NOT the `approved` label event,
     # which the apply job handles) produces a fresh dry-run preview.
+    # NOTE: do NOT add `labeled: add-study` here. When an issue is opened via the
+    # template (which pre-sets the `add-study` label), GitHub fires both an `opened`
+    # event AND a `labeled` event, which would cause this job to run twice and post
+    # duplicate comments.
     if: >
       contains(github.event.issue.labels.*.name, 'add-study') &&
-      (github.event.action == 'opened' || github.event.action == 'edited' ||
-       (github.event.action == 'labeled' && github.event.label.name == 'add-study'))
+      (github.event.action == 'opened' || github.event.action == 'edited')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
