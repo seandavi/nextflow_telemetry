@@ -24,12 +24,45 @@ from ..utils import normalize_srrs, srrs_to_sample_id
 ENA_FILEREPORT = "https://www.ebi.ac.uk/ena/portal/api/filereport"
 ENA_FIELDS = (
     "run_accession,secondary_sample_accession,sample_accession,"
-    "study_accession,secondary_study_accession,sample_title"
+    "study_accession,secondary_study_accession,sample_title,"
+    "library_strategy,library_selection,library_source,instrument_platform"
 )
+
+# Library tags that mark a study as NOT shotgun metagenomics (16S/amplicon).
+_AMPLICON_STRATEGY = {"AMPLICON"}
+_AMPLICON_SELECTION = {"PCR"}
 
 
 class AccessionError(ValueError):
     """Raised for an accession the endpoint won't accept (bad type / no runs)."""
+
+
+def _library_composition(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate per-run library metadata so an approver can eyeball study type
+    (shotgun WGS vs 16S/amplicon). Advisory only — never blocks a submission."""
+    def tally(field: str) -> dict[str, int]:
+        c: dict[str, int] = {}
+        for r in rows:
+            v = (r.get(field) or "").strip() or "unknown"
+            c[v] = c.get(v, 0) + 1
+        return dict(sorted(c.items(), key=lambda kv: -kv[1]))
+
+    strat, sel = tally("library_strategy"), tally("library_selection")
+    n_amplicon = sum(n for k, n in strat.items() if k.upper() in _AMPLICON_STRATEGY)
+    n_pcr = sum(n for k, n in sel.items() if k.upper() in _AMPLICON_SELECTION)
+    warnings = []
+    if n_amplicon or n_pcr:
+        warnings.append(
+            f"{max(n_amplicon, n_pcr)} of {len(rows)} run(s) look like amplicon/16S "
+            "(library_strategy=AMPLICON or library_selection=PCR), not shotgun metagenomics"
+        )
+    return {
+        "library_strategy": strat,
+        "library_selection": sel,
+        "library_source": tally("library_source"),
+        "instrument_platform": tally("instrument_platform"),
+        "warnings": warnings,
+    }
 
 
 def classify_source(accession: str) -> str:
@@ -112,6 +145,8 @@ class SubmissionService:
             samples = _group_samples(rows, collection_id)
             if not samples:
                 raise AccessionError(f"no runs found for '{accession}'")
+            composition = _library_composition(rows)
+            warnings = composition.pop("warnings")
             if dry_run:
                 counts = await self._count_new(samples)
                 status = "dry_run"
@@ -139,6 +174,8 @@ class SubmissionService:
             "source": source,
             "type": "project",
             "status": status,
+            "library_composition": composition,
+            "warnings": warnings,
             **counts,
         }
 
