@@ -13,7 +13,7 @@ Two equivalent ways in:
 | You want… | Use |
 |---|---|
 | SQL across the whole dataset, joins, one connection | **Attach the frozen catalog** (below) |
-| A few columns into pandas / R / Polars, or a specific study | **Read the Parquet URLs** directly |
+| A single known Parquet file (or S3-credentialed bulk access) | **Read a Parquet URL** directly |
 
 Everything is DuckDB-native, but the Parquet files are readable by any Arrow/Parquet client.
 
@@ -45,24 +45,26 @@ R (via `duckdb`/`DBI`):
 
 ```r
 con <- DBI::dbConnect(duckdb::duckdb())
-DBI::dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
+DBI::dbExecute(con, "INSTALL httpfs")   # one statement per call in the R client
+DBI::dbExecute(con, "LOAD httpfs")
 DBI::dbExecute(con, "ATTACH 'https://data.cmgd.cancerdatasci.org/cmgd.duckdb' AS cmgd (READ_ONLY)")  # (pending)
 df <- DBI::dbGetQuery(con, "SELECT * FROM cmgd.qc_metrics LIMIT 100")
 ```
 
 ## Quick start — read Parquet directly
 
-If you don't want the catalog, read the Parquet straight from HTTPS. Same DuckDB, no ATTACH:
+If you don't want the catalog, you can read Parquet straight from HTTPS — but with one constraint: **plain HTTPS can't list a directory**, so DuckDB's `httpfs` can't expand a `**/*.parquet` glob over `https://`. Two honest options:
 
-```sql
-INSTALL httpfs; LOAD httpfs;
-SELECT clade_name, relative_abundance
-FROM read_parquet('https://data.cmgd.cancerdatasci.org/parquet/taxonomic_profile/**/*.parquet')  -- (pending)
-WHERE method = 'metaphlan' AND rank = 'species'
-LIMIT 20;
-```
+- **A single known file** — read one explicit URL directly:
+  ```sql
+  INSTALL httpfs; LOAD httpfs;
+  SELECT clade_name, relative_abundance
+  FROM read_parquet('https://data.cmgd.cancerdatasci.org/parquet/taxonomic_profile/version=2.2.1/method=metaphlan/data_type=full_data/part-0.parquet')  -- (pending, one file)
+  WHERE rank = 'species' LIMIT 20;
+  ```
+- **Many files / whole tables** — **attach the catalog** instead (top of this page). The catalog *enumerates* every Parquet file, so DuckDB never needs to list a directory — this is the supported way to query across files over HTTPS. (If you have S3/R2 credentials for the bucket, globbing works over the `s3://` endpoint, where LIST is available.)
 
-The Parquet is partitioned so filters on `workflow`, `version`, `method`, and `data_type` only read the relevant files.
+The Parquet is partitioned by `workflow` / `version` / `method` / `data_type`, so once files are enumerated (via the catalog) those filters prune to the relevant files.
 
 ## The tables
 
@@ -78,6 +80,8 @@ Every row carries the identity keys: **`sample_id`** (the join key — `md5` of 
 | `resistome` | fact | sample × AMR gene × `data_type` | `gene` (CARD reference), `template_coverage`, `template_identity`, `depth`, `score` (from KMA/CARD `card_kma.res`) |
 | `qc_metrics` | **dimension** | sample | `reads_raw`, `reads_decontaminated`, `bases_raw`, `bases_decontaminated`, `reads_surviving_fraction`, `bases_surviving_fraction`, `metaphlan_index` (reference DB version), `pipeline_version`, `git_commit` |
 | `taxon` | **dimension** | taxon × `db_version` | `taxon_key`, **`db_version`**, `ncbi_taxid`, `sgb_id`, `ncbi_species`, `rank`, `genus`, `family`, `phylum` |
+
+**`method` values.** In the current `2.2.1` snapshot, `method` is `metaphlan` or `bracken` — the pipeline does not run gtdb, so there is no `gtdb` method here. (Earlier design notes mention a unified metaphlan/bracken/gtdb table; gtdb applied to older pipeline versions. If a future version reintroduces it, it appears as another `method` value in the same table.)
 
 **Two name columns, on purpose.** `taxonomic_profile.clade_name` is the label *exactly as the profiler reported it* (metaphlan's SGB lineage, bracken's binomial). For a canonical / cross-method name, or to roll up to `genus`/`family`/`phylum`, join the **`taxon`** dimension. `metaphlan` rows carry both `sgb_id` and `ncbi_taxid` (join on `sgb_id` for the most precise match); `bracken` rows carry `ncbi_taxid` only.
 
