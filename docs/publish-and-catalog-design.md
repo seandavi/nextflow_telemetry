@@ -55,7 +55,7 @@ What stays in scope:
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Frozen published DuckLake                                     │
-│  - DuckDB-file catalog: self-contained ATTACH           │
+│  - DuckDB-file catalog, ATTACH-able (no keys)           │
 │  - same R2 parquet, over public HTTPS (no keys)  │
 │  - frozen cmgd.duckdb IS the catalog now                     │
 └─────────────────────────────────────────────────────────────┘

@@ -149,4 +149,3 @@ For GG2 specifically, GG2's genome-side taxonomy is **GTDB-aligned**, so the tra
 - **Confirm a GG2 crosswalk** (GTDB↔GG2 or genome→GG2) exists in usable, version-matched form.
 - **Marker store decision:** given markers are ~89% of rows and rarely queried by microbe, decide whether they live in the main lake, a separate coarse store, or are built lazily.
 - **Reconcile with target storage:** outputs are currently in `gs://cmgd-data`; `storage-layout.md` targets R2 `cmgd-raw`. This ETL feeds a **dedicated cmgd DuckLake** — its own catalog, for independent full time travel, *not* a shared multi-tenant schema (see [`publish-and-catalog-design.md`](./publish-and-catalog-design.md) → Location; the published artifact is a periodic frozen snapshot of it with a DuckDB-file catalog) — regardless of source bucket. (This supersedes any "shared `cdsci-lake` schema-per-project" framing for cmgd outputs.)
-```
