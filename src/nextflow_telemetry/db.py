@@ -346,3 +346,18 @@ daemon_agents_tbl = Table(
     Column("last_seen_at", DateTime(timezone=True), nullable=False),
     Column("started_at", DateTime(timezone=True), nullable=False),
 )
+
+# ---------------------------------------------------------------------------
+# Output-catalog ETL watermark — one row per (sample, workflow, version) whose
+# published outputs have been ingested into the DuckLake. "pending" = completed
+# jobs anti-joined against this. See src/nextflow_telemetry/etl/.
+# ---------------------------------------------------------------------------
+etl_ingested_tbl = Table(
+    "etl_ingested",
+    metadata,
+    Column("sample_id", String, primary_key=True),
+    Column("workflow_id", String, primary_key=True),
+    Column("workflow_version", String, primary_key=True),
+    Column("ingested_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    Column("row_counts", JSONB, nullable=True),
+)

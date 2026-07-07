@@ -145,7 +145,7 @@ FROM cmgd.qc_metrics GROUP BY study_name ORDER BY n_samples DESC;
 
 ## Two things to know before you compute
 
-1. **Abundances are not directly comparable across methods.** `metaphlan` relative abundance is marker/genome-size-normalized (a percent); `bracken` `relative_abundance` is a read-count fraction. The `method` column tells you which. Matching a *taxon* across methods (via `taxon`) unifies *who*, not *how much*.
+1. **Abundances are not directly comparable across methods.** `relative_abundance` is stored as a **0–1 fraction** for both methods (metaphlan's native percent is normalized ÷100), so the *scale* matches — but the *definitions* differ: metaphlan is marker/genome-size-normalized, `bracken` is a read-count fraction. The `method` column tells you which. Matching a *taxon* across methods (via `taxon`) unifies *who*, not *how much*.
 2. **`data_type` matters.** `full_data` uses all reads; `rarefied_data` is a 1M-read subsample (for depth-controlled comparisons). Pick one — don't mix them in an aggregate. Most analyses want `full_data`.
 
 ## Citing / reproducibility
