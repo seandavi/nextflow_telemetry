@@ -114,8 +114,10 @@ Tracker: **#57**; design doc `docs/publish-and-catalog-design.md`. This is the
   `universal_pathlib` (credentials once in the server, not per-cluster) →
   `artifacts_tbl`. Feeds #57.
 - **#57** DuckLake catalog (7 shippable steps: `publish_base_uri` migration →
-  `GET /api/published` → catalog DB → completion-hook write → logical views →
-  public-parquet generator → deprecate `curatedMetagenomicDataETL`).
+  `GET /api/published` → **dedicated cmgd** catalog DB → completion-hook write →
+  file→table ETL + logical tables → **frozen-DuckLake** export → deprecate
+  `curatedMetagenomicDataETL`). Design: `publish-and-catalog-design.md` (plumbing) +
+  `output-catalog-etl-design.md` (file→table, schema, taxonomy).
 - **#83** `pg_duckdb` for analytical queries (process_metrics, cohort) once volume
   warrants.
 
@@ -165,5 +167,6 @@ metadata (#55), and catalog keying (#57/#93) simultaneously.
   silent-death gap → **#115**. Retired-workflow orphan-jobs confusion → **#114**.
 - 100k-scale UI eval (reusable agent `.claude/agents/ui-observability-evaluator.md` +
   `scripts/ui_eval_capture.py`, merged in #123) → **#116–#122**.
-- A full 69-sample re-run of `cmgd_nextflow` 2.0.6 was kicked off 2026-07-02 to
-  stress the telemetry (see memory `project_timeout_zombie_run`, `reference_alpine_ssh_access`).
+- A full 69-sample re-run of `cmgd_nextflow` 2.0.6 (2026-07-02) stress-tested the
+  telemetry and surfaced the walltime-TIMEOUT zombie-run gap, #115 (see memory
+  `project_timeout_zombie_run`, `reference_alpine_ssh_access`).
