@@ -1,6 +1,6 @@
 # Publish & catalog design
 
-> Status: **draft** — supersedes the experimental [`curatedMetagenomicDataETL`](https://github.com/seandavi/curatedMetagenomicDataETL) approach. Read alongside [`sample-metadata-design.md`](./sample-metadata-design.md): that doc is about sample *inputs* and harmonization; this one is about pipeline *outputs* and the analytical catalog.
+> Status: **draft** — supersedes the experimental [`curatedMetagenomicDataETL`](https://github.com/seandavi/curatedMetagenomicDataETL) approach. Read alongside [`sample-metadata-design.md`](./sample-metadata-design.md): that doc is about sample *inputs* and harmonization; this one is about pipeline *outputs* and the analytical catalog. For how published files become catalog *tables* (the file→table ETL, analytical schema, and taxonomy harmonization), see [`output-catalog-etl-design.md`](./output-catalog-etl-design.md).
 
 ## Framing
 
@@ -14,18 +14,18 @@ Three observations the design rests on:
 
 2. **Telemetry is the operational source of truth.** It knows what samples exist, which jobs have completed, and (with one new column) where each job published its output. It can be the SoT for pipeline outputs in the catalog too — no separate ETL needs to discover them by globbing S3.
 
-3. **The group's analytical surface is moving toward DuckLake (DuckDB v1.0).** Postgres-backed catalog over parquet (and other) files in object storage. Multiple producers will share it: omicidx, bugsigdb, PMC fulltext (Dagster-managed); pipeline outputs (this design).
+3. **The group's analytical surface is moving toward DuckLake (DuckDB v1.0).** Postgres-backed catalog over parquet (and other) files in object storage. Several sibling lakes live on it — omicidx, bugsigdb, PMC fulltext each publish their own; pipeline outputs (this design) get a **dedicated cmgd lake** (see [Location](#location)).
 
 What this rules out:
 - A separate ETL pipeline that globs S3 to discover what got produced (today's `curatedMetagenomicDataETL`).
 - A `sample_id_map.csv` artifact carried independently of telemetry.
 - Promoting taxonomic/marker counts into telemetry's Postgres schema. They live in object storage; the catalog points at them.
-- Routing pipeline-output cataloging through Dagster. The dependency graph is one edge (completion → register); telemetry already sits on the source side of that edge.
+- Routing pipeline-output cataloging through a workflow orchestrator (Dagster / Prefect / Airflow). The dependency graph is one edge (completion → register); telemetry already sits on the source side of it, so scheduling is plain scripts, not an orchestrator.
 
 What stays in scope:
 - A clear contract for the publish path.
 - A small change to telemetry's schema and HTTP surface so the catalog can be populated event-driven from completion.
-- A stable public parquet artifact at known URLs for external consumers.
+- A stable public artifact at known URLs for external consumers (a frozen DuckDB-catalog snapshot over the shared parquet, read via HTTPS).
 
 ## Two layers
 
@@ -42,22 +42,22 @@ What stays in scope:
                    │ catalog write
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  DuckLake catalog (DuckDB v1.0)                             │
-│  - same Postgres instance, separate database                 │
+│  DuckLake — dedicated cmgd lake                             │
+│  - Postgres catalog; full snapshot history                 │
 │  - manifest + table metadata managed by DuckDB               │
-│  - reads pipeline outputs (TSV.gz) directly — no transform   │
-│  Other tenants (Dagster-published):                          │
+│  - fed by a thin file→table ETL (see output-catalog doc)    │
+│  sibling lakes (separate, ATTACHed):                          │
 │  - omicidx (BioSample/BioProject/SRA)                        │
 │  - bugsigdb                                                  │
 │  - PMC fulltext                                              │
 └──────────────────┬──────────────────────────────────────────┘
-                   │ read access (group internal, ATTACH)
+                   │ periodic freeze (script)
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Public parquet artifact                                     │
-│  - periodic COPY from DuckLake views, full replace           │
-│  - stable URLs at s3://cmgd-export/<dataset>/study_name=…/  │
-│  - optional ATTACH-able cmgd.duckdb shim                     │
+│  Frozen published DuckLake                                     │
+│  - DuckDB-file catalog, ATTACH-able (no keys)           │
+│  - same R2 parquet, over public HTTPS (no keys)  │
+│  - frozen cmgd.duckdb IS the catalog now                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -114,23 +114,23 @@ Reconcile path: a periodic sweep finds completed jobs whose catalog rows are mis
 
 ### Location
 
-Same Postgres instance as telemetry, separate database. Avoids cross-cluster joins; keeps the operational and analytical schemas from contaminating each other (different consumers, different uptime profiles, different schema-evolution cadences).
+**A dedicated cmgd DuckLake — not co-tenanted.** The working catalog DB is Postgres (same instance as telemetry, separate database), which keeps operational and analytical schemas from contaminating each other and avoids cross-cluster joins. But the *lake* is cmgd-only: pipeline outputs get their **own** DuckLake catalog, separate from omicidx/bugsigdb/PMC, **specifically so its snapshot history supports full time travel** without being churned by other tenants' publish cadences. DuckLake's time travel is a property of the catalog — a shared catalog interleaves every tenant's snapshots into cmgd's history; a dedicated one keeps "the catalog as of date X" meaningful for cmgd alone.
 
 ### Source format
 
-TSV.gz, read directly via DuckDB. **No conversion step.** The Nextflow pipeline's `publishDir` output is the on-disk SoT.
+TSV.gz is the on-disk SoT (the Nextflow pipeline's `publishDir` output). **Correction:** these are not loaded zero-transform — a thin, deterministic file→table ETL is required (comment headers, per-tool unit differences, differing grain). See [`output-catalog-etl-design.md`](./output-catalog-etl-design.md), which owns the file→table mechanism.
 
 ### Logical tables
 
-DuckLake exposes one logical table per dataset (`marker_abundance`, `marker_presence`, `marker_rel_ab_w_read_stats`, `metaphlan_unknown_list`, `metaphlan_viruses_list`, future: `humann_genefamilies`, `humann_pathabundance`). Each is a DuckDB read over the union of TSV.gz files at the registered prefixes, joined to the catalog's identity columns (`sample_id`, `study_name`, `run_ids`). The mapping from "files on disk" to "logical table" lives in the [output spec layer](#output-spec-layer).
+**The analytical schema is owned by [`output-catalog-etl-design.md`](./output-catalog-etl-design.md).** In brief: tables split by `(grain, datatype)`, **not** one-per-file — e.g. a single `taxonomic_profile` unifies metaphlan/bracken/gtdb (with a `method` discriminator) rather than three separate tables, marker tables are their own grain (and dominate row count ~89%), and per-sample provenance/QC lives once in a `qc_metrics` dimension. Each fact table joins to the catalog's identity columns (`sample_id`, `study_name`, `run_ids`). The file→table mapping mechanism lives in the [spec layer](#output-spec-layer), whose format that doc defines.
 
-### Other tenants
+### Sibling lakes
 
-- **omicidx** — BioSample / BioProject / SRA metadata. Already used by `scripts/load_bioproject.py` (read from a parquet file). Dagster-published.
+- **omicidx** — BioSample / BioProject / SRA metadata. Already used by `scripts/load_bioproject.py` (read from a parquet file). Its own lake, separately published.
 - **bugsigdb** — curated microbial signatures.
 - **PMC fulltext** — pulled for harmonization downstream (see [`sample-metadata-design.md`](./sample-metadata-design.md)).
 
-All share the same DuckLake. Joins on accession (`run_id`, `study_id`, etc.) are first-class because every tenant publishes into the same catalog.
+Each is its **own** lake, not co-tenanted with cmgd (see [Location](#location)). Cross-lake joins on accession (`run_id`, `study_id`, etc.) stay first-class via DuckDB `ATTACH` — one query spanning several lakes — without interleaving their snapshot histories into cmgd's time travel.
 
 ## Output spec layer
 
@@ -138,71 +138,31 @@ Telemetry stores `(workflow_id, version, sample_id)` and a deterministic publish
 
 ### Shape
 
-A YAML spec per `(workflow_id, version)` lives in this repo at:
-
-```
-packages/cmgd_publish/specs/<workflow_id>/<version>.yaml
-```
-
-Each spec maps step outputs to logical tables and DuckDB `read_csv` config:
-
-```yaml
-workflow_id: cmgd_nextflow
-version: 1.6.0
-steps:
-  - name: marker_abundance
-    file_glob: "*_marker_abundance.tsv.gz"
-    branches: [full_data, rarefied_data]
-    read_csv:
-      delim: "\t"
-      header: true
-      compression: gzip
-      comment: "#"
-      types: {clade_name: VARCHAR, relative_abundance: DOUBLE}
-    logical_table: marker_abundance
-```
-
-Adding a new workflow = adding a YAML file. Adding a step = ~10 lines. Same pattern as Singer taps and Frictionless Data Resources. The spec is consumed by the publisher when registering a sample's outputs into DuckLake — it does not infer anything from the file itself at register-time.
+**The spec format and the file→table engine are defined in [`output-catalog-etl-design.md`](./output-catalog-etl-design.md)** — do not duplicate them here. In brief: a per-`(workflow_id, version)` registry of Python `OutputSpec` dataclasses (`path, table, parser, tags`) in `src/nextflow_telemetry/etl/`, not YAML. The reason it's code and not declarative config: the transforms the forensics turned up (normalizing percent↔fraction, parsing a taxid out of a lineage string, collapsing degenerate presence rows) can't be expressed as `read_csv` options — parsers are plain `bytes -> Iterable[dict]` functions. Adding a workflow version = one registry entry (+ a parser only for a genuinely new file shape).
 
 ### File discovery
 
-Two ways to bridge "we have a publish prefix" → "we have a list of files":
+Never LIST — the trigger reconstructs every publish path from telemetry's `(workflow_id, version, sample_id)` keys and gates ingestion on a HEAD of the `MARK_COMPLETE` object. The [ETL doc's "Trigger" section](./output-catalog-etl-design.md) owns this; the `/api/published` endpoint below is the same event-driven primitive exposed over HTTP. (Globbing 500k publish prefixes is a non-starter, which is why it isn't done.)
 
-(a) **Glob the publish prefix** at register-time. Works against S3 LIST or POSIX; no pipeline change. One LIST per sample.
-(b) **Pipeline-emitted manifest** — a small `outputs.json` published alongside each sample's data, listing what was written. Authoritative, cheaper, but requires a pipeline change.
+### Spec authoring & drift
 
-Start with (a). Fall back to (b) if spec globs drift from reality enough to cause register-time errors.
-
-### Authoring the first spec
-
-Bootstrap: pull 5–10 completed samples' publish prefixes locally, inspect interactively, draft the YAML. Validate against a *different* held-out batch of 10; any `read_csv` failure means the spec was wrong. Don't ship on the first pass.
-
-Interactive authoring is the right form for the first workflow because conventions (delim, comment chars, which columns get explicit types vs. inferred) are being established. Once one spec exists as ground truth, the spec-discovery step is worth scripting:
-
-- **New-workflow onboarding**: an agentic sniffer reads a publish prefix, proposes YAML by structural similarity to existing specs, opens a draft PR for human review.
-- **Drift detection**: a scheduled job re-parses a held-out batch from the latest run and flags any `read_csv` failure or schema mismatch against the current spec.
-
-Both are HITL-on-output, not HITL-on-every-decision — which is what makes them worth scripting. The recurring scripted form would use the Claude Agent SDK with API credentials (separate from this repo's runtime), not the Max subscription.
+Bootstrap the first spec by pulling a handful of completed samples and inspecting interactively; validate the parsers against a held-out batch before shipping. Once one spec exists as ground truth, two agent-assisted, HITL-on-output steps are worth scripting: **onboarding** (a sniffer proposes a new version's specs by structural similarity, opens a draft PR) and **drift detection** (a scheduled job re-parses a held-out batch and flags parser/schema failures). Both would run as a separate Agent-SDK job with API credentials, not this repo's runtime.
 
 ### Schema evolution
 
-When MetaPhlAn versions bump and column shapes change, **version is the dimension we use**: a new `1.7.0.yaml`, not a mutation of `1.6.0.yaml`. Logical tables become version-tagged (`marker_abundance_v4`, `marker_abundance_v5`) with a union view that consumers opt into. This is the concrete mechanism that resolves open question #3 in favor of partitioned-per-version tables.
+When MetaPhlAn versions bump and column shapes change, **version is the dimension we use**: a new registry entry for the new `(workflow_id, version)`, never a mutation of the old one. `version` is a partition key on the fact tables (see the ETL doc's partitioning: `workflow / version / method / data_type`), so historical rows keep their shape and consumers filter — or opt into a latest-version view — rather than silently reading column-drifted data. This resolves open question #3.
 
-## Public parquet artifact
+## Published artifact: frozen DuckLake
 
-Group-internal users hit DuckLake. External consumers want stable parquet URLs without DuckLake / DuckDB-version dependencies. We keep that surface:
+The **working** cmgd lake is live and writable (Postgres catalog, ingesting on every completion). The **published** artifact is a periodic **frozen snapshot** of it that uses a **DuckDB file as the metadata catalog** instead of Postgres. Crucially, the freeze **does not copy the data** — internal and external share the **same R2 bucket and the same parquet files**; only the catalog and access protocol differ (internal reads/writes over **S3 (R2)** with keys; external reads over **public HTTPS**, no credentials). The freeze snapshots the *catalog*, rewriting its data references to the public HTTPS base, and publishes the resulting `cmgd.duckdb`. See the execution plan's [shared-file constraints](./output-catalog-etl-plan.md) for what this couples.
 
-- A periodic job (cron / Dagster sensor / cron-equivalent) runs:
-  ```sql
-  COPY (SELECT * FROM ducklake.marker_abundance)
-  TO 's3://cmgd-export/marker_abundance/'
-  (FORMAT PARQUET, PARTITION_BY 'study_name', COMPRESSION 'zstd');
-  ```
-  Full replace per dataset. No incremental machinery — at our scale a periodic full rewrite is simple and the right tradeoff vs. the operational complexity of incremental.
-- Stable URLs preserved: `s3://cmgd-export/<dataset>/study_name=…/` continues to be the public address (same shape `curatedMetagenomicDataETL` already publishes).
-- Optional `cmgd.duckdb` ATTACH-able shim at `https://minio.cancerdatasci.org/cmgd-export/cmgd.duckdb`, kept for backward compatibility with the existing public consumer entry point.
+Why frozen-DuckDB-catalog over the old "just parquet" plan:
+- **Self-contained catalog + versioned.** Consumers get the whole schema and every table in one `ATTACH` at a known point in time — not a bag of parquet prefixes they must know the layout of. (Data is read from the shared bucket over HTTPS; no Postgres, no keys.)
+- **No live-catalog dependency.** External users never touch the Postgres catalog or need it up.
+- **Reproducible.** "The published lake as of 2026-07-01" is a concrete, immutable snapshot — re-runnable analyses cite it, not a moving target.
+- **No data duplication.** The published parquet *is* the lake parquet, at its public HTTPS address — there's no separate `cmgd-export` COPY to keep in sync.
 
-This is the only surviving "ETL"-shaped step in the design, and it's a single `COPY` per dataset on a schedule.
+The `cmgd.duckdb` lands at the existing public entry point (`https://minio.cancerdatasci.org/cmgd-export/cmgd.duckdb` or the R2 public base) — now the frozen catalog itself, not a hand-built shim. Requires DuckLake's data paths to be relative / data_path-overridable so one file set resolves under both `s3://` and `https://` (verify first), and internal compaction must not delete parquet a published snapshot references.
 
 ## What replaces `curatedMetagenomicDataETL`
 
@@ -211,24 +171,24 @@ The repo's three jobs all become obsolete:
 | Today | Target |
 |---|---|
 | Glob `s3://gs-cmgd-mirror/**` + parse `split(file, '/')[7]` for `sample_id` | Telemetry catalog write at completion; `/api/published` for on-demand discovery |
-| Convert TSV.gz to partitioned parquet | DuckLake reads TSV.gz directly; public parquet is a periodic full-replace `COPY` |
+| Convert TSV.gz to partitioned parquet | Thin file→table ETL parses TSV.gz into DuckLake catalog tables (ETL doc); the public artifact is a periodic frozen-DuckLake snapshot |
 | Maintain `sample_id_map.csv` (4.6 MB checked in) | DuckLake view over `samples ⨝ curated_sample_annotations` |
 
 Migration:
 
 1. This repo gains `workflows.publish_base_uri` + `/api/published` + the catalog-write hook.
 2. DuckLake catalog stood up with one tenant (pipeline outputs).
-3. Public parquet generator runs alongside the existing ETL output for a transition window.
+3. Frozen-catalog publish runs alongside the existing ETL output for a transition window (the shared parquet also carries the legacy public URLs).
 4. Cross-check generated parquet against the existing public artifact; once verified equivalent, deprecate `curatedMetagenomicDataETL` and archive the repo. The public URL doesn't change.
 
 ## Open questions
 
-1. **DuckLake's representation of TSV.gz as a logical table**: needs verification. DuckLake v1.0 is parquet-native; non-parquet inputs may need wrapping (a DuckDB view that reads via `read_csv`, registered as a logical table). Worst case we shim TSV.gz → parquet at registration time; that's a per-sample one-time cost, still no global ETL pass. The [output spec layer](#output-spec-layer) carries the `read_csv` config either way, so this is a question about *where* the wrapping happens, not whether the spec itself changes.
+1. ~~**DuckLake's representation of TSV.gz as a logical table**~~ Resolved by the file→table ETL: TSV.gz is **parsed** to rows and **written** to catalog tables (the ETL doc), not read in place — so DuckLake's non-parquet-input question is moot. The remaining detail (parquet write target, partition layout) is owned by the ETL doc.
 2. **Catalog-write idempotency key**: probably `(workflow_id, workflow_version, sample_id)` — the same composite as `jobs_tbl`.
-3. **Schema evolution on MetaPhlAn version bumps**: ~~if `marker_abundance` columns change, do we tag rows with the producing version, or partition logical tables per version so consumers opt in?~~ Resolved: partition logical tables per version (`marker_abundance_v4`, `marker_abundance_v5`) with a union view, mechanized via spec-per-`(workflow_id, version)` in the [output spec layer](#schema-evolution). Avoids silent column drift across years of data.
-4. **Branch dimension**: the `full_data` / `rarefied_data` path component currently splits each step's output. Expose as a partition column on the logical table, or as separate logical tables (`marker_abundance` vs `marker_abundance_rarefied`)? Lean partition column — it's a small dimension and consumers will want both reachable.
+3. ~~**Schema evolution on MetaPhlAn version bumps**~~ Resolved: `version` is a **partition key** on one logical table (not version-suffixed tables) — a new registry entry per `(workflow_id, version)`, historical rows keep their shape, consumers filter or opt into a latest-version view. See [Schema evolution](#schema-evolution). Avoids silent column drift across years of data.
+4. ~~**Branch dimension**~~ Resolved: `full_data` / `rarefied_data` is a `data_type` discriminator **column** (and a partition key), not a separate table — same grain and datatype, just all-reads vs subsample. See the ETL doc.
 5. **Catalog-write failure mode**: synchronous (blocks completion-write but logged) vs. async (fire-and-forget with reconcile). Position above is async. Worth pushback if there's a reason completion shouldn't be observable until cataloged.
-6. **Public parquet generator location**: in this repo (sibling to `nf_client`), in a separate package, or as a Dagster asset on the existing instance? Lean in this repo for now (`packages/cmgd_publish/`?) — small enough that a separate repo is overhead. Migrating to Dagster later is mechanical if the catalog grows complex enough.
+6. **Publisher location**: the file→table ETL lives in-repo at `src/nextflow_telemetry/etl/` (per the ETL doc), with DuckDB/GCS deps in an optional dependency group so the API image stays lean. The frozen-DuckLake export job (below) is a small piece of that module (or a sibling script), not a separate package. Scheduling stays plain scripts (cron / docker-compose); no orchestrator.
 7. **HUMAnN outputs**: not yet emitted by the pipeline (`skip_humann=true`). When that flips, the catalog gains gene-family / pathway tables. Reach-ready under this design — same publish-prefix → register pattern, just new step names.
 8. **Per-execution-site publish locations**: anvil → S3, google profile → GCS. Today's design assumes one location per (workflow, version). If multi-site execution is real, `publish_base_uri` moves to `workflow_runs`. Defer until it bites.
 
@@ -240,9 +200,9 @@ Smallest first. Each independently shippable.
 2. **`GET /api/published`** (small). Read-only, joins existing tables. Useful pre-DuckLake.
 3. **DuckLake catalog DB scaffolding** (medium). New database, DuckDB-managed schema, connection settings.
 4. **Catalog-write hook on completion + reconcile sweep** (small). Mirrors existing service patterns.
-5. **First output spec** (small). Pull 5–10 samples from `cmgd_nextflow` 1.6.0, draft `packages/cmgd_publish/specs/cmgd_nextflow/1.6.0.yaml` interactively, validate against a held-out 10-sample batch.
+5. **First output spec** (small). Pull 5–10 completed samples from the active `cmgd_nextflow` version, author its `OutputSpec` registry entry + parsers in `src/nextflow_telemetry/etl/` interactively, validate against a held-out 10-sample batch. (Spec format & engine: the ETL doc.)
 6. **Logical tables / views over pipeline outputs** (small per dataset, driven by #5).
-7. **Public parquet generator** (small). One `COPY` per dataset, scheduled.
+7. **Frozen-catalog publish** (small). Snapshot the catalog to `cmgd.duckdb` with HTTPS data paths, scheduled — no data copy (same shared parquet).
 8. **Deprecate `curatedMetagenomicDataETL`** (after #7 is verified against the existing public artifact).
 
 That's the full telemetry-side roadmap for catalog publishing.
@@ -251,10 +211,10 @@ That's the full telemetry-side roadmap for catalog publishing.
 
 - No `analyses_tbl` in telemetry. The implicit `(jobs.completed × samples × workflows)` is sufficient.
 - No taxonomic / marker / functional tables in telemetry's Postgres.
-- No transform step in the ingestion path. TSV.gz stays as-is; the only conversion is the periodic public-parquet rewrite.
-- No Dagster integration in this repo. The existing group Dagster owns SRA/biosample metadata; pipeline outputs are catalog-side via telemetry directly.
+- The ingestion path has a thin, deterministic file→table transform (superseding the earlier "no transform" framing — see [`output-catalog-etl-design.md`](./output-catalog-etl-design.md)); the periodic public freeze is a catalog snapshot (no data rewrite — same shared parquet, over HTTPS), a separate, later step.
+- No workflow orchestrator (Dagster / Prefect / Airflow) anywhere in this design. Scheduling is plain scripts (cron / docker-compose), restart-safe via the ETL watermark. The dependency graph is a single edge (completion → register); an orchestrator would be pure overhead.
 - No coupling between telemetry uptime and catalog availability. Catalog write failure is async and recoverable.
-- No incremental public-parquet machinery. Full replace is simple and cheap at our scale.
+- No incremental machinery. The public freeze is a full catalog snapshot (no data copy) — simple and cheap at our scale.
 - No Iceberg. DuckDB writes to Iceberg are not yet first-class; DuckLake is the chosen format.
 - No per-file telemetry. Nextflow's weblog doesn't carry publishDir info and we don't add a side-channel to capture it; the spec layer is how we know what files exist.
 
