@@ -81,7 +81,7 @@ The part that varies per workflow version is small and declarative; the machiner
 |---|---|---|
 | marker_abundance | 197,482 | ~8B |
 | marker_presence | 184,065 | ~8B |
-| taxonomic_profile | 47,560 | ~2B |
+| taxonomic_profile_metaphlan + _bracken | 47,560 | ~2B |
 | resistome | 1,643 | ~70M |
 | qc_metrics | 12 | 500k |
 
@@ -89,7 +89,7 @@ The part that varies per workflow version is small and declarative; the machiner
 
 ## Physical layout: partitioning
 
-Partition `taxonomic_profile` (and siblings) by **`workflow / version / method / data_type`** — all low-cardinality, all commonly filtered: `1 × few × 3 × 2` ≈ a dozen partitions per version. Coarse and healthy.
+Partition the fact tables by **`workflow / version / data_type`** — all low-cardinality, all commonly filtered (method is now the table, not a partition column). A handful of partitions per version. Coarse and healthy.
 
 - **Never partition by `sample_id` or `clade_name`.** High cardinality → 500k partitions → the small-files catastrophe this whole effort exists to avoid. `sample_id` is a **sort/clustering key within** partitions, so min-max stats prune files by sample without a directory explosion.
 - Order the hierarchy to match query patterns and the bucket layout; partition coarse, sort fine, **compact many files per partition** (DuckLake handles this).
@@ -120,7 +120,7 @@ The profilers speak different nomenclatures. There is not one crosswalk — ther
 **Form: a `taxon` dimension table**, star-schema.
 - One row per taxon node, **versioned by `db_version`** (`mpa_vJan25_CHOCOPhlAnSGB_202503` — exactly why the ETL captures it; a new mpa release redefines SGBs, so the crosswalk is version-scoped).
 - Columns: surrogate `taxon_key` + native ids per system (`sgb_id, ncbi_taxid, ncbi_species, ncbi_lineage, gtdb_species, gtdb_lineage`) + `rank` + rollups (`genus, family, phylum`).
-- Fact tables store only the **method-native key they have** (metaphlan/bracken → `ncbi_taxid`, metaphlan also `sgb_id`; gtdb → `gtdb_lineage`/`sgb_id`). Queries join `taxonomic_profile ⋈ taxon ON (db_version, native_key)`.
+- Fact tables store only the **method-native key they have** (metaphlan/bracken → `ncbi_taxid`, metaphlan also `sgb_id`; gtdb → `gtdb_lineage`/`sgb_id`). Queries join `taxonomic_profile_metaphlan ⋈ taxon ON (db_version, sgb_id)` (or `taxonomic_profile_bracken ⋈ taxon ON (db_version, ncbi_taxid)`).
 - Built **once per db_version** as its own small step (parse mpa metadata + taxdump), never per sample. Tiny next to the facts.
 
 **Two caveats to state up front:**

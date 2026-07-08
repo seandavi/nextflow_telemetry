@@ -64,7 +64,7 @@ If you don't want the catalog, you can read Parquet straight from HTTPS — but 
   ```
 - **Many files / whole tables** — **attach the catalog** instead (top of this page). The catalog *enumerates* every Parquet file, so DuckDB never needs to list a directory — this is the supported way to query across files over HTTPS. (If you have S3/R2 credentials for the bucket, globbing works over the `s3://` endpoint, where LIST is available.)
 
-The Parquet is partitioned by `workflow` / `version` / `data_type`, so once files are enumerated (via the catalog) those filters prune to the relevant files.
+The Parquet is partitioned by `version` / `data_type` (the table name already encodes the method), so once files are enumerated (via the catalog) those filters prune to the relevant files.
 
 ## The tables
 

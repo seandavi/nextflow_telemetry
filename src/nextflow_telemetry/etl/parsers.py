@@ -54,6 +54,12 @@ def _as_float(s: str) -> float | None:
         return None
 
 
+def _as_bigint(s: str) -> int | None:
+    """Tolerant int for read-count columns that may be '-'/'' or float-formatted."""
+    v = _as_float(s)
+    return int(v) if v is not None else None
+
+
 def parse_metaphlan_profile(raw: bytes) -> Iterator[dict]:
     """metaphlan marker_rel_ab_w_read_stats → taxonomic_profile_metaphlan rows.
 
@@ -81,7 +87,7 @@ def parse_metaphlan_profile(raw: bytes) -> Iterator[dict]:
             "sgb_id": last if last.startswith("t__SGB") else None,
             "relative_abundance": rel,
             "coverage": _as_float(f[3]) if len(f) > 3 else None,
-            "estimated_reads": int(float(f[4])) if len(f) > 4 and f[4].strip() not in ("", "-") else None,
+            "estimated_reads": _as_bigint(f[4]) if len(f) > 4 else None,
         }
 
 
