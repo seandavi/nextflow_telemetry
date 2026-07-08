@@ -66,7 +66,8 @@ async def process(pg: asyncpg.Connection, con: duckdb.DuckDBPyConnection,
 
         con.execute("BEGIN TRANSACTION")
         try:
-            counts = {t: lake.replace_sample(con, t, sid, rows) for t, rows in rows_by_table.items()}
+            counts = {t: lake.replace_sample(con, t, sid, workflow, version, rows)
+                      for t, rows in rows_by_table.items()}
             con.execute("COMMIT")
         except Exception:
             con.execute("ROLLBACK")

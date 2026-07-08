@@ -47,9 +47,11 @@ async def pending(conn: asyncpg.Connection, workflow: str, version: str,
                 AND e.workflow_version = j.workflow_version)
         ORDER BY j.completed_at
     """
-    if limit:
-        q += f" LIMIT {int(limit)}"
-    return [r["sample_id"] for r in await conn.fetch(q, workflow, version)]
+    args: list = [workflow, version]
+    if limit is not None:
+        q += " LIMIT $3"
+        args.append(limit)
+    return [r["sample_id"] for r in await conn.fetch(q, *args)]
 
 
 async def backlog_count(conn: asyncpg.Connection, workflow: str, version: str) -> int:

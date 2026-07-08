@@ -1,26 +1,45 @@
 """DuckLake catalog: connection, schema, and writes.
 
-Runs DuckDB in-process (on onclappc02). The catalog is a DuckDB file
-(``ETL_LAKE_CATALOG``); data (parquet) lands at ``ETL_LAKE_DATA_PATH`` — a local
-dir for dev/tests, or ``s3://cmgd-data/lake/`` (Cloudflare R2) in prod. When the
-data path is ``s3://``, R2 credentials are read from the rclone ``[r2]`` config
-(never printed) and installed as a DuckDB secret.
+Runs DuckDB in-process (on onclappc02). It's a **DuckLake** — a tracked catalog
+plus DuckLake-managed parquet, not a loose parquet dump. Two catalog backends:
 
-ponytail: DuckDB-file catalog (single-writer ETL). Upgrade path — a Postgres
-catalog — is what enables concurrent internal readers; swap the ATTACH target
-when that's needed. Partitioning (workflow/version/method/data_type) is a
-follow-up; correctness of ingest doesn't depend on it.
+- **Postgres** (design default for the internal working lake) — set
+  ``ETL_LAKE_CATALOG_PG_DB`` (e.g. ``cmgd_lake``); the connection is derived from
+  ``SQLALCHEMY_URI`` (same telemetry instance, separate database), which is what
+  lets internal consumers read concurrently while the ETL writes. Provisioning the
+  ``cmgd_lake`` database is a one-time privileged step (the app role lacks
+  ``CREATEDB``): ``CREATE DATABASE cmgd_lake; GRANT ALL ... TO nf_telemetry;``.
+- **DuckDB file** (``ETL_LAKE_CATALOG``) — single-writer fallback for dev/tests.
+
+Data (parquet) lands at ``ETL_LAKE_DATA_PATH`` — a local dir for dev/tests, or
+``s3://cmgd-data/lake/`` (Cloudflare R2) in prod. When the data path is ``s3://``,
+R2 credentials are read from the rclone ``[r2]`` config (never printed) and
+installed as a DuckDB secret. Partitioning (workflow/version/method/data_type) is
+a follow-up; correctness of ingest doesn't depend on it.
 """
 from __future__ import annotations
 
 import configparser
 import os
 import pathlib
+import re
 
 import duckdb
 
 CATALOG = os.environ.get("ETL_LAKE_CATALOG", "/data/cmgd/lake/cmgd_lake.ducklake")
+CATALOG_PG_DB = os.environ.get("ETL_LAKE_CATALOG_PG_DB")  # set → Postgres catalog
 DATA_PATH = os.environ.get("ETL_LAKE_DATA_PATH", "/data/cmgd/lake/data")
+
+
+def _pg_catalog_dsn(db: str) -> str:
+    """DuckLake Postgres-catalog DSN on the telemetry instance (same host/creds as
+    SQLALCHEMY_URI, different database)."""
+    uri = re.sub(r"\+\w+", "", os.environ["SQLALCHEMY_URI"])
+    m = re.match(r"postgresql://([^:]*):([^@]*)@([^:/]+):(\d+)/", uri)
+    if not m:
+        raise RuntimeError("cannot derive Postgres catalog DSN from SQLALCHEMY_URI")
+    user, pw, host, port = m.groups()
+    return f"postgres:dbname={db} host={host} port={port} user={user} password={pw}"
 
 _ID = {"sample_id": "VARCHAR", "study_name": "VARCHAR", "run_ids": "VARCHAR",
        "workflow": "VARCHAR", "version": "VARCHAR"}
@@ -58,6 +77,12 @@ def _r2_secret_sql() -> str | None:
 def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake; INSTALL httpfs; LOAD httpfs;")
+    if CATALOG_PG_DB:
+        con.execute("INSTALL postgres; LOAD postgres;")
+        target = _pg_catalog_dsn(CATALOG_PG_DB)
+    else:
+        pathlib.Path(CATALOG).parent.mkdir(parents=True, exist_ok=True)
+        target = CATALOG
     if DATA_PATH.startswith("s3://"):
         sql = _r2_secret_sql()
         if not sql:
@@ -65,9 +90,8 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
         con.execute(sql)
     else:
         pathlib.Path(DATA_PATH).mkdir(parents=True, exist_ok=True)
-        pathlib.Path(CATALOG).parent.mkdir(parents=True, exist_ok=True)
     ro = ", READ_ONLY" if read_only else ""
-    con.execute(f"ATTACH 'ducklake:{CATALOG}' AS lake (DATA_PATH '{DATA_PATH}'{ro})")
+    con.execute(f"ATTACH 'ducklake:{target}' AS lake (DATA_PATH '{DATA_PATH}'{ro})")
     return con
 
 
@@ -78,16 +102,23 @@ def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
 
 
 def replace_sample(con: duckdb.DuckDBPyConnection, table: str, sample_id: str,
-                   rows: list[dict]) -> int:
-    """Idempotent write: delete this sample's existing rows, then insert. Returns
-    rows written. Caller wraps a whole sample's tables in one transaction."""
+                   workflow: str, version: str, rows: list[dict]) -> int:
+    """Idempotent write: delete this sample's rows *for this (workflow, version)*,
+    then insert. Scoping the delete by the full key means re-ingesting one version
+    never touches another version's rows for the same sample. Explicit column list
+    so inserts don't depend on physical column order. Returns rows written; caller
+    wraps a whole sample's tables in one transaction."""
     cols = list(SCHEMAS[table])
-    con.execute(f"DELETE FROM lake.{table} WHERE sample_id = ?", [sample_id])
+    con.execute(
+        f"DELETE FROM lake.{table} WHERE sample_id = ? AND workflow = ? AND version = ?",
+        [sample_id, workflow, version],
+    )
     if not rows:
         return 0
+    collist = ", ".join(cols)
     placeholders = ", ".join("?" for _ in cols)
     con.executemany(
-        f"INSERT INTO lake.{table} VALUES ({placeholders})",
+        f"INSERT INTO lake.{table} ({collist}) VALUES ({placeholders})",
         [[r.get(c) for c in cols] for r in rows],
     )
     return len(rows)
