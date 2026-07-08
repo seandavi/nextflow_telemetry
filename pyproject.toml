@@ -21,6 +21,14 @@ dependencies = [
     "httpx>=0.27.0,<0.28.0",      # authlib runtime; pinned to match dev httpx
 ]
 
+# Output-catalog ETL runtime deps — kept optional so the API image stays lean.
+# Install on the ETL host with `uv sync --extra etl` (or `pip install .[etl]`).
+[project.optional-dependencies]
+etl = ["duckdb>=1.0.0,<2.0.0"]
+
+[project.scripts]
+nf-etl = "nextflow_telemetry.etl.cli:main"
+
 [dependency-groups]
 dev = [
     "mypy>=1.8.0,<2.0.0",
