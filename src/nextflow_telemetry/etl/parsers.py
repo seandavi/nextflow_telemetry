@@ -47,14 +47,23 @@ def _as_int(s: str) -> int | None:
     return int(s) if s.lstrip("-").isdigit() and s != "-1" else None
 
 
+def _as_float(s: str) -> float | None:
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 def parse_metaphlan_profile(raw: bytes) -> Iterator[dict]:
-    """metaphlan marker_rel_ab_w_read_stats → taxonomic_profile rows.
+    """metaphlan marker_rel_ab_w_read_stats → taxonomic_profile_metaphlan rows.
 
     Columns (no real header — every leading line is a ``#`` comment):
-    clade_name, clade_taxid (lineage of NCBI taxids), relative_abundance (%),
-    coverage, est_reads. rel_ab is normalized %→fraction so it shares a scale
-    with bracken. The terminal taxid is the row's NCBI taxid; a ``t__SGB`` leaf
-    carries the SGB id.
+    clade_name, clade_taxid (lineage of NCBI taxids), relative_abundance,
+    coverage, estimated_reads. **Native units**: metaphlan `relative_abundance`
+    is a percent (sums to ~100 within a rank) — kept as-reported, not normalized,
+    since it lives in its own table now. The terminal taxid is the row's NCBI
+    taxid; a ``t__SGB`` leaf carries the SGB id. ``coverage`` is ``-`` above the
+    SGB leaves (→ None).
     """
     for f in _rows(raw):
         if len(f) < 3:
@@ -62,9 +71,8 @@ def parse_metaphlan_profile(raw: bytes) -> Iterator[dict]:
         clade = f[0]
         last = clade.split("|")[-1]
         rank = _RANK.get(last[0]) if len(last) > 2 and last[1] == "_" else None
-        try:
-            rel = float(f[2]) / 100.0
-        except ValueError:
+        rel = _as_float(f[2])
+        if rel is None:
             continue
         yield {
             "clade_name": clade,
@@ -72,12 +80,16 @@ def parse_metaphlan_profile(raw: bytes) -> Iterator[dict]:
             "ncbi_taxid": _as_int(f[1].split("|")[-1]),
             "sgb_id": last if last.startswith("t__SGB") else None,
             "relative_abundance": rel,
+            "coverage": _as_float(f[3]) if len(f) > 3 else None,
+            "estimated_reads": int(float(f[4])) if len(f) > 4 and f[4].strip() not in ("", "-") else None,
         }
 
 
 def parse_bracken(raw: bytes) -> Iterator[dict]:
-    """bracken.species/genus → taxonomic_profile rows. Normal header row;
-    ``fraction_total_reads`` is already a 0–1 fraction."""
+    """bracken.species/genus → taxonomic_profile_bracken rows. Normal header row;
+    ``fraction_total_reads`` is a read-count fraction (0–1, native) — a different
+    interpretation from metaphlan's percent, which is why bracken has its own
+    table."""
     rows = _rows(raw, comment=None)
     header = next(rows, None)
     if not header:
@@ -90,8 +102,8 @@ def parse_bracken(raw: bytes) -> Iterator[dict]:
             "clade_name": f[idx["name"]],
             "rank": _BRACKEN_LVL.get(f[idx["taxonomy_lvl"]].strip()),
             "ncbi_taxid": _as_int(f[idx["taxonomy_id"]]),
-            "sgb_id": None,
-            "relative_abundance": float(f[idx["fraction_total_reads"]]),
+            "fraction_total_reads": float(f[idx["fraction_total_reads"]]),
+            "estimated_reads": _as_int(f[idx["new_est_reads"]]),
         }
 
 

@@ -29,17 +29,19 @@ class OutputSpec:
 
 SPECS: dict[tuple[str, str], list[OutputSpec]] = {
     ("cmgd_nextflow", "2.2.1"): [
+        # Separate per-method tables — metaphlan (percent) and bracken (read-count
+        # fraction) are different value interpretations, so they don't share a column.
         OutputSpec(
             "metaphlan_markers/marker_rel_ab_w_read_stats.tsv.gz",
-            "taxonomic_profile", parsers.parse_metaphlan_profile, {"method": "metaphlan"},
+            "taxonomic_profile_metaphlan", parsers.parse_metaphlan_profile,
         ),
         OutputSpec(
             "kraken/bracken.species.txt.gz",
-            "taxonomic_profile", parsers.parse_bracken, {"method": "bracken"},
+            "taxonomic_profile_bracken", parsers.parse_bracken,
         ),
         OutputSpec(
             "kraken/bracken.genus.txt.gz",
-            "taxonomic_profile", parsers.parse_bracken, {"method": "bracken"},
+            "taxonomic_profile_bracken", parsers.parse_bracken,
         ),
         OutputSpec(
             "resistome/card_kma.res.gz",

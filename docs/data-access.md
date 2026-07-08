@@ -26,7 +26,7 @@ You need [DuckDB](https://duckdb.org) ≥ 1.0 (CLI, Python, R, or Node). Nothing
 INSTALL httpfs; LOAD httpfs;
 ATTACH 'https://data.cmgd.cancerdatasci.org/cmgd.duckdb' AS cmgd (READ_ONLY);   -- (pending)
 SHOW TABLES;                    -- see the tables below
-SELECT * FROM cmgd.taxonomic_profile LIMIT 5;
+SELECT * FROM cmgd.taxonomic_profile_metaphlan LIMIT 5;
 ```
 
 That single file is a **catalog** — the actual data is fetched from the shared Parquet store over HTTPS on demand (range GETs), so attaching is instant and you only download the columns/rows your query touches.
@@ -38,7 +38,7 @@ import duckdb
 con = duckdb.connect()
 con.sql("INSTALL httpfs; LOAD httpfs;")
 con.sql("ATTACH 'https://data.cmgd.cancerdatasci.org/cmgd.duckdb' AS cmgd (READ_ONLY)")  # (pending)
-df = con.sql("SELECT * FROM cmgd.taxonomic_profile WHERE study_name = 'ArtachoA_2021'").df()
+df = con.sql("SELECT * FROM cmgd.taxonomic_profile_metaphlan WHERE study_name = 'ArtachoA_2021'").df()
 ```
 
 R (via `duckdb`/`DBI`):
@@ -59,12 +59,12 @@ If you don't want the catalog, you can read Parquet straight from HTTPS — but 
   ```sql
   INSTALL httpfs; LOAD httpfs;
   SELECT clade_name, relative_abundance
-  FROM read_parquet('https://data.cmgd.cancerdatasci.org/parquet/taxonomic_profile/version=2.2.1/method=metaphlan/data_type=full_data/part-0.parquet')  -- (pending, one file)
+  FROM read_parquet('https://data.cmgd.cancerdatasci.org/parquet/taxonomic_profile_metaphlan/version=2.2.1/data_type=full_data/part-0.parquet')  -- (pending, one file)
   WHERE rank = 'species' LIMIT 20;
   ```
 - **Many files / whole tables** — **attach the catalog** instead (top of this page). The catalog *enumerates* every Parquet file, so DuckDB never needs to list a directory — this is the supported way to query across files over HTTPS. (If you have S3/R2 credentials for the bucket, globbing works over the `s3://` endpoint, where LIST is available.)
 
-The Parquet is partitioned by `workflow` / `version` / `method` / `data_type`, so once files are enumerated (via the catalog) those filters prune to the relevant files.
+The Parquet is partitioned by `workflow` / `version` / `data_type`, so once files are enumerated (via the catalog) those filters prune to the relevant files.
 
 ## The tables
 
@@ -74,16 +74,17 @@ Every row carries the identity keys: **`sample_id`** (the join key — `md5` of 
 
 | table | kind | one row per | columns beyond the identity keys |
 |---|---|---|---|
-| `taxonomic_profile` | fact | sample × method × taxon × `data_type` | `method` (`metaphlan`\|`bracken`), **`clade_name`** (label as the profiler reported it), `rank`, `ncbi_taxid`, `sgb_id` (metaphlan only), `relative_abundance` |
+| `taxonomic_profile_metaphlan` | fact | sample × taxon × `data_type` | **`clade_name`** (label as reported), `rank`, `ncbi_taxid`, `sgb_id`, `relative_abundance` (percent), `coverage`, `estimated_reads` |
+| `taxonomic_profile_bracken` | fact | sample × taxon × `data_type` | **`clade_name`**, `rank`, `ncbi_taxid`, `fraction_total_reads` (0–1), `estimated_reads` |
 | `marker_abundance` | fact | sample × marker × `data_type` | `marker_name`, `value` |
 | `marker_presence` | fact | sample × present marker × `data_type` | `marker_name` (membership — a row exists iff the marker is present) |
 | `resistome` | fact | sample × AMR gene × `data_type` | `gene` (CARD reference), `template_coverage`, `template_identity`, `depth`, `score` (from KMA/CARD `card_kma.res`) |
 | `qc_metrics` | **dimension** | sample | `reads_raw`, `reads_decontaminated`, `bases_raw`, `bases_decontaminated`, `reads_surviving_fraction`, `bases_surviving_fraction`, `metaphlan_index` (reference DB version), `pipeline_version`, `git_commit` |
 | `taxon` | **dimension** | taxon × `db_version` | `taxon_key`, **`db_version`**, `ncbi_taxid`, `sgb_id`, `ncbi_species`, `rank`, `genus`, `family`, `phylum` |
 
-**`method` values.** In the current `2.2.1` snapshot, `method` is `metaphlan` or `bracken` — the pipeline does not run gtdb, so there is no `gtdb` method here. (Earlier design notes mention a unified metaphlan/bracken/gtdb table; gtdb applied to older pipeline versions. If a future version reintroduces it, it appears as another `method` value in the same table.)
+**One table per method — on purpose.** metaphlan and bracken are separate tables because their abundance columns carry **different value interpretations**: metaphlan `relative_abundance` is a **percent** (marker/genome-size-normalized), bracken `fraction_total_reads` is a **0–1 read-count fraction**. Keeping them apart means every column has a single meaning. (The 2.2.1 pipeline runs metaphlan + bracken only — no gtdb.)
 
-**Two name columns, on purpose.** `taxonomic_profile.clade_name` is the label *exactly as the profiler reported it* (metaphlan's SGB lineage, bracken's binomial). For a canonical / cross-method name, or to roll up to `genus`/`family`/`phylum`, join the **`taxon`** dimension. `metaphlan` rows carry both `sgb_id` and `ncbi_taxid` (join on `sgb_id` for the most precise match); `bracken` rows carry `ncbi_taxid` only.
+**`clade_name` is as-reported.** Both tables' `clade_name` is the label *exactly as the profiler reported it* (metaphlan's SGB lineage, bracken's binomial). For a canonical name or to roll up to `genus`/`family`/`phylum`, join the **`taxon`** dimension. `taxonomic_profile_metaphlan` carries both `sgb_id` and `ncbi_taxid` (join on `sgb_id` for the most precise match); `taxonomic_profile_bracken` carries `ncbi_taxid` only.
 
 **Joining `taxon` correctly.** `taxon` has one row per taxon *per `db_version`*, so join on **both** the taxon key **and** `db_version`, or rows fan out. A sample's `db_version` is its `qc_metrics.metaphlan_index`. If a snapshot has a single `db_version` (common), filter `taxon` to that one value once and forget it.
 
@@ -94,8 +95,8 @@ Every row carries the identity keys: **`sample_id`** (the join key — `md5` of 
 First, discover what's in the snapshot:
 
 ```sql
-SELECT DISTINCT study_name FROM cmgd.taxonomic_profile ORDER BY 1;   -- studies
-SELECT DISTINCT version    FROM cmgd.taxonomic_profile;              -- pipeline versions present
+SELECT DISTINCT study_name FROM cmgd.taxonomic_profile_metaphlan ORDER BY 1;   -- studies
+SELECT DISTINCT version    FROM cmgd.taxonomic_profile_metaphlan;              -- pipeline versions present
 ```
 
 Find the `sample_id` for a run accession you care about (the join key isn't the SRR — look it up):
@@ -110,9 +111,9 @@ Top 10 species in a study (metaphlan, full-read, one pipeline version):
 
 ```sql
 SELECT clade_name, avg(relative_abundance) AS mean_rel_ab
-FROM cmgd.taxonomic_profile
+FROM cmgd.taxonomic_profile_metaphlan
 WHERE study_name = 'ArtachoA_2021'
-  AND method = 'metaphlan' AND rank = 'species'
+  AND rank = 'species'
   AND data_type = 'full_data'
   AND version = '2.2.1'                          -- pin the version, or you aggregate across versions
 GROUP BY clade_name ORDER BY mean_rel_ab DESC LIMIT 10;
@@ -127,12 +128,12 @@ WITH s AS (
   WHERE sample_id = '04835269dd64216afea75569f36f2f6c'
 )
 SELECT p.relative_abundance, t.ncbi_species, t.genus, t.phylum
-FROM cmgd.taxonomic_profile p
+FROM cmgd.taxonomic_profile_metaphlan p
 JOIN cmgd.taxon t
   ON t.sgb_id = p.sgb_id
  AND t.db_version = (SELECT db_version FROM s)   -- both keys, or rows fan out
 WHERE p.sample_id = '04835269dd64216afea75569f36f2f6c'
-  AND p.method = 'metaphlan' AND p.data_type = 'full_data'
+  AND p.data_type = 'full_data'
 ORDER BY p.relative_abundance DESC;
 ```
 
@@ -145,7 +146,7 @@ FROM cmgd.qc_metrics GROUP BY study_name ORDER BY n_samples DESC;
 
 ## Two things to know before you compute
 
-1. **Abundances are not directly comparable across methods.** `relative_abundance` is stored as a **0–1 fraction** for both methods (metaphlan's native percent is normalized ÷100), so the *scale* matches — but the *definitions* differ: metaphlan is marker/genome-size-normalized, `bracken` is a read-count fraction. The `method` column tells you which. Matching a *taxon* across methods (via `taxon`) unifies *who*, not *how much*.
+1. **Abundances are not comparable across methods** — which is why they're separate tables. `taxonomic_profile_metaphlan.relative_abundance` is a **percent** (marker/genome-size-normalized); `taxonomic_profile_bracken.fraction_total_reads` is a **0–1 read-count fraction**. Both are stored in their native units. Matching a *taxon* across the two (via `taxon`) unifies *who*, not *how much*.
 2. **`data_type` matters.** `full_data` uses all reads; `rarefied_data` is a 1M-read subsample (for depth-controlled comparisons). Pick one — don't mix them in an aggregate. Most analyses want `full_data`.
 
 ## Citing / reproducibility
