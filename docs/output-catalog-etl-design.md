@@ -63,13 +63,14 @@ The part that varies per workflow version is small and declarative; the machiner
 
 | table | grain | populated from | discriminators | notes |
 |---|---|---|---|---|
-| `taxonomic_profile` | clade | metaphlan + bracken + gtdb | `method`, `data_type` | unified; keep it **narrow** (see below) |
+| `taxonomic_profile_metaphlan` | clade | metaphlan | `data_type` | native percent + coverage/estimated_reads |
+| `taxonomic_profile_bracken` | clade | bracken | `data_type` | native read-count fraction + estimated_reads |
 | `marker_abundance` | marker | metaphlan marker_abundance | `data_type` | float value |
 | `marker_presence` | marker | metaphlan marker_presence | `data_type` | **degenerate** — see below |
 | `resistome` | AMR gene | rgi_bwt | `data_type` | wide, own shape |
 | `qc_metrics` | sample | `manifest.read_accounting` | — | one row/sample (dimension) |
 
-- **`taxonomic_profile` stays a single table**, with a `method` column, because metaphlan/gtdb/bracken share grain and core datatype (float relative abundance). Splitting into three buys nothing and loses cross-method ergonomics. Keep it **narrow**: `keys + method + data_type + taxon key(s) + rank + relative_abundance`. `coverage`/`est_reads` are metaphlan-only and mostly null — move them to a metaphlan sidecar or accept nullable; partitioning by `method` (below) means a gtdb partition simply has no such columns, so the null sprawl compresses away.
+- **Separate per-method tables** (`taxonomic_profile_metaphlan`, `taxonomic_profile_bracken`), *not* one unified table. (Supersedes the earlier single-table-with-`method`-column proposal.) The deciding factor: the abundance columns carry **different value interpretations** — metaphlan `relative_abundance` is a percent, bracken `fraction_total_reads` is a read-count fraction — and mixing interpretations in one column is a footgun. Separation also lets each table keep its **native units** (no lossy %→fraction normalization) and its **method-specific columns** (metaphlan `coverage`/`estimated_reads`; bracken `estimated_reads`) without null sprawl. Cross-method comparison is a deliberate `UNION`/join, not an accidental `avg()` over mixed semantics.
 - **Do NOT denormalize provenance onto every clade row.** At 270–1,200 clade rows/sample × 500k samples, repeating `accessions`/`db_version`/read counts is enormous waste. Per-sample provenance lives once in `qc_metrics` (the dimension), joined on `sample_id`.
 - **`marker_presence` is degenerate as published** — every row is `present=true` (the metaphlan presence table only emits present markers). Presence is encoded by *row existence*; the boolean column carries no information. Store it as `(sample_id, marker_name, data_type)` membership and drop the boolean. (Lesson: can't pick the column — or know you don't need it — until you've seen the values.)
 - **full/rarefied is a column (`data_type`), not a table.** Same grain, same datatype — just computed on all reads vs a subsample. It's a discriminator, and an excellent partition key (below).
@@ -80,7 +81,7 @@ The part that varies per workflow version is small and declarative; the machiner
 |---|---|---|
 | marker_abundance | 197,482 | ~8B |
 | marker_presence | 184,065 | ~8B |
-| taxonomic_profile | 47,560 | ~2B |
+| taxonomic_profile_metaphlan + _bracken | 47,560 | ~2B |
 | resistome | 1,643 | ~70M |
 | qc_metrics | 12 | 500k |
 
@@ -88,7 +89,7 @@ The part that varies per workflow version is small and declarative; the machiner
 
 ## Physical layout: partitioning
 
-Partition `taxonomic_profile` (and siblings) by **`workflow / version / method / data_type`** — all low-cardinality, all commonly filtered: `1 × few × 3 × 2` ≈ a dozen partitions per version. Coarse and healthy.
+Partition the fact tables by **`workflow / version / data_type`** — all low-cardinality, all commonly filtered (method is now the table, not a partition column). A handful of partitions per version. Coarse and healthy.
 
 - **Never partition by `sample_id` or `clade_name`.** High cardinality → 500k partitions → the small-files catastrophe this whole effort exists to avoid. `sample_id` is a **sort/clustering key within** partitions, so min-max stats prune files by sample without a directory explosion.
 - Order the hierarchy to match query patterns and the bucket layout; partition coarse, sort fine, **compact many files per partition** (DuckLake handles this).
@@ -119,7 +120,7 @@ The profilers speak different nomenclatures. There is not one crosswalk — ther
 **Form: a `taxon` dimension table**, star-schema.
 - One row per taxon node, **versioned by `db_version`** (`mpa_vJan25_CHOCOPhlAnSGB_202503` — exactly why the ETL captures it; a new mpa release redefines SGBs, so the crosswalk is version-scoped).
 - Columns: surrogate `taxon_key` + native ids per system (`sgb_id, ncbi_taxid, ncbi_species, ncbi_lineage, gtdb_species, gtdb_lineage`) + `rank` + rollups (`genus, family, phylum`).
-- Fact tables store only the **method-native key they have** (metaphlan/bracken → `ncbi_taxid`, metaphlan also `sgb_id`; gtdb → `gtdb_lineage`/`sgb_id`). Queries join `taxonomic_profile ⋈ taxon ON (db_version, native_key)`.
+- Fact tables store only the **method-native key they have** (metaphlan/bracken → `ncbi_taxid`, metaphlan also `sgb_id`; gtdb → `gtdb_lineage`/`sgb_id`). Queries join `taxonomic_profile_metaphlan ⋈ taxon ON (db_version, sgb_id)` (or `taxonomic_profile_bracken ⋈ taxon ON (db_version, ncbi_taxid)`).
 - Built **once per db_version** as its own small step (parse mpa metadata + taxdump), never per sample. Tiny next to the facts.
 
 **Two caveats to state up front:**

@@ -46,9 +46,15 @@ _ID = {"sample_id": "VARCHAR", "study_name": "VARCHAR", "run_ids": "VARCHAR",
 _BRANCH = {"data_type": "VARCHAR"}
 
 SCHEMAS: dict[str, dict[str, str]] = {
-    "taxonomic_profile": {**_ID, **_BRANCH, "method": "VARCHAR", "clade_name": "VARCHAR",
-                          "rank": "VARCHAR", "ncbi_taxid": "INTEGER", "sgb_id": "VARCHAR",
-                          "relative_abundance": "DOUBLE"},
+    # Separate per-method profiles — one value interpretation per table.
+    "taxonomic_profile_metaphlan": {**_ID, **_BRANCH, "clade_name": "VARCHAR", "rank": "VARCHAR",
+                          "ncbi_taxid": "INTEGER", "sgb_id": "VARCHAR",
+                          "relative_abundance": "DOUBLE",  # metaphlan percent (native)
+                          "coverage": "DOUBLE", "estimated_reads": "BIGINT"},
+    "taxonomic_profile_bracken": {**_ID, **_BRANCH, "clade_name": "VARCHAR", "rank": "VARCHAR",
+                          "ncbi_taxid": "INTEGER",
+                          "fraction_total_reads": "DOUBLE",  # bracken read-count fraction (native)
+                          "estimated_reads": "BIGINT"},
     "resistome": {**_ID, **_BRANCH, "gene": "VARCHAR", "template_coverage": "DOUBLE",
                   "template_identity": "DOUBLE", "depth": "DOUBLE", "score": "DOUBLE"},
     "qc_metrics": {**_ID, "reads_raw": "BIGINT", "reads_decontaminated": "BIGINT",

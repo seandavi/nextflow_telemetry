@@ -39,12 +39,13 @@ MANIFEST = (
 )
 
 
-def test_metaphlan_normalizes_and_extracts():
+def test_metaphlan_native_units_and_extraction():
     rows = list(P.parse_metaphlan_profile(METAPHLAN))
     assert len(rows) == 4
     kingdom = rows[1]
     assert kingdom["rank"] == "kingdom"
-    assert abs(kingdom["relative_abundance"] - 0.835) < 1e-9  # percent -> fraction
+    assert kingdom["relative_abundance"] == 83.5   # native percent, not normalized
+    assert kingdom["coverage"] is None and kingdom["estimated_reads"] == 8000
     species = rows[2]
     assert species["rank"] == "species" and species["ncbi_taxid"] == 165179
     assert species["sgb_id"] is None
@@ -53,10 +54,12 @@ def test_metaphlan_normalizes_and_extracts():
     assert rows[0]["ncbi_taxid"] is None  # UNCLASSIFIED / -1 -> None
 
 
-def test_bracken_fraction_and_rank():
+def test_bracken_native_fraction_and_reads():
     (row,) = list(P.parse_bracken(BRACKEN))
     assert row["rank"] == "species" and row["ncbi_taxid"] == 165179
-    assert row["relative_abundance"] == 0.34937  # already a fraction, unchanged
+    assert row["fraction_total_reads"] == 0.34937  # native read-count fraction
+    assert row["estimated_reads"] == 11228086
+    assert "relative_abundance" not in row  # bracken doesn't share metaphlan's column
 
 
 def test_resistome_padded_numerics():
