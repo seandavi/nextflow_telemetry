@@ -128,6 +128,34 @@ class JobClient:
         response.raise_for_status()
         return response.json()
 
+    async def register_sample(
+        self,
+        sample_id: str,
+        *,
+        ncbi_accession: str,
+        collection: str | None = None,
+        biosample_id: str | None = None,
+    ) -> dict:
+        """Register (upsert) a single sample, optionally attaching it to a collection.
+
+        Membership is written server-side via the `collection` field — never as a
+        `metadata.cohort` key (retired; see the server's ADR-0005).
+        """
+        body: dict = {"sample_id": sample_id, "ncbi_accession": ncbi_accession}
+        if collection:
+            body["collection"] = collection
+        if biosample_id:
+            body["biosample_id"] = biosample_id
+        response = await self._client.post("samples", json=body)
+        response.raise_for_status()
+        return response.json()
+
+    async def register_workflow(self, workflow: dict) -> dict:
+        """Register (upsert) a workflow version. `workflow` is the POST /workflows body."""
+        response = await self._client.post("workflows", json=workflow)
+        response.raise_for_status()
+        return response.json()
+
     async def reconcile(self) -> dict:
         """Create pending jobs for the samples × active workflows cross-product."""
         response = await self._client.post("admin/reconcile-jobs")

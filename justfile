@@ -102,7 +102,11 @@ logs:
 
 # Seed samples + workflow from the ArtachoA_2021 TSV and reconcile jobs.
 seed:
-	uv run python scripts/seed_from_tsv.py
+	uv run nf-client register-workflow --server http://localhost:8000/api \
+	  --id nf_testing --version 0.1.0 --repo {{justfile_directory()}}/nf_testing/main.nf \
+	  --revision local --max-retries 1 --description "Stub metagenomics pipeline for E2E testing"
+	uv run nf-client add-samples --server http://localhost:8000/api \
+	  --tsv ArtachoA_2021_sample.tsv --collection ArtachoA_2021 --reconcile
 
 # Run nf-client daemon: claim and run batches of 10 until no pending jobs remain.
 daemon:
