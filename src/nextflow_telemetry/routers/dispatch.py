@@ -207,8 +207,9 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
         ),
     )
     async def report_submitted(req: SubmittedRequest):
+        now = datetime.now(timezone.utc)
         async with engine.begin() as conn:
-            ok = await lifecycle.mark_submitted(conn, req.run_name, req.executor_job_id)
+            ok = await lifecycle.mark_submitted(conn, req.run_name, req.executor_job_id, now)
             if not ok:
                 raise HTTPException(
                     status_code=404,

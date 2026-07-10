@@ -165,7 +165,7 @@ def test_happy_path_claim_submitted_running_complete(db_asyncpg_url):
             assert job["run_name"] == run_name
 
             async with engine.begin() as conn:
-                ok = await lifecycle.mark_submitted(conn, run_name, "SLURM_1")
+                ok = await lifecycle.mark_submitted(conn, run_name, "SLURM_1", now)
             assert ok is True
             run = await _get_run(engine, run_name)
             job = await _get_job(engine, job_id)
@@ -225,12 +225,66 @@ def test_mark_running_tolerates_claimed_and_submitted_predecessors(db_asyncpg_ur
     _run(go())
 
 
+def test_mark_running_does_not_clobber_a_terminal_run(db_asyncpg_url):
+    async def go():
+        engine = create_async_engine(db_asyncpg_url)
+        try:
+            wf_pk = await _seed_workflow(engine)
+            now = datetime.now(timezone.utc)
+            # A run the watchdog already marked `failed`; a late `started`
+            # weblog event must not resurrect it to `running`.
+            for terminal in ("failed", "completed", "expired"):
+                run_name = f"run-{uuid.uuid4().hex[:8]}"
+                await _seed_run(
+                    engine, run_name=run_name, workflow_pk=wf_pk,
+                    workflow_id="lc-wf", workflow_version="1.0.0", status=terminal,
+                )
+                async with engine.begin() as conn:
+                    await lifecycle.mark_running(conn, run_name, "nf-run-id", now)
+                run = await _get_run(engine, run_name)
+                assert run["status"] == terminal, terminal  # unchanged
+        finally:
+            await engine.dispose()
+
+    _run(go())
+
+
+def test_complete_sample_does_not_flip_a_failed_job(db_asyncpg_url):
+    async def go():
+        engine = create_async_engine(db_asyncpg_url)
+        try:
+            wf_pk = await _seed_workflow(engine)
+            sample_id = await _seed_sample(engine)
+            run_name = f"run-{uuid.uuid4().hex[:8]}"
+            await _seed_run(
+                engine, run_name=run_name, workflow_pk=wf_pk,
+                workflow_id="lc-wf", workflow_version="1.0.0", status="running",
+            )
+            # Job already failed (DLQ). A late MARK_COMPLETE for the same
+            # run+sample must not flip it to completed and leave failure fields set.
+            job_id = await _seed_job(
+                engine, workflow_pk=wf_pk, sample_id=sample_id,
+                status="failed", run_name=run_name,
+            )
+            now = datetime.now(timezone.utc)
+            async with engine.begin() as conn:
+                n = await lifecycle.complete_sample(conn, run_name, sample_id, now)
+            assert n == 0
+            job = await _get_job(engine, job_id)
+            assert job["status"] == JobStatus.failed  # unchanged
+        finally:
+            await engine.dispose()
+
+    _run(go())
+
+
 def test_mark_submitted_no_match_returns_false_without_raising(db_asyncpg_url):
     async def go():
         engine = create_async_engine(db_asyncpg_url)
         try:
+            now = datetime.now(timezone.utc)
             async with engine.begin() as conn:
-                ok = await lifecycle.mark_submitted(conn, "no-such-run", "X")
+                ok = await lifecycle.mark_submitted(conn, "no-such-run", "X", now)
             assert ok is False
         finally:
             await engine.dispose()

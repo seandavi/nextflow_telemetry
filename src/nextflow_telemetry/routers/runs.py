@@ -436,7 +436,7 @@ async def _apply_summary_update(conn, run_name: str, parsed: RunEvent, now: date
         # POST /dispatch/submitted. Folds into the same claimed->submitted
         # transition dispatch.py's report_submitted uses, so a normal-order
         # run (already submitted by the time this arrives) is a no-op here.
-        await lifecycle.mark_submitted(conn, run_name, executor_job_id=None)
+        await lifecycle.mark_submitted(conn, run_name, executor_job_id=None, now=now)
         return
 
     values: dict = {}

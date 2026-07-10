@@ -51,7 +51,7 @@ Deliberate CARVE-OUTS — NOT owned by this module:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import StrEnum
 from typing import TypedDict
 
@@ -133,6 +133,7 @@ async def mark_submitted(
     conn: AsyncConnection,
     run_name: str,
     executor_job_id: str | None,
+    now: datetime,
 ) -> bool:
     """Transition a run + its jobs from `claimed` to `submitted`.
 
@@ -140,7 +141,6 @@ async def mark_submitted(
     updated; the caller maps False to a 404. Mirrors routers/dispatch.py
     `report_submitted`.
     """
-    now = datetime.now(timezone.utc)
     result = await conn.execute(
         update(workflow_runs_tbl)
         .where(
@@ -182,10 +182,18 @@ async def mark_running(
     Jobs reach `running` from either `submitted` (normal flow) or `claimed`
     (defensive: out-of-order events). Mirrors services/telemetry.py's
     `started` handling.
+
+    The run update is guarded against terminal states: a late/duplicate
+    `started` event for a run the watchdog already closed (failed/expired) or
+    that already completed will NOT resurrect it to `running`. Same
+    no-clobber contract as close_run.
     """
     await conn.execute(
         update(workflow_runs_tbl)
-        .where(workflow_runs_tbl.c.run_name == run_name)
+        .where(
+            workflow_runs_tbl.c.run_name == run_name,
+            workflow_runs_tbl.c.status.notin_(RUN_TERMINAL_STATUSES),
+        )
         .values(run_id=run_id, status=RunStatus.running, started_at=now)
     )
     await conn.execute(
@@ -208,12 +216,17 @@ async def complete_sample(
 
     Fires on the MARK_COMPLETE sentinel process. Returns the number of rows
     updated (0 or 1 in practice, given the uq_job_composite constraint).
+
+    Guarded against terminal job states: a late MARK_COMPLETE will not flip a
+    job that already `failed` (which would leave a `completed` row with
+    failure fields still populated) or re-touch one already `completed`.
     """
     result = await conn.execute(
         update(jobs_tbl)
         .where(
             jobs_tbl.c.run_name == run_name,
             jobs_tbl.c.sample_id == sample_id,
+            jobs_tbl.c.status.notin_([JobStatus.completed, JobStatus.failed]),
         )
         .values(status=JobStatus.completed, completed_at=now)
     )
@@ -235,12 +248,18 @@ async def close_run(
     Idempotent: if the run is already in a terminal state
     (completed/failed/expired), this is a no-op write (the prior status is
     still returned so the caller can report it).
+
+    The row is locked FOR UPDATE for the duration of the caller's transaction
+    so that a watchdog `close_run(..., failed)` and a telemetry
+    `close_run(..., completed)` racing in separate transactions can't both
+    read a non-terminal status and lost-update each other — the second waits,
+    sees the now-terminal status, and no-ops.
     """
     row = (
         await conn.execute(
-            select(workflow_runs_tbl.c.status).where(
-                workflow_runs_tbl.c.run_name == run_name
-            )
+            select(workflow_runs_tbl.c.status)
+            .where(workflow_runs_tbl.c.run_name == run_name)
+            .with_for_update()
         )
     ).first()
     if row is None:
