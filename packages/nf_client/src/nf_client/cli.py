@@ -537,7 +537,7 @@ async def _ingest_rows(
     carry placeholders like "Not applicable"). Membership goes through the
     server's ``collection`` field — never ``metadata.cohort`` (retired).
     """
-    registered = skipped = 0
+    registered = skipped = unattached = 0
     for row in rows:
         if limit is not None and registered >= limit:
             break
@@ -547,16 +547,18 @@ async def _ingest_rows(
             skipped += 1
             continue
         coll = collection or (row.get("study_name") or "").strip() or None
+        if coll is None:
+            unattached += 1  # registered to the catalog but in no collection
         await client.register_sample(sample_id, ncbi_accession=acc, collection=coll)
         registered += 1
-    return {"registered": registered, "skipped": skipped}
+    return {"registered": registered, "skipped": skipped, "unattached": unattached}
 
 
 @app.command(name="add-samples")
 def add_samples(
     tsv: Path = typer.Option(..., "--tsv", help="Path to a sample TSV (columns: ncbi_accession, study_name)."),
-    collection: str = typer.Option(None, "--collection", help="Collection to attach every sample to. If omitted, each row's study_name column is used."),
-    limit: int = typer.Option(None, "--limit", help="Register at most this many samples."),
+    collection: str | None = typer.Option(None, "--collection", help="Collection to attach every sample to. If omitted, each row's study_name column is used."),
+    limit: int | None = typer.Option(None, "--limit", help="Register at most this many samples."),
     reconcile_after: bool = typer.Option(False, "--reconcile", help="After registering, create pending jobs (POST /admin/reconcile-jobs)."),
     config: Path = opt_config,
     server: str = opt_server,
@@ -570,7 +572,16 @@ def add_samples(
     import csv
 
     with tsv.open(newline="") as f:
-        rows = list(csv.DictReader(f, delimiter="\t"))
+        reader = csv.DictReader(f, delimiter="\t")
+        rows = list(reader)
+        fieldnames = reader.fieldnames or []
+
+    # Fail fast on the obvious misuse: no --collection and no column to fall back
+    # to would silently register every sample into no collection at all.
+    if collection is None and "study_name" not in fieldnames:
+        raise typer.BadParameter(
+            f"{tsv.name} has no 'study_name' column; pass --collection to name the collection."
+        )
 
     async def _run() -> dict:
         cfg = _operator_config(config, server)
@@ -585,6 +596,8 @@ def add_samples(
 
     def human(p: dict) -> None:
         typer.echo(f"{p['source']}: registered {p['registered']}, skipped {p['skipped']} (no run accession)")
+        if p.get("unattached"):
+            typer.echo(f"  warning: {p['unattached']} registered into no collection (blank study_name, no --collection)")
         if "reconcile" in p:
             typer.echo(f"reconcile: {p['reconcile'].get('jobs_created')} pending jobs created")
 
@@ -617,7 +630,12 @@ def add_cmd(
         async with JobClient(cfg) as client:
             for s in study:
                 try:
-                    raw = urllib.request.urlopen(f"{base}/{s}/{s}_sample.tsv", timeout=30).read().decode()
+                    # urlopen is blocking; offload so the async runner isn't stalled.
+                    def _fetch(study_name: str = s) -> str:
+                        return urllib.request.urlopen(
+                            f"{base}/{study_name}/{study_name}_sample.tsv", timeout=30
+                        ).read().decode()
+                    raw = await asyncio.to_thread(_fetch)
                 except Exception as e:  # network / 404 — record and continue to next study
                     per_study[s] = {"error": str(e)}
                     continue
@@ -652,7 +670,7 @@ def register_workflow_cmd(
     repository_url: str = typer.Option(..., "--repo", help="Repository URL or absolute path to main.nf."),
     revision: str = typer.Option(..., "--revision", help="Git branch/tag/commit (mutable — no rerun on change)."),
     max_retries: int = typer.Option(3, "--max-retries", help="Retries before dead-lettering (0–10)."),
-    description: str = typer.Option(None, "--description", help="Free-text description."),
+    description: str | None = typer.Option(None, "--description", help="Free-text description."),
     config: Path = opt_config,
     server: str = opt_server,
     as_json: bool = json_option,

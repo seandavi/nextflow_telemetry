@@ -43,7 +43,7 @@ async def test_ingest_rows_skips_non_accession_and_falls_back_to_study_name(conf
         async with JobClient(config) as client:
             result = await _ingest_rows(client, rows, collection=None, limit=None)
 
-    assert result == {"registered": 2, "skipped": 1}
+    assert result == {"registered": 2, "skipped": 1, "unattached": 0}
     bodies = [json.loads(c.request.content) for c in route.calls]
     # collection falls back to each row's study_name when --collection is not given
     assert bodies[0]["collection"] == "StudyA"
@@ -58,5 +58,18 @@ async def test_ingest_rows_explicit_collection_and_limit(config: ClientConfig):
         async with JobClient(config) as client:
             result = await _ingest_rows(client, rows, collection="Fixed", limit=3)
 
-    assert result == {"registered": 3, "skipped": 0}
+    assert result == {"registered": 3, "skipped": 0, "unattached": 0}
     assert all(json.loads(c.request.content)["collection"] == "Fixed" for c in route.calls)
+
+
+@pytest.mark.asyncio
+async def test_ingest_rows_counts_unattached(config: ClientConfig):
+    # No --collection and a blank study_name → registered but in no collection.
+    rows = [{"ncbi_accession": "SRR1", "study_name": ""}]
+    with respx.mock(base_url="http://test.local") as mock:
+        route = mock.post("/samples").mock(return_value=httpx.Response(201, json={}))
+        async with JobClient(config) as client:
+            result = await _ingest_rows(client, rows, collection=None, limit=None)
+
+    assert result == {"registered": 1, "skipped": 0, "unattached": 1}
+    assert "collection" not in json.loads(route.calls.last.request.content)
