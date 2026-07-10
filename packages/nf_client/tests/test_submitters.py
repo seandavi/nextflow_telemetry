@@ -157,7 +157,8 @@ def test_submit_to_scheduler_slurm_respects_export_none_false(tmp_path: Path, mo
 
 def test_submit_to_scheduler_propagates_failure_after_retries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A scheduler failure that exhausts retries propagates as-is (not wrapped) —
-    submit() lets it crash uncaught, daemon() catches bare Exception and continues.
+    submit() lets it crash uncaught, daemon() catches (SubprocessError, OSError)
+    and continues.
     """
     tmpl = tmp_path / "submit.sh.j2"
     tmpl.write_text("#!/bin/bash\necho {{ run_name }}\n")

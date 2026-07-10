@@ -210,10 +210,12 @@ def submit_pbs(script_content: str) -> str:
 # both; daemon() exits nonzero for a missing template_path but skips the
 # batch — via `continue`, letting the server's TTL sweep requeue it — for an
 # unwired mode). A genuine submission failure (e.g. sbatch down after
-# retries) is NOT wrapped here: it propagates as whatever submit_with_retry
-# raises, exactly as it did before this refactor, so submit() still lets it
-# crash uncaught while daemon()'s existing `except Exception: continue`
-# still catches it.
+# retries) is NOT wrapped here: it propagates as the SubprocessError/OSError
+# submit_with_retry raises, exactly as before this refactor — submit() lets it
+# crash uncaught, while daemon() catches `(SubprocessError, OSError)` and
+# skips the batch. A template/render error (a config bug, not a transient
+# submission failure) is likewise unwrapped, so it stops the daemon rather
+# than being swallowed into a skip loop.
 
 
 class TemplatePathMissingError(Exception):
@@ -288,7 +290,8 @@ def submit_to_scheduler(
     even try" cases; a scheduler submission failure after retries propagates
     as whatever submit_with_retry raised (subprocess.SubprocessError/OSError).
     """
-    if not cfg.submission.template_path:
+    template_path = cfg.submission.template_path
+    if template_path is None:
         raise TemplatePathMissingError(mode)
 
     submitter = SCHEDULER_SUBMITTERS.get(mode)
@@ -296,5 +299,5 @@ def submit_to_scheduler(
         raise UnwiredSchedulerError(mode)
 
     context = build_submission_context(batch, cfg, sample_ids)
-    script = render_submission_script(cfg.submission.template_path, context)
+    script = render_submission_script(template_path, context)
     return submitter(script, cfg)
