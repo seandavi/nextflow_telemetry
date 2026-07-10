@@ -163,7 +163,7 @@ locality**. Strength: Strong / Worth exploring / Speculative.
 | 5 | Liveness module — one "is this alive?" | Strong | open · **latent bug** | stalled re-derived 6× / 5 columns; read path calls `submitted` runs stalled, watchdog won't reap them | **#115**, ADR-0002 |
 | 6 | One reader for the `trace` JSONB | Worth exploring | open | decoded 3 ways (`.get` / `->>`); FAILED/ABORTED predicate copied ~17× | #62 |
 | 7 | Make the ETL spec actually drive ingest | Worth exploring | open | `specs.py` bypassed (qc special-case); `lake.SCHEMAS` hand-synced to parser keys; cli re-loops | ETL #153–158 |
-| 8 | Submitter seam for HPC modes (nf-client) | Strong | open | if/elif over mode twice; `submit_*` signatures disagree; `lsf` dead branch | #68 (sacct behind slurm adapter) |
+| 8 | Submitter seam for HPC modes (nf-client) | Strong | **✓ DONE #168** | `submit_to_scheduler()` + `SCHEDULER_SUBMITTERS` registry in `submission.py`; scheduler context/dispatch de-duped across submit/daemon; `local` left per-caller | #68 (sacct behind slurm adapter) |
 | 9 | Shared `useFetch` (loading/error) hook | Strong | open | fetch+loading+error copied in all 8 pages; errors swallowed → permanent spinner | #118, #121 |
 | 10 | One status→colour/label map + real union | Strong | open | ~60 inline ternaries; `classification`/`status` typed as bare `string` | #121 |
 | 11 | "Run log artifacts" module | Worth exploring | open | `ON CONFLICT uq_task_log` upsert ×3; run-level logs smuggled into task-keyed table | #120, #62, #93 |
@@ -173,10 +173,17 @@ locality**. Strength: Strong / Worth exploring / Speculative.
 invariant + auto-retire), `process_metrics` service, ETL `engine.py`+`specs.py` split, `log.py`
 JSONFormatter, `lib/api.ts`+`types.ts` network seam, `_CaptureBuffer`.
 
-**Where to start:** #3 done (#166) — #4 DispatchService is next (builds on `lifecycle.claim()`);
-#5 liveness for the one real correctness bug (ties into #115 already shipped); #9 + #12 as the
-fastest relief for "the UI feels confusing." #2, #6, #7 fold naturally into work already scheduled
-under Epic B / ETL.
+**Progress:** #3 (#166), #4 (#167), #8 (#168) all shipped. Remaining Strong items each need a
+decision before building:
+- **#5 liveness** — the one real correctness bug (read-path "stalled" vs the watchdogs), but it
+  carries a behaviour choice (unify the definition only, or change what the watchdog reaps?) — grill
+  before building. Ties into #115.
+- **#9 fetch hook / #10 status union** — frontend; blocked on the local frontend-verification gap
+  (vite proxies at the deployed API), so agree a verification path first.
+- **#12** — only `WrapperLogEvent` is a real candidate, and it's an accepted `/runs` contract event
+  with a test; removing it is a small API-contract change (keep the #66/#68 pre-modelled events).
+
+#2, #6, #7 fold naturally into work already scheduled under Epic B / ETL.
 
 ## Suggested sequencing
 
