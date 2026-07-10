@@ -146,7 +146,9 @@ def test_list_samples_search_and_collection_filter(integration_client):
     coll = f"COLL-{tag}"
     ids = [f"SRR-{tag}-{i}" for i in range(3)]
     for i, sid in enumerate(ids):
-        client.post("/api/samples", json={"sample_id": sid, "ncbi_accession": f"SRR00000{i+1}", "collection": coll})
+        r = client.post("/api/samples", json={"sample_id": sid, "ncbi_accession": f"SRR00000{i+1}", "collection": coll})
+        # The register response reflects the membership just written.
+        assert coll in r.json()["collections"], r.json()
     client.post("/api/samples", json={"sample_id": f"OTHER-{tag}", "ncbi_accession": "SRR000009", "collection": "different"})
 
     by_search = client.get(f"/api/samples?search=SRR-{tag}").json()

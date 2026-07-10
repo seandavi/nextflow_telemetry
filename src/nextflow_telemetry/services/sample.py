@@ -69,6 +69,15 @@ class SampleService:
                 await add_to_collection(
                     conn, collection, source="manual", sample_ids=[sample_id]
                 )
+            # Reflect the sample's current membership in the response (all
+            # collections, not just one just-added — the sample may already
+            # belong to others), consistent with what list_samples returns.
+            mrows = await conn.execute(
+                select(collection_samples_tbl.c.collection_id)
+                .where(collection_samples_tbl.c.sample_id == sample_id)
+                .order_by(collection_samples_tbl.c.collection_id)
+            )
+            row["collections"] = [m[0] for m in mrows.all()]
             return row
 
     async def list_samples(
