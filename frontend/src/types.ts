@@ -8,6 +8,7 @@ export interface SampleResponse {
   id: number
   sample_id: string
   metadata: Record<string, unknown> | null
+  collections: string[]
   created_at: string
   updated_at: string
 }
@@ -19,9 +20,9 @@ export interface SampleListResponse {
   offset: number
 }
 
-export interface CohortFacetsResponse {
+export interface CollectionFacetsResponse {
   total: number
-  cohorts: Array<{ cohort: string; count: number }>
+  collections: Array<{ collection: string; count: number }>
 }
 
 export interface WorkflowResponse {
@@ -252,6 +253,7 @@ export interface JobTotals extends JobStats {
 export interface SampleRegisterRequest {
   sample_id: string
   metadata?: Record<string, unknown>
+  collection?: string
 }
 
 export interface SubmittedRequest {

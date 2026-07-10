@@ -9,8 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import samples_tbl
+from ..db import collection_samples_tbl, samples_tbl
 from ..utils import normalize_srrs, parse_srrs
+from .collection import add_to_collection
 
 
 @dataclass
@@ -23,12 +24,15 @@ class SampleService:
         ncbi_accession: str | None = None,
         biosample_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        collection: str | None = None,
     ) -> dict:
         """Insert or update a sample; returns the row.
 
         ncbi_accession is normalised (sorted, deduplicated) before storage.
         metadata_ is replaced on conflict; ncbi_accession and biosample_id are
-        updated only when explicitly supplied.
+        updated only when explicitly supplied. When ``collection`` is given, the
+        sample is attached to that collection (the single membership write seam)
+        in the same transaction.
         """
         now = datetime.now(timezone.utc)
         normalised: str | None = None
@@ -60,7 +64,12 @@ class SampleService:
                 .returning(*samples_tbl.c)
             )
             result = await conn.execute(stmt)
-            return dict(result.mappings().one())
+            row = dict(result.mappings().one())
+            if collection:
+                await add_to_collection(
+                    conn, collection, source="manual", sample_ids=[sample_id]
+                )
+            return row
 
     async def list_samples(
         self,
@@ -68,20 +77,25 @@ class SampleService:
         offset: int = 0,
         *,
         search: str | None = None,
-        cohort: str | None = None,
+        collection: str | None = None,
     ) -> tuple[list[dict], int]:
         """Return (page_of_samples, total_matching_count).
 
+        Each returned row carries a ``collections`` list (its collection_ids).
         Filtering is server-side so the catalog is usable past the old
         client-side 1000-row ceiling (#118): ``search`` is a case-insensitive
-        substring match on ``sample_id``; ``cohort`` matches
-        ``metadata_->>'cohort'`` exactly.
+        substring match on ``sample_id``; ``collection`` matches membership in a
+        collection (via ``collection_samples``) — the single source of truth,
+        not the retired ``metadata.cohort`` scalar.
         """
         conds = []
         if search:
             conds.append(samples_tbl.c.sample_id.ilike(f"%{search}%"))
-        if cohort:
-            conds.append(samples_tbl.c.metadata_["cohort"].astext == cohort)
+        if collection:
+            conds.append(samples_tbl.c.sample_id.in_(
+                select(collection_samples_tbl.c.sample_id)
+                .where(collection_samples_tbl.c.collection_id == collection)
+            ))
 
         async with self.engine.connect() as conn:
             page = await conn.execute(
@@ -93,28 +107,45 @@ class SampleService:
             total = (await conn.execute(
                 select(func.count()).select_from(samples_tbl).where(*conds)
             )).scalar_one()
+
+            # Attach each sample's collection memberships (one extra query for
+            # the page, not a GROUP BY on the main list query).
+            sample_ids = [r["sample_id"] for r in rows]
+            memberships: dict[str, list[str]] = {}
+            if sample_ids:
+                mrows = await conn.execute(
+                    select(collection_samples_tbl.c.sample_id, collection_samples_tbl.c.collection_id)
+                    .where(collection_samples_tbl.c.sample_id.in_(sample_ids))
+                    .order_by(collection_samples_tbl.c.collection_id)
+                )
+                for m in mrows.mappings():
+                    memberships.setdefault(m["sample_id"], []).append(m["collection_id"])
+            for r in rows:
+                r["collections"] = memberships.get(r["sample_id"], [])
         return rows, total
 
-    async def cohort_facets(self) -> tuple[int, list[dict]]:
-        """Return (total_samples, [{cohort, count}]) across the whole catalog.
+    async def collection_facets(self) -> tuple[int, list[dict]]:
+        """Return (total_samples, [{collection, count}]) across the whole catalog.
 
-        Powers the Samples-page cohort chips at scale — global counts that don't
-        shift as the user pages. Uses the current free-text ``metadata_->>'cohort''``
-        representation; this becomes membership-driven once the Epic A
-        consolidation lands (docs/study-sample-version-identity.md).
+        Powers the Samples-page collection chips at scale — global counts that
+        don't shift as the user pages. Membership-driven (``collection_samples``),
+        the same source the Cohorts dashboard reads, so the two agree. Counts are
+        overlap-allowed: a sample in N collections contributes to N chips, so the
+        chip counts need not sum to ``total`` (many-to-many membership).
         """
-        cohort_expr = samples_tbl.c.metadata_["cohort"].astext
         async with self.engine.connect() as conn:
             total = (await conn.execute(
                 select(func.count()).select_from(samples_tbl)
             )).scalar_one()
             rows = (await conn.execute(
-                select(cohort_expr.label("cohort"), func.count().label("count"))
-                .where(cohort_expr.isnot(None))
-                .group_by(cohort_expr)
-                .order_by(func.count().desc(), cohort_expr)
+                select(
+                    collection_samples_tbl.c.collection_id.label("collection"),
+                    func.count().label("count"),
+                )
+                .group_by(collection_samples_tbl.c.collection_id)
+                .order_by(func.count().desc(), collection_samples_tbl.c.collection_id)
             )).mappings().all()
-        return total, [{"cohort": r["cohort"], "count": r["count"]} for r in rows]
+        return total, [{"collection": r["collection"], "count": r["count"]} for r in rows]
 
     async def get(self, sample_id: str) -> dict | None:
         async with self.engine.connect() as conn:

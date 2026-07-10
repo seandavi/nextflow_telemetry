@@ -18,11 +18,11 @@ function SampleFormModal({
   onClose, onSave,
 }: {
   onClose: () => void
-  onSave: (data: { sampleId: string; cohort: string; phenotype: string; source: string }) => void
+  onSave: (data: { sampleId: string; collection: string; phenotype: string; source: string }) => void
 }) {
-  const [sampleId,  setSampleId]  = useState('')
-  const [cohort,    setCohort]    = useState('')
-  const [phenotype, setPhenotype] = useState('')
+  const [sampleId,   setSampleId]   = useState('')
+  const [collection, setCollection] = useState('')
+  const [phenotype,  setPhenotype]  = useState('')
   const [source,    setSource]    = useState('')
   const valid = sampleId.trim().length > 0
 
@@ -41,7 +41,7 @@ function SampleFormModal({
         <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Register Sample</div>
         <Input label="Sample ID" value={sampleId} onChange={setSampleId} placeholder="SRR1234567" mono />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Input label="Cohort (optional)"    value={cohort}    onChange={setCohort}    placeholder="IBD-PRISM" />
+          <Input label="Collection (optional)" value={collection} onChange={setCollection} placeholder="IBD-PRISM" />
           <Input label="Phenotype (optional)" value={phenotype} onChange={setPhenotype} placeholder="CD" />
         </div>
         <Input label="Source (optional)" value={source} onChange={setSource} placeholder="stool" />
@@ -62,7 +62,7 @@ function SampleFormModal({
         </div>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn disabled={!valid} onClick={() => valid && onSave({ sampleId, cohort, phenotype, source })}>Register</Btn>
+          <Btn disabled={!valid} onClick={() => valid && onSave({ sampleId, collection, phenotype, source })}>Register</Btn>
         </div>
       </div>
     </div>
@@ -73,10 +73,10 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
   const [page,     setPage]     = useState(0)
   const [search,   setSearch]   = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [cohort,   setCohort]   = useState('')
+  const [collection, setCollection] = useState('')
   const [items,    setItems]    = useState<SampleResponse[]>([])
   const [total,    setTotal]    = useState(0)
-  const [facets,   setFacets]   = useState<{ total: number; cohorts: Array<{ cohort: string; count: number }> }>({ total: 0, cohorts: [] })
+  const [facets,   setFacets]   = useState<{ total: number; collections: Array<{ collection: string; count: number }> }>({ total: 0, collections: [] })
   const [showForm, setShowForm] = useState(false)
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
   const isAdmin = useRole('admin')
@@ -91,16 +91,16 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
   // catalog stays correct past the old 1000-row client ceiling (#118).
   useEffect(() => {
     let ignore = false
-    api.samples.list(page * PAGE_SIZE, PAGE_SIZE, debouncedSearch || undefined, cohort || undefined)
+    api.samples.list(page * PAGE_SIZE, PAGE_SIZE, debouncedSearch || undefined, collection || undefined)
       .then(r => { if (!ignore) { setItems(r.items); setTotal(r.total) } })
       .catch(console.error)
     return () => { ignore = true }
-  }, [page, debouncedSearch, cohort, tick])
+  }, [page, debouncedSearch, collection, tick])
 
-  // Cohort chips + grand total come from a whole-catalog facet query, so they
+  // Collection chips + grand total come from a whole-catalog facet query, so they
   // don't shift as the user pages or filters.
   useEffect(() => {
-    api.samples.cohortFacets().then(setFacets).catch(console.error)
+    api.samples.collectionFacets().then(setFacets).catch(console.error)
   }, [tick])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -111,8 +111,8 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
     setPage(0)
   }, [])
 
-  const handleCohort = useCallback((c: string) => {
-    setCohort(prev => prev === c ? '' : c)
+  const handleCollection = useCallback((c: string) => {
+    setCollection(prev => prev === c ? '' : c)
     setPage(0)
   }, [])
 
@@ -135,14 +135,14 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
-        {facets.cohorts.map(({ cohort: c, count }) => (
-          <button key={c} onClick={() => handleCohort(c)} style={{
-            background: cohort === c ? T.accentDim : T.surface,
-            border: `1px solid ${cohort === c ? T.accent : T.border}`,
+        {facets.collections.map(({ collection: c, count }) => (
+          <button key={c} onClick={() => handleCollection(c)} style={{
+            background: collection === c ? T.accentDim : T.surface,
+            border: `1px solid ${collection === c ? T.accent : T.border}`,
             borderRadius: 6, padding: '10px 14px', cursor: 'pointer',
             textAlign: 'left', transition: 'all 0.15s',
           }}>
-            <div style={{ fontSize: 11, color: cohort === c ? T.accent : T.muted,
+            <div style={{ fontSize: 11, color: collection === c ? T.accent : T.muted,
               fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{c}</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginTop: 4,
               fontFamily: 'DM Mono, monospace' }}>{fmtNum(count)}</div>
@@ -154,8 +154,8 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
         <div style={{ flex: 1, minWidth: 220, maxWidth: 360 }}>
           <Input label="Search by sample ID" value={search} onChange={handleSearch} placeholder="SRR…" mono />
         </div>
-        {(search || cohort) && (
-          <Btn variant="ghost" small onClick={() => { setSearch(''); setCohort(''); setPage(0) }}>
+        {(search || collection) && (
+          <Btn variant="ghost" small onClick={() => { setSearch(''); setCollection(''); setPage(0) }}>
             Clear filters
           </Btn>
         )}
@@ -168,8 +168,13 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
               render: v => <span style={{ color: T.muted }}>{(v as number).toLocaleString()}</span> },
             { key: 'sample_id',  label: 'Sample ID', mono: true,
               render: v => <span style={{ color: T.accent }}>{v as string}</span> },
-            { key: 'metadata',   label: 'Cohort',
-              render: v => <Badge label={(v as Record<string,string>)['cohort'] ?? ''} variant="neutral" /> },
+            { key: 'collections', label: 'Collection',
+              render: v => {
+                const cs = (v as string[]) ?? []
+                return cs.length
+                  ? <>{cs.map(c => <Badge key={c} label={c} variant="neutral" />)}</>
+                  : <span style={{ color: T.muted }}>—</span>
+              } },
             { key: 'metadata',   label: 'Phenotype', mono: true,
               render: v => (v as Record<string,string>)['phenotype'] ?? '—' },
             { key: 'metadata',   label: 'Source',    mono: true,
@@ -209,11 +214,11 @@ export default function SamplesPage({ pollInterval = 30_000 }: { pollInterval?: 
       {showForm && (
         <SampleFormModal
           onClose={() => setShowForm(false)}
-          onSave={({ sampleId, cohort: c, phenotype, source }) => {
-            const metadata: Record<string, string> = { cohort: c }
+          onSave={({ sampleId, collection: c, phenotype, source }) => {
+            const metadata: Record<string, string> = {}
             if (phenotype) metadata['phenotype'] = phenotype
             if (source)    metadata['source']    = source
-            api.samples.create({ sample_id: sampleId, metadata })
+            api.samples.create({ sample_id: sampleId, collection: c || undefined, metadata })
               .then(() => {
                 api.admin.reconcile().catch(console.error)
                 setShowForm(false)

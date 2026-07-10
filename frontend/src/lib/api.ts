@@ -20,7 +20,7 @@ import type {
   DispatchabilityResult,
   SampleResponse,
   SampleListResponse,
-  CohortFacetsResponse,
+  CollectionFacetsResponse,
   SampleRegisterRequest,
   SubmittedRequest,
   DaemonAgentResponse,
@@ -92,13 +92,13 @@ export const api = {
   },
 
   samples: {
-    list:   (offset: number, limit: number, search?: string, cohort?: string) => {
+    list:   (offset: number, limit: number, search?: string, collection?: string) => {
       const params = new URLSearchParams({ offset: String(offset), limit: String(limit) })
       if (search) params.set('search', search)
-      if (cohort) params.set('cohort', cohort)
+      if (collection) params.set('collection', collection)
       return get<SampleListResponse>(`/samples?${params}`)
     },
-    cohortFacets: () => get<CohortFacetsResponse>('/samples/facets/cohorts'),
+    collectionFacets: () => get<CollectionFacetsResponse>('/samples/facets/collections'),
     create: (body: SampleRegisterRequest) => post<SampleResponse>('/samples', body),
   },
 

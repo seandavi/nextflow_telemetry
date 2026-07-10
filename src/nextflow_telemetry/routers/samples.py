@@ -17,6 +17,7 @@ class SampleRegisterRequest(BaseModel):
     ncbi_accession: str = Field(description="Semicolon-separated SRR accessions (e.g. 'SRR001;SRR002'). Must contain at least one non-empty accession. Normalised to sorted, deduplicated form on write.")
     biosample_id: str | None = Field(default=None, description="NCBI BioSample accession (e.g. 'SAMN12345678'). Annotation only — not used as identity.")
     metadata: dict[str, Any] | None = Field(default=None, description="Optional arbitrary JSON metadata. Replaced on upsert.")
+    collection: str | None = Field(default=None, description="Optional collection name to attach this sample to. The exact string is the collection id (see CONTEXT.md). Membership is the source of truth — not a metadata key.")
 
     @field_validator("ncbi_accession")
     @classmethod
@@ -33,6 +34,7 @@ class SampleResponse(BaseModel):
     ncbi_accession: str | None = Field(default=None, description="Canonical semicolon-separated SRR list.")
     biosample_id: str | None = Field(default=None, description="NCBI BioSample accession, if known.")
     metadata: dict[str, Any] | None = Field(default=None, description="Arbitrary JSON metadata.")
+    collections: list[str] = Field(default_factory=list, description="Collection ids this sample belongs to (membership is the source of truth).")
     created_at: Any = Field(description="UTC timestamp when this sample was first registered.")
     updated_at: Any = Field(description="UTC timestamp of the most recent update.")
 
@@ -47,14 +49,14 @@ class SampleListResponse(BaseModel):
     offset: int
 
 
-class CohortFacet(BaseModel):
-    cohort: str
+class CollectionFacet(BaseModel):
+    collection: str
     count: int
 
 
-class CohortFacetsResponse(BaseModel):
-    total: int = Field(description="Total samples in the catalog (all cohorts, incl. none).")
-    cohorts: list[CohortFacet] = Field(description="Per-cohort counts across the whole catalog, largest first.")
+class CollectionFacetsResponse(BaseModel):
+    total: int = Field(description="Total samples in the catalog (distinct samples).")
+    collections: list[CollectionFacet] = Field(description="Per-collection sample counts across the whole catalog, largest first. Overlap-allowed (a sample may be in several collections), so counts need not sum to total.")
 
 
 def _row_to_response(row: dict) -> SampleResponse:
@@ -64,6 +66,7 @@ def _row_to_response(row: dict) -> SampleResponse:
         ncbi_accession=row.get("ncbi_accession"),
         biosample_id=row.get("biosample_id"),
         metadata=row["metadata_"],
+        collections=row.get("collections", []),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -91,6 +94,7 @@ def create_samples_router(engine: AsyncEngine) -> APIRouter:
             ncbi_accession=req.ncbi_accession,
             biosample_id=req.biosample_id,
             metadata=req.metadata,
+            collection=req.collection,
         )
         return _row_to_response(row)
 
@@ -101,35 +105,36 @@ def create_samples_router(engine: AsyncEngine) -> APIRouter:
         description=(
             "Returns a page of samples plus the total matching count. Filter "
             "server-side with `search` (case-insensitive `sample_id` substring) "
-            "and `cohort` (exact `metadata.cohort`), so the catalog stays usable "
-            "well past the old client-side 1000-row ceiling (#118)."
+            "and `collection` (exact collection membership), so the catalog stays "
+            "usable well past the old client-side 1000-row ceiling (#118)."
         ),
     )
     async def list_samples(
         limit: int = Query(default=100, ge=1, le=1000, description="Maximum number of samples to return."),
         offset: int = Query(default=0, ge=0, description="Number of samples to skip."),
         search: str | None = Query(default=None, description="Case-insensitive substring match on sample_id."),
-        cohort: str | None = Query(default=None, description="Exact match on metadata.cohort."),
+        collection: str | None = Query(default=None, description="Exact collection id — returns samples that are members of that collection."),
     ):
-        rows, total = await svc.list_samples(limit=limit, offset=offset, search=search, cohort=cohort)
+        rows, total = await svc.list_samples(limit=limit, offset=offset, search=search, collection=collection)
         return SampleListResponse(
             items=[_row_to_response(r) for r in rows],
             total=total, limit=limit, offset=offset,
         )
 
     @router.get(
-        "/facets/cohorts",
-        response_model=CohortFacetsResponse,
-        summary="Cohort facet counts across the whole catalog",
+        "/facets/collections",
+        response_model=CollectionFacetsResponse,
+        summary="Collection facet counts across the whole catalog",
         description=(
-            "Per-cohort sample counts (from `metadata.cohort`) over ALL samples, "
-            "plus the grand total — powers the Samples-page cohort chips so they "
-            "stay correct regardless of the current page or filters."
+            "Per-collection sample counts (from collection membership) over ALL "
+            "samples, plus the grand total — powers the Samples-page collection "
+            "chips so they stay correct regardless of the current page or filters. "
+            "Reads the same source as the Cohorts dashboard, so the two agree."
         ),
     )
-    async def cohort_facets():
-        total, cohorts = await svc.cohort_facets()
-        return CohortFacetsResponse(total=total, cohorts=[CohortFacet(**c) for c in cohorts])
+    async def collection_facets():
+        total, collections = await svc.collection_facets()
+        return CollectionFacetsResponse(total=total, collections=[CollectionFacet(**c) for c in collections])
 
     @router.get(
         "/by-srr/{srr_accession}",
