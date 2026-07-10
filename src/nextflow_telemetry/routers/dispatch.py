@@ -9,10 +9,11 @@ from fastapi.responses import Response
 from typing import Any
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import jobs_tbl, samples_tbl, workflow_runs_tbl, workflows_tbl
+from ..db import jobs_tbl, samples_tbl, workflows_tbl
+from ..services import lifecycle
 
 if sys.version_info >= (3, 13):
     from uuid import uuid7 as _uuid7  # type: ignore[attr-defined]
@@ -149,22 +150,17 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
             repository_url = rows[0]["repository_url"]
             revision = rows[0]["revision"]
 
-            await conn.execute(
-                workflow_runs_tbl.insert().values(
-                    run_name=run_name,
-                    workflow_id=first_wf_id,
-                    workflow_version=first_wf_ver,
-                    workflow_pk=workflow_pk,
-                    revision=revision,
-                    status="claimed",
-                    claimed_at=now,
-                )
-            )
-
-            await conn.execute(
-                update(jobs_tbl)
-                .where(jobs_tbl.c.id.in_(job_ids))
-                .values(run_name=run_name, status="claimed")
+            await lifecycle.claim(
+                conn,
+                job_ids,
+                run_name,
+                {
+                    "workflow_id": first_wf_id,
+                    "workflow_version": first_wf_ver,
+                    "workflow_pk": workflow_pk,
+                    "revision": revision,
+                    "claimed_at": now,
+                },
             )
 
             # Fetch sample fields in a separate query to avoid JOIN conflicts
@@ -211,39 +207,13 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
         ),
     )
     async def report_submitted(req: SubmittedRequest):
-        now = datetime.now(timezone.utc)
         async with engine.begin() as conn:
-            result = await conn.execute(
-                update(workflow_runs_tbl)
-                .where(
-                    workflow_runs_tbl.c.run_name == req.run_name,
-                    workflow_runs_tbl.c.status == "claimed",
-                )
-                .values(
-                    status="submitted",
-                    submitted_at=now,
-                    executor_job_id=req.executor_job_id,
-                )
-                .returning(workflow_runs_tbl.c.run_name)
-            )
-            if not result.fetchone():
+            ok = await lifecycle.mark_submitted(conn, req.run_name, req.executor_job_id)
+            if not ok:
                 raise HTTPException(
                     status_code=404,
                     detail=f"No claimed run with name '{req.run_name}' found",
                 )
-
-            # Advance jobs from `claimed` to `submitted` — distinct from
-            # `running`, which is set only when the weblog `started` event
-            # arrives. The gap between the two is the scheduler queue wait,
-            # which the dashboard surfaces separately.
-            await conn.execute(
-                update(jobs_tbl)
-                .where(
-                    jobs_tbl.c.run_name == req.run_name,
-                    jobs_tbl.c.status == "claimed",
-                )
-                .values(status="submitted")
-            )
 
         return {"run_name": req.run_name, "status": "submitted"}
 
@@ -261,27 +231,8 @@ def create_dispatch_router(engine: AsyncEngine) -> APIRouter:
     async def requeue_expired():
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=CLAIM_TTL_MINUTES)
         async with engine.begin() as conn:
-            result = await conn.execute(
-                update(workflow_runs_tbl)
-                .where(
-                    workflow_runs_tbl.c.status == "claimed",
-                    workflow_runs_tbl.c.claimed_at < cutoff,
-                )
-                .values(status="expired")
-                .returning(workflow_runs_tbl.c.run_name)
-            )
-            expired_run_names = [r[0] for r in result.fetchall()]
+            count = await lifecycle.requeue_expired(conn, cutoff)
 
-            if expired_run_names:
-                await conn.execute(
-                    update(jobs_tbl)
-                    .where(
-                        jobs_tbl.c.run_name.in_(expired_run_names),
-                        jobs_tbl.c.status == "claimed",
-                    )
-                    .values(status="pending", run_name=None)
-                )
-
-        return {"requeued_runs": len(expired_run_names)}
+        return {"requeued_runs": count}
 
     return router

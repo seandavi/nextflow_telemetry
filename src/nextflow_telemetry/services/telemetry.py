@@ -9,12 +9,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import jobs_tbl, telemetry_tbl, workflow_runs_tbl, task_executions_tbl
+from ..db import telemetry_tbl, workflow_runs_tbl, task_executions_tbl
 from ..models import Telemetry
-from .reconcile import sweep_run_incomplete
+from . import lifecycle
+from .lifecycle import RunStatus
 
 
 def _parse_tag(tag: str | None) -> str | None:
@@ -139,23 +140,7 @@ class TelemetryService:
 
             # 2. Run-level started: transition workflow_run + jobs to running
             if event.event == "started":
-                await conn.execute(
-                    update(workflow_runs_tbl)
-                    .where(workflow_runs_tbl.c.run_name == event.run_name)
-                    .values(run_id=event.run_id, status="running", started_at=now)
-                )
-                # Jobs reach `running` from either `submitted` (the
-                # normal flow once /dispatch/submitted has fired) or
-                # `claimed` (defensive: events out of order, or pre-#73
-                # jobs that haven't transitioned through submitted yet).
-                await conn.execute(
-                    update(jobs_tbl)
-                    .where(
-                        jobs_tbl.c.run_name == event.run_name,
-                        jobs_tbl.c.status.in_(["claimed", "submitted"]),
-                    )
-                    .values(status="running")
-                )
+                await lifecycle.mark_running(conn, event.run_name, event.run_id, now)
 
             # 3. Per-sample completion via MARK_COMPLETE sentinel process
             elif (
@@ -165,20 +150,13 @@ class TelemetryService:
                 and event.trace.get("process", "").endswith("MARK_COMPLETE")
                 and event.trace.get("status") == "COMPLETED"
             ):
-                await conn.execute(
-                    update(jobs_tbl)
-                    .where(
-                        jobs_tbl.c.run_name == event.run_name,
-                        jobs_tbl.c.sample_id == sample_id,
-                    )
-                    .values(status="completed", completed_at=now)
-                )
+                await lifecycle.complete_sample(conn, event.run_name, sample_id, now)
 
-            # 4. Run-level completed: close the run and sweep incomplete jobs
+            # 4. Run-level completed: close the run and sweep incomplete jobs.
+            # close_run is idempotent — if the watchdog already marked this run
+            # `failed` (walltime/zombie), a late `completed` weblog event will
+            # NOT flip it back to `completed`. This is a deliberate change from
+            # the old unconditional update, which could clobber a terminal state.
             elif event.event == "completed":
-                await conn.execute(
-                    update(workflow_runs_tbl)
-                    .where(workflow_runs_tbl.c.run_name == event.run_name)
-                    .values(status="completed", completed_at=now)
-                )
-                await sweep_run_incomplete(conn, event.run_name, now)
+                await lifecycle.close_run(conn, event.run_name, RunStatus.completed, now)
+                await lifecycle.sweep_incomplete(conn, event.run_name, now)
