@@ -453,9 +453,7 @@ def test_artacho_cohort_full_loop(live_server: LiveServer, db_asyncpg_url: str, 
             resp = client.post("/samples", json={
                 "sample_id": sid,
                 "ncbi_accession": ARTACHO_NCBI[sid],
-                "metadata": {
-                    "cohort": "ArtachoA_2021",
-                },
+                "collection": "ArtachoA_2021",
             })
             assert resp.status_code == 201, f"Failed to register {sid}: {resp.text}"
 

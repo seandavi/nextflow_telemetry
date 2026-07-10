@@ -200,7 +200,7 @@ export const MOCK_SAMPLE_COHORTS = ['IBD-PRISM','HMP2','PEDIATRIC-CD','HEALTHY-C
 export const MOCK_SAMPLE_PHENOTYPES = ['CD','UC','healthy','unclassified','T2D']
 export const MOCK_SAMPLE_SOURCES = ['stool','biopsy','saliva','blood']
 
-export function genSamplePage(page = 0, pageSize = 50, _search = '', cohort = ''): SampleResponse[] {
+export function genSamplePage(page = 0, pageSize = 50, _search = '', collection = ''): SampleResponse[] {
   const seed = page * 1000
   const lcg = (n: number) => ((n * 1664525 + 1013904223) & 0xffffffff) >>> 0
   const rows: SampleResponse[] = []
@@ -211,14 +211,15 @@ export function genSamplePage(page = 0, pageSize = 50, _search = '', cohort = ''
     const s2  = lcg(s1)
     const s3  = lcg(s2)
     const s4  = lcg(s3)
-    const cohortVal = MOCK_SAMPLE_COHORTS[s1 % MOCK_SAMPLE_COHORTS.length]!
+    const collectionVal = MOCK_SAMPLE_COHORTS[s1 % MOCK_SAMPLE_COHORTS.length]!
     const phenotype = MOCK_SAMPLE_PHENOTYPES[s2 % MOCK_SAMPLE_PHENOTYPES.length]!
     const source    = MOCK_SAMPLE_SOURCES[s3 % MOCK_SAMPLE_SOURCES.length]!
-    if (cohort && cohortVal !== cohort) continue
+    if (collection && collectionVal !== collection) continue
     rows.push({
       id: page * pageSize + i + 1,
       sample_id: `SRR${(10000000 + idx * 137) % 100000000}`,
-      metadata: { cohort: cohortVal, phenotype, source, read_count: 10_000_000 + (s4 % 110_000_000) },
+      metadata: { phenotype, source, read_count: 10_000_000 + (s4 % 110_000_000) },
+      collections: [collectionVal],
       created_at: new Date(Date.now() - (idx % 400) * 86_400_000).toISOString(),
       updated_at: new Date(Date.now() - (idx %  10) * 86_400_000).toISOString(),
     })

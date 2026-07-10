@@ -140,22 +140,24 @@ def test_list_samples(integration_client):
     assert body["limit"] == 100 and body["offset"] == 0
 
 
-def test_list_samples_search_and_cohort_filter(integration_client):
+def test_list_samples_search_and_collection_filter(integration_client):
     client, _ = integration_client
     tag = uuid.uuid4().hex[:8]
-    coh = f"COH-{tag}"
+    coll = f"COLL-{tag}"
     ids = [f"SRR-{tag}-{i}" for i in range(3)]
     for i, sid in enumerate(ids):
-        client.post("/api/samples", json={"sample_id": sid, "ncbi_accession": f"SRR00000{i+1}", "metadata": {"cohort": coh}})
-    client.post("/api/samples", json={"sample_id": f"OTHER-{tag}", "ncbi_accession": "SRR000009", "metadata": {"cohort": "different"}})
+        r = client.post("/api/samples", json={"sample_id": sid, "ncbi_accession": f"SRR00000{i+1}", "collection": coll})
+        # The register response reflects the membership just written.
+        assert coll in r.json()["collections"], r.json()
+    client.post("/api/samples", json={"sample_id": f"OTHER-{tag}", "ncbi_accession": "SRR000009", "collection": "different"})
 
     by_search = client.get(f"/api/samples?search=SRR-{tag}").json()
     assert by_search["total"] == 3
     assert {x["sample_id"] for x in by_search["items"]} == set(ids)
 
-    by_cohort = client.get(f"/api/samples?cohort={coh}").json()
-    assert by_cohort["total"] == 3
-    assert all(x["metadata"]["cohort"] == coh for x in by_cohort["items"])
+    by_collection = client.get(f"/api/samples?collection={coll}").json()
+    assert by_collection["total"] == 3
+    assert all(coll in x["collections"] for x in by_collection["items"])
 
     # Pagination over the filtered set.
     p0 = client.get(f"/api/samples?search=SRR-{tag}&limit=2&offset=0").json()
@@ -164,19 +166,19 @@ def test_list_samples_search_and_cohort_filter(integration_client):
     assert len(p1["items"]) == 1
 
 
-def test_cohort_facets(integration_client):
+def test_collection_facets(integration_client):
     client, _ = integration_client
     tag = uuid.uuid4().hex[:8]
-    coh = f"FAC-{tag}"
+    coll = f"FAC-{tag}"
     for i in range(2):
-        client.post("/api/samples", json={"sample_id": f"SRR-fac-{tag}-{i}", "ncbi_accession": f"SRR00000{i+1}", "metadata": {"cohort": coh}})
+        client.post("/api/samples", json={"sample_id": f"SRR-fac-{tag}-{i}", "ncbi_accession": f"SRR00000{i+1}", "collection": coll})
 
-    resp = client.get("/api/samples/facets/cohorts")
+    resp = client.get("/api/samples/facets/collections")
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] >= 2
-    counts = {c["cohort"]: c["count"] for c in body["cohorts"]}
-    assert counts.get(coh) == 2
+    counts = {c["collection"]: c["count"] for c in body["collections"]}
+    assert counts.get(coll) == 2
 
 
 def test_get_sample_not_found(integration_client):

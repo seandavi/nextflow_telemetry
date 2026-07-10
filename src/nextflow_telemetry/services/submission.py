@@ -15,11 +15,11 @@ from typing import Any
 
 import httpx
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import collection_samples_tbl, collections_tbl, samples_tbl, submissions_tbl
+from ..db import samples_tbl, submissions_tbl
 from ..utils import normalize_srrs, srrs_to_sample_id
+from .collection import add_to_collection
 
 ENA_FILEREPORT = "https://www.ebi.ac.uk/ena/portal/api/filereport"
 ENA_FIELDS = (
@@ -196,7 +196,7 @@ class SubmissionService:
 
     async def _register(
         self, *, submission_id: str, method: str, accession: str | None,
-        collection_id: str, source: str | None, type_: str | None,
+        collection_id: str, source: str, type_: str | None,
         submitted_by: str, samples: list[dict[str, Any]],
     ) -> dict[str, int]:
         """Shared core: upsert new samples, the collection, membership, and the submission row."""
@@ -224,22 +224,10 @@ class SubmissionService:
                     } for sid in new_ids],
                 )
 
-            await conn.execute(
-                pg_insert(collections_tbl)
-                .values(
-                    collection_id=collection_id, source=source, type=type_, label=collection_id,
-                    metadata_={"origin": "submission", "accession": accession},
-                    created_at=now, updated_at=now,
-                )
-                .on_conflict_do_update(
-                    index_elements=[collections_tbl.c.collection_id],
-                    set_={"updated_at": now},
-                )
-            )
-            await conn.execute(
-                pg_insert(collection_samples_tbl)
-                .values([{"collection_id": collection_id, "sample_id": sid} for sid in by_id])
-                .on_conflict_do_nothing(constraint="uq_collection_sample")
+            await add_to_collection(
+                conn, collection_id, source=source, type_=type_, label=collection_id,
+                sample_ids=list(by_id),
+                metadata={"origin": "submission", "accession": accession},
             )
 
             counts = {
