@@ -68,7 +68,8 @@ async def _seed_sample(engine, *, ncbi_accession: str = "SRR000001") -> str:
 
 
 async def _seed_job(
-    engine, *, workflow_pk: int, workflow_id: str, sample_id: str, status: str = "pending"
+    engine, *, workflow_pk: int, workflow_id: str, sample_id: str,
+    status: str = "pending", run_name: str | None = None,
 ) -> int:
     now = datetime.now(timezone.utc)
     async with engine.begin() as conn:
@@ -82,6 +83,7 @@ async def _seed_job(
                     workflow_id=workflow_id,
                     workflow_version="1.0.0",
                     status=status,
+                    run_name=run_name,
                     created_at=now,
                 )
             )
@@ -186,14 +188,9 @@ def test_requeue_expired_recycles_stale_claims(db_asyncpg_url):
                     )
                 )
             job_id = await _seed_job(
-                engine, workflow_pk=wf_pk, workflow_id=wf_id, sample_id=sample_id, status="claimed"
+                engine, workflow_pk=wf_pk, workflow_id=wf_id, sample_id=sample_id,
+                status="claimed", run_name=stale_run_name,
             )
-            async with engine.begin() as conn:
-                await conn.execute(
-                    jobs_tbl.update()
-                    .where(jobs_tbl.c.id == job_id)
-                    .values(run_name=stale_run_name)
-                )
 
             count = await svc.requeue_expired()
             assert count == 1
