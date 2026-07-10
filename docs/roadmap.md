@@ -158,7 +158,7 @@ locality**. Strength: Strong / Worth exploring / Speculative.
 |---|-----------|----------|--------|--------------|-----------|
 | 1 | Study-membership module — one write seam | Strong | **✓ DONE #164/#165** | `add_to_collection()` in `services/collection.py`; retired `metadata.cohort` | Epic A, ADR-0005 |
 | 2 | Shared active-version scope predicate | Worth exploring | open | `_workflow_scope` (cohort) re-inlined in admin.stats, process_metrics; completion% redefined 3× | **#116**, Epic B |
-| 3 | Job-lifecycle module (enums + legal transitions) | Strong | open | status literals across ~10 files; "close+sweep" ×4 (dispatch/runs/admin/telemetry/reconcile) | — (new) |
+| 3 | Job-lifecycle module (enums + legal transitions) | Strong | **✓ DONE #166** | `services/lifecycle.py` — free fns take `conn`; JobStatus/RunStatus enums; guarded/idempotent; carve-outs documented | — |
 | 4 | DispatchService — pull the claim out of the handler | Strong | open | 120-line pick-then-lock inline in `dispatch.py` HTTP handler; 3 wiring conventions | pairs w/ #3 |
 | 5 | Liveness module — one "is this alive?" | Strong | open · **latent bug** | stalled re-derived 6× / 5 columns; read path calls `submitted` runs stalled, watchdog won't reap them | **#115**, ADR-0002 |
 | 6 | One reader for the `trace` JSONB | Worth exploring | open | decoded 3 ways (`.get` / `->>`); FAILED/ABORTED predicate copied ~17× | #62 |
@@ -173,9 +173,10 @@ locality**. Strength: Strong / Worth exploring / Speculative.
 invariant + auto-retire), `process_metrics` service, ETL `engine.py`+`specs.py` split, `log.py`
 JSONFormatter, `lib/api.ts`+`types.ts` network seam, `_CaptureBuffer`.
 
-**Where to start:** #3 job-lifecycle module for leverage (pairs with #4); #5 liveness for the one
-real correctness bug (ties into #115 already shipped); #9 + #12 as the fastest relief for "the UI
-feels confusing." #2, #6, #7 fold naturally into work already scheduled under Epic B / ETL.
+**Where to start:** #3 done (#166) — #4 DispatchService is next (builds on `lifecycle.claim()`);
+#5 liveness for the one real correctness bug (ties into #115 already shipped); #9 + #12 as the
+fastest relief for "the UI feels confusing." #2, #6, #7 fold naturally into work already scheduled
+under Epic B / ETL.
 
 ## Suggested sequencing
 
