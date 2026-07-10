@@ -41,6 +41,7 @@ from ..models import (
     WrapperStartedEvent,
 )
 from ..db import task_logs_tbl, telemetry_tbl, workflow_runs_tbl, jobs_tbl, task_executions_tbl
+from ..services import lifecycle
 
 
 # A non-terminal run with no heartbeat for longer than this is "stalled" —
@@ -430,16 +431,12 @@ async def _apply_summary_update(conn, run_name: str, parsed: RunEvent, now: date
     query telemetry_tbl directly to recover the event stream.
     """
     if isinstance(parsed, WrapperStartedEvent):
-        # Mark the run as "submitted" only if it's still in the earlier "claimed" state.
-        # We don't want to roll status back from running/completed.
-        await conn.execute(
-            update(workflow_runs_tbl)
-            .where(
-                workflow_runs_tbl.c.run_name == run_name,
-                workflow_runs_tbl.c.status == "claimed",
-            )
-            .values(status="submitted", submitted_at=now)
-        )
+        # Mark the run (+ its jobs) as "submitted" only if still "claimed" —
+        # a defensive fallback for the case where this event races ahead of
+        # POST /dispatch/submitted. Folds into the same claimed->submitted
+        # transition dispatch.py's report_submitted uses, so a normal-order
+        # run (already submitted by the time this arrives) is a no-op here.
+        await lifecycle.mark_submitted(conn, run_name, executor_job_id=None, now=now)
         return
 
     values: dict = {}

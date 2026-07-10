@@ -1,7 +1,8 @@
 # nextflow_telemetry — Work Plan / Roadmap
 
-_Last updated: 2026-07-02. Author: planning pass over the open-issue backlog after a
-telemetry-hardening + 100k-scale UI evaluation session._
+_Last updated: 2026-07-10. Author: planning pass over the open-issue backlog after a
+telemetry-hardening + 100k-scale UI evaluation session; 2026-07-10 added the Architecture
+deepening section from a `/improve-codebase-architecture` design review._
 
 The project has grown organically: orchestration works well, but the **data model
 underneath it is muddled** (study identity, completion semantics, sample metadata),
@@ -138,6 +139,43 @@ Tracker: **#94**. Rollout: ship API with enforcement **off**, roll daemons, then
 - **#46** command-line API client.
 - **#48** Temporal investigation — **recommend decline/park**: solves orchestration,
   not the visibility gap we actually have; re-introduces heavy stateful infra.
+
+## Architecture deepening (design review, 2026-07-10)
+
+A `/improve-codebase-architecture` pass over the server, ETL, nf-client, and frontend
+looked for **deep-module** opportunities (small interface over a lot of behaviour, tested
+through that interface) rather than features. Distinct lens from the epics above: these are
+internal refactors, most **not** tracked as issues. The through-line: a load-bearing concept
+(job lifecycle, membership, "is this alive?", the `trace` shape) is re-derived inline at each
+call site and kept consistent by "keep in sync with…" comments instead of by code. Each
+candidate gives the concept one owning module. Full write-up was a scratch HTML review (not
+in-repo); the table is the durable record.
+
+Vocabulary (from `/codebase-design`): **module · interface · depth · seam · leverage ·
+locality**. Strength: Strong / Worth exploring / Speculative.
+
+| # | Deepening | Strength | Status | Seam / files | Cross-ref |
+|---|-----------|----------|--------|--------------|-----------|
+| 1 | Study-membership module — one write seam | Strong | **✓ DONE #164/#165** | `add_to_collection()` in `services/collection.py`; retired `metadata.cohort` | Epic A, ADR-0005 |
+| 2 | Shared active-version scope predicate | Worth exploring | open | `_workflow_scope` (cohort) re-inlined in admin.stats, process_metrics; completion% redefined 3× | **#116**, Epic B |
+| 3 | Job-lifecycle module (enums + legal transitions) | Strong | open | status literals across ~10 files; "close+sweep" ×4 (dispatch/runs/admin/telemetry/reconcile) | — (new) |
+| 4 | DispatchService — pull the claim out of the handler | Strong | open | 120-line pick-then-lock inline in `dispatch.py` HTTP handler; 3 wiring conventions | pairs w/ #3 |
+| 5 | Liveness module — one "is this alive?" | Strong | open · **latent bug** | stalled re-derived 6× / 5 columns; read path calls `submitted` runs stalled, watchdog won't reap them | **#115**, ADR-0002 |
+| 6 | One reader for the `trace` JSONB | Worth exploring | open | decoded 3 ways (`.get` / `->>`); FAILED/ABORTED predicate copied ~17× | #62 |
+| 7 | Make the ETL spec actually drive ingest | Worth exploring | open | `specs.py` bypassed (qc special-case); `lake.SCHEMAS` hand-synced to parser keys; cli re-loops | ETL #153–158 |
+| 8 | Submitter seam for HPC modes (nf-client) | Strong | open | if/elif over mode twice; `submit_*` signatures disagree; `lsf` dead branch | #68 (sacct behind slurm adapter) |
+| 9 | Shared `useFetch` (loading/error) hook | Strong | open | fetch+loading+error copied in all 8 pages; errors swallowed → permanent spinner | #118, #121 |
+| 10 | One status→colour/label map + real union | Strong | open | ~60 inline ternaries; `classification`/`status` typed as bare `string` | #121 |
+| 11 | "Run log artifacts" module | Worth exploring | open | `ON CONFLICT uq_task_log` upsert ×3; run-level logs smuggled into task-keyed table | #120, #62, #93 |
+| 12 | Delete phantom `RunEvent` variants (YAGNI) | Strong · deletion | open | `wrapper_log`/`slurm_state`/`workflow_oncomplete` have zero producers | #62/#66 (re-add when real) |
+
+**Solid ground (deep already — don't touch):** `WorkflowService` write side (one-active-version
+invariant + auto-retire), `process_metrics` service, ETL `engine.py`+`specs.py` split, `log.py`
+JSONFormatter, `lib/api.ts`+`types.ts` network seam, `_CaptureBuffer`.
+
+**Where to start:** #3 job-lifecycle module for leverage (pairs with #4); #5 liveness for the one
+real correctness bug (ties into #115 already shipped); #9 + #12 as the fastest relief for "the UI
+feels confusing." #2, #6, #7 fold naturally into work already scheduled under Epic B / ETL.
 
 ## Suggested sequencing
 

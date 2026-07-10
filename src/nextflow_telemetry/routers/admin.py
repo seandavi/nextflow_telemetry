@@ -4,11 +4,13 @@ from __future__ import annotations
 import datetime
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ..db import daemon_agents_tbl, dead_letter_tbl, jobs_tbl, samples_tbl, workflow_runs_tbl, workflows_tbl
-from ..services.reconcile import ReconcileService, sweep_run_incomplete
+from ..services import lifecycle
+from ..services.lifecycle import RUN_TERMINAL_STATUSES, JobStatus, RunStatus
+from ..services.reconcile import ReconcileService
 
 # Keep in sync with routers/daemons.ACTIVE_THRESHOLD — a daemon is "active" if
 # its last heartbeat is within this window.
@@ -52,21 +54,10 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
     )
     async def reset_running(workflow_pk: int):
         async with engine.begin() as conn:
-            result = await conn.execute(
-                update(jobs_tbl)
-                .where(
-                    jobs_tbl.c.workflow_pk == workflow_pk,
-                    jobs_tbl.c.status.in_(["running", "failed"]),
-                )
-                .values(
-                    status="pending",
-                    run_name=None,
-                    retry_count=0,
-                    failed_at=None,
-                    failure_reason=None,
-                )
+            count = await lifecycle.reset_jobs_to_pending(
+                conn, workflow_pk, [JobStatus.running, JobStatus.failed]
             )
-        return {"reset": result.rowcount}
+        return {"reset": count}
 
     @router.post(
         "/close-run",
@@ -83,28 +74,17 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
     async def close_run(run_name: str):
         now = datetime.datetime.now(datetime.timezone.utc)
         async with engine.begin() as conn:
-            # Check the run exists and get its current status
-            row = (await conn.execute(
-                select(workflow_runs_tbl.c.status)
-                .where(workflow_runs_tbl.c.run_name == run_name)
-            )).first()
+            prior_status = await lifecycle.close_run(conn, run_name, RunStatus.completed, now)
 
-            if not row:
+            if prior_status is None:
                 raise HTTPException(
                     status_code=404,
                     detail=f"No workflow run with name '{run_name}'",
                 )
 
-            already_closed = row[0] in ("completed", "failed", "expired")
+            already_closed = prior_status in RUN_TERMINAL_STATUSES
 
-            if not already_closed:
-                await conn.execute(
-                    update(workflow_runs_tbl)
-                    .where(workflow_runs_tbl.c.run_name == run_name)
-                    .values(status="completed", completed_at=now)
-                )
-
-            swept = await sweep_run_incomplete(conn, run_name, now)
+            swept = await lifecycle.sweep_incomplete(conn, run_name, now)
 
         return {
             "run_name": run_name,
@@ -141,12 +121,8 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
             )).scalars().all()
 
             for run_name in stale:
-                await conn.execute(
-                    update(workflow_runs_tbl)
-                    .where(workflow_runs_tbl.c.run_name == run_name)
-                    .values(status="completed", completed_at=now)
-                )
-                total_swept += await sweep_run_incomplete(conn, run_name, now)
+                await lifecycle.close_run(conn, run_name, RunStatus.completed, now)
+                total_swept += await lifecycle.sweep_incomplete(conn, run_name, now)
 
         return {"stale_runs_closed": len(stale), "jobs_swept": total_swept}
 
@@ -191,12 +167,8 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
             )).all()
 
             for r in stale:
-                await conn.execute(
-                    update(workflow_runs_tbl)
-                    .where(workflow_runs_tbl.c.run_name == r.run_name)
-                    .values(status="failed", completed_at=now, slurm_reason=reason)
-                )
-                jobs = await sweep_run_incomplete(conn, r.run_name, now)
+                await lifecycle.close_run(conn, r.run_name, RunStatus.failed, now, reason=reason)
+                jobs = await lifecycle.sweep_incomplete(conn, r.run_name, now)
                 total_swept += jobs
                 swept_runs.append({
                     "run_name": r.run_name,
@@ -225,7 +197,6 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
     async def requeue_dead_letter():
         now = datetime.datetime.now(datetime.timezone.utc)
         async with engine.begin() as conn:
-            from sqlalchemy import select
             rows = (await conn.execute(
                 select(dead_letter_tbl.c.id, dead_letter_tbl.c.job_id)
                 .where(dead_letter_tbl.c.resolved_at.is_(None))
@@ -237,19 +208,9 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
             job_ids = [r.job_id for r in rows]
             dlq_ids = [r.id for r in rows]
 
-            await conn.execute(
-                update(jobs_tbl)
-                .where(jobs_tbl.c.id.in_(job_ids))
-                .values(status="pending", retry_count=0, run_name=None,
-                        failed_at=None, failure_reason=None)
-            )
-            await conn.execute(
-                update(dead_letter_tbl)
-                .where(dead_letter_tbl.c.id.in_(dlq_ids))
-                .values(resolved_at=now)
-            )
+            count = await lifecycle.requeue_dead_letter(conn, job_ids, dlq_ids, now)
 
-        return {"requeued": len(job_ids)}
+        return {"requeued": count}
 
     @router.get(
         "/dispatchability",
