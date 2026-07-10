@@ -32,13 +32,11 @@ from .client import JobClient
 from .config import ClientConfig
 from .srr import derive_sample_id
 from .submission import (
+    TemplatePathMissingError,
+    UnwiredSchedulerError,
     build_nextflow_command,
-    generate_metadata_tsv,
-    render_submission_script,
     submit_local,
-    submit_slurm,
-    submit_pbs,
-    submit_with_retry,
+    submit_to_scheduler,
 )
 
 app = typer.Typer(help="nf-client: claim and submit Nextflow telemetry jobs")
@@ -187,36 +185,12 @@ def submit(
             typer.echo(f"Launched local process PID {executor_job_id}")
 
         elif mode in ("slurm", "pbs", "lsf"):
-            if not cfg.submission.template_path:
+            try:
+                executor_job_id = submit_to_scheduler(mode, batch, cfg, sample_ids)
+            except TemplatePathMissingError:
                 typer.echo(f"ERROR: submission.template_path required for mode={mode}", err=True)
                 raise typer.Exit(1)
-
-            context = {
-                **cfg.submission.defaults,
-                "run_name": run_name,
-                "sample_ids": ",".join(sample_ids),
-                "workflow_repository": batch.repository_url,
-                "workflow_revision": batch.revision,
-                "profile": cfg.profile,
-                "server_url": cfg.server_url,
-                "weblog_url": cfg.weblog_url,
-                "workflow_id": batch.workflow_id,
-                "workflow_version": batch.workflow_version,
-                "metadata_tsv_content": generate_metadata_tsv(batch.jobs),
-            }
-            script = render_submission_script(cfg.submission.template_path, context)
-
-            if mode == "slurm":
-                executor_job_id = submit_with_retry(
-                    lambda: submit_slurm(script, export_none=cfg.submission.slurm_export_none),
-                    label="sbatch",
-                )
-            elif mode == "pbs":
-                executor_job_id = submit_with_retry(
-                    lambda: submit_pbs(script),
-                    label="qsub",
-                )
-            else:
+            except UnwiredSchedulerError:
                 # mode passed the guard above (slurm|pbs|lsf) but no
                 # submit_lsf exists yet. Fail explicitly rather than
                 # silently reporting a null executor_job_id to the server.
@@ -363,44 +337,27 @@ def daemon(
             typer.echo(f"[run {run_number}] nextflow exited with code {result.returncode}")
 
         elif mode in ("slurm", "pbs", "lsf"):
-            if not cfg.submission.template_path:
+            try:
+                executor_job_id = submit_to_scheduler(mode, batch, cfg, sample_ids)
+            except TemplatePathMissingError:
                 typer.echo(f"ERROR: submission.template_path required for mode={mode}", err=True)
                 raise typer.Exit(1)
-
-            context = {
-                **cfg.submission.defaults,
-                "run_name": batch.run_name,
-                "sample_ids": ",".join(sample_ids),
-                "workflow_repository": batch.repository_url,
-                "workflow_revision": batch.revision,
-                "profile": cfg.profile,
-                "server_url": cfg.server_url,
-                "weblog_url": cfg.weblog_url,
-                "workflow_id": batch.workflow_id,
-                "workflow_version": batch.workflow_version,
-                "metadata_tsv_content": generate_metadata_tsv(batch.jobs),
-            }
-            script = render_submission_script(cfg.submission.template_path, context)
-
-            try:
-                if mode == "slurm":
-                    executor_job_id = submit_with_retry(
-                        lambda: submit_slurm(script, export_none=cfg.submission.slurm_export_none),
-                        label="sbatch",
-                    )
-                elif mode == "pbs":
-                    executor_job_id = submit_with_retry(
-                        lambda: submit_pbs(script),
-                        label="qsub",
-                    )
-                else:
-                    # mode passed the outer guard but no submit path is
-                    # wired (e.g. lsf). Skip the batch loudly so the server
-                    # can sweep it via TTL rather than silently recording
-                    # executor_job_id=None.
-                    typer.echo(f"  ERROR: mode={mode!r} has no submit path wired; skipping batch (will requeue via TTL)", err=True)
-                    continue
-            except Exception as e:
+            except UnwiredSchedulerError:
+                # mode passed the outer guard but no submit path is
+                # wired (e.g. lsf). Skip the batch loudly so the server
+                # can sweep it via TTL rather than silently recording
+                # executor_job_id=None.
+                typer.echo(f"  ERROR: mode={mode!r} has no submit path wired; skipping batch (will requeue via TTL)", err=True)
+                continue
+            except (subprocess.SubprocessError, OSError) as e:
+                # A genuine submission failure (sbatch/qsub errored after
+                # retries) — skip the batch and let the server's TTL sweep
+                # requeue it. Narrowed to the submission-error types on
+                # purpose: a template/render error (jinja) is a deterministic
+                # config bug, not a transient submission failure, so it
+                # propagates and stops the daemon exactly as it did when
+                # rendering happened outside this try — better a loud stop
+                # than an infinite skip loop mislabelled "submission failed".
                 typer.echo(f"  ERROR: scheduler submission failed after retries, skipping batch (will requeue via TTL): {e}", err=True)
                 continue
 

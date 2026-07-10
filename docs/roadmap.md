@@ -159,7 +159,7 @@ locality**. Strength: Strong / Worth exploring / Speculative.
 | 1 | Study-membership module — one write seam | Strong | **✓ DONE #164/#165** | `add_to_collection()` in `services/collection.py`; retired `metadata.cohort` | Epic A, ADR-0005 |
 | 2 | Shared active-version scope predicate | Worth exploring | open | `_workflow_scope` (cohort) re-inlined in admin.stats, process_metrics; completion% redefined 3× | **#116**, Epic B |
 | 3 | Job-lifecycle module (enums + legal transitions) | Strong | **✓ DONE #166** | `services/lifecycle.py` — free fns take `conn`; JobStatus/RunStatus enums; guarded/idempotent; carve-outs documented | — |
-| 4 | DispatchService — pull the claim out of the handler | Strong | open | 120-line pick-then-lock inline in `dispatch.py` HTTP handler; 3 wiring conventions | pairs w/ #3 |
+| 4 | DispatchService — pull the claim out of the handler | Strong | **✓ DONE #167** | `services/dispatch.py` (@dataclass, engine); pick-then-lock + response assembly; router thinned; calls `lifecycle.claim()` | pairs w/ #3 |
 | 5 | Liveness module — one "is this alive?" | Strong | open · **latent bug** | stalled re-derived 6× / 5 columns; read path calls `submitted` runs stalled, watchdog won't reap them | **#115**, ADR-0002 |
 | 6 | One reader for the `trace` JSONB | Worth exploring | open | decoded 3 ways (`.get` / `->>`); FAILED/ABORTED predicate copied ~17× | #62 |
 | 7 | Make the ETL spec actually drive ingest | Worth exploring | open | `specs.py` bypassed (qc special-case); `lake.SCHEMAS` hand-synced to parser keys; cli re-loops | ETL #153–158 |

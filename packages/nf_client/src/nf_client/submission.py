@@ -19,6 +19,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from .config import ClientConfig
 from .models import DispatchBatchResponse, DispatchedJob
 
 
@@ -196,3 +197,107 @@ def submit_pbs(script_content: str) -> str:
         check=True,
     )
     return result.stdout.strip()
+
+
+# ── Scheduler Submitter seam ────────────────────────────────────────────────
+#
+# submit() and daemon() in cli.py both need: build the same Jinja context,
+# render the template, then dispatch via the right scheduler CLI. This is
+# that "same context, dispatch differs by mode" logic in one place.
+#
+# Failure signalling is split into two named exceptions because the two
+# callers handle these two cases *differently* (submit() exits nonzero for
+# both; daemon() exits nonzero for a missing template_path but skips the
+# batch — via `continue`, letting the server's TTL sweep requeue it — for an
+# unwired mode). A genuine submission failure (e.g. sbatch down after
+# retries) is NOT wrapped here: it propagates as the SubprocessError/OSError
+# submit_with_retry raises, exactly as before this refactor — submit() lets it
+# crash uncaught, while daemon() catches `(SubprocessError, OSError)` and
+# skips the batch. A template/render error (a config bug, not a transient
+# submission failure) is likewise unwrapped, so it stops the daemon rather
+# than being swallowed into a skip loop.
+
+
+class TemplatePathMissingError(Exception):
+    """cfg.submission.template_path is unset for a scheduler mode that requires it."""
+
+    def __init__(self, mode: str) -> None:
+        self.mode = mode
+        super().__init__(f"submission.template_path required for mode={mode}")
+
+
+class UnwiredSchedulerError(Exception):
+    """*mode* is a recognised scheduler mode but has no submit path wired yet (e.g. lsf)."""
+
+    def __init__(self, mode: str) -> None:
+        self.mode = mode
+        super().__init__(f"mode={mode!r} has no submit path wired yet")
+
+
+def build_submission_context(
+    batch: DispatchBatchResponse,
+    cfg: ClientConfig,
+    sample_ids: list[str],
+) -> dict[str, Any]:
+    """Build the Jinja2 template context for a scheduler submission script.
+
+    Identical for every scheduler mode — only how the rendered script gets
+    submitted (sbatch vs qsub) differs.
+    """
+    return {
+        **cfg.submission.defaults,
+        "run_name": batch.run_name,
+        "sample_ids": ",".join(sample_ids),
+        "workflow_repository": batch.repository_url,
+        "workflow_revision": batch.revision,
+        "profile": cfg.profile,
+        "server_url": cfg.server_url,
+        "weblog_url": cfg.weblog_url,
+        "workflow_id": batch.workflow_id,
+        "workflow_version": batch.workflow_version,
+        "metadata_tsv_content": generate_metadata_tsv(batch.jobs),
+    }
+
+
+def _dispatch_slurm(script: str, cfg: ClientConfig) -> str:
+    return submit_with_retry(
+        lambda: submit_slurm(script, export_none=cfg.submission.slurm_export_none),
+        label="sbatch",
+    )
+
+
+def _dispatch_pbs(script: str, cfg: ClientConfig) -> str:
+    return submit_with_retry(lambda: submit_pbs(script), label="qsub")
+
+
+# Registry of wired scheduler modes. Modes valid in SubmissionConfig.mode but
+# absent here (currently just "lsf") raise UnwiredSchedulerError.
+SCHEDULER_SUBMITTERS: dict[str, Callable[[str, ClientConfig], str]] = {
+    "slurm": _dispatch_slurm,
+    "pbs": _dispatch_pbs,
+}
+
+
+def submit_to_scheduler(
+    mode: str,
+    batch: DispatchBatchResponse,
+    cfg: ClientConfig,
+    sample_ids: list[str],
+) -> str:
+    """Render the submission script for *mode* and dispatch it, returning the executor job id.
+
+    Raises TemplatePathMissingError / UnwiredSchedulerError for the two "can't
+    even try" cases; a scheduler submission failure after retries propagates
+    as whatever submit_with_retry raised (subprocess.SubprocessError/OSError).
+    """
+    template_path = cfg.submission.template_path
+    if template_path is None:
+        raise TemplatePathMissingError(mode)
+
+    submitter = SCHEDULER_SUBMITTERS.get(mode)
+    if submitter is None:
+        raise UnwiredSchedulerError(mode)
+
+    context = build_submission_context(batch, cfg, sample_ids)
+    script = render_submission_script(template_path, context)
+    return submitter(script, cfg)
