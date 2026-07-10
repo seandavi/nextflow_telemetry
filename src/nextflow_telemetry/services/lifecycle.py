@@ -109,7 +109,11 @@ async def claim(
 ) -> None:
     """Create a workflow_runs row in `claimed` and claim the given jobs.
 
-    Mirrors routers/dispatch.py `dispatch_batch`'s claim step.
+    Mirrors routers/dispatch.py `dispatch_batch`'s claim step. The sole caller
+    (DispatchService's pick-then-lock) selects `pending` job ids under
+    `FOR UPDATE SKIP LOCKED`, so the `status == pending` guard on the jobs
+    update is normally a no-op — it's there so a bad or future caller can't
+    clobber an already-claimed/running job's status and run_name.
     """
     await conn.execute(
         workflow_runs_tbl.insert().values(
@@ -124,7 +128,10 @@ async def claim(
     )
     await conn.execute(
         update(jobs_tbl)
-        .where(jobs_tbl.c.id.in_(job_ids))
+        .where(
+            jobs_tbl.c.id.in_(job_ids),
+            jobs_tbl.c.status == JobStatus.pending,
+        )
         .values(run_name=run_name, status=JobStatus.claimed)
     )
 
@@ -179,20 +186,19 @@ async def mark_running(
 ) -> None:
     """Run + jobs -> `running`, on receipt of the weblog `started` event.
 
-    Jobs reach `running` from either `submitted` (normal flow) or `claimed`
-    (defensive: out-of-order events). Mirrors services/telemetry.py's
-    `started` handling.
-
-    The run update is guarded against terminal states: a late/duplicate
-    `started` event for a run the watchdog already closed (failed/expired) or
-    that already completed will NOT resurrect it to `running`. Same
-    no-clobber contract as close_run.
+    Both the run and its jobs reach `running` only from their legal
+    predecessors `claimed` / `submitted` (normal flow is `submitted`;
+    `claimed` is the defensive out-of-order case). Restricting to those
+    predecessors means a duplicate/late `started` is a true no-op: it won't
+    resurrect a terminal run (completed/failed/expired), and it won't rewrite
+    `started_at`/`run_id` on a run already `running`. Mirrors
+    services/telemetry.py's `started` handling.
     """
     await conn.execute(
         update(workflow_runs_tbl)
         .where(
             workflow_runs_tbl.c.run_name == run_name,
-            workflow_runs_tbl.c.status.notin_(RUN_TERMINAL_STATUSES),
+            workflow_runs_tbl.c.status.in_([RunStatus.claimed, RunStatus.submitted]),
         )
         .values(run_id=run_id, status=RunStatus.running, started_at=now)
     )

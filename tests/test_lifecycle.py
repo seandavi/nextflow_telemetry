@@ -278,6 +278,71 @@ def test_complete_sample_does_not_flip_a_failed_job(db_asyncpg_url):
     _run(go())
 
 
+def test_mark_running_duplicate_started_does_not_rewrite_timing(db_asyncpg_url):
+    async def go():
+        engine = create_async_engine(db_asyncpg_url)
+        try:
+            wf_pk = await _seed_workflow(engine)
+            run_name = f"run-{uuid.uuid4().hex[:8]}"
+            await _seed_run(
+                engine, run_name=run_name, workflow_pk=wf_pk,
+                workflow_id="lc-wf", workflow_version="1.0.0", status="submitted",
+            )
+            first = datetime.now(timezone.utc)
+            async with engine.begin() as conn:
+                await lifecycle.mark_running(conn, run_name, "nf-run-1", first)
+            run = await _get_run(engine, run_name)
+            started_at = run["started_at"]
+            assert run["run_id"] == "nf-run-1"
+
+            # Duplicate/late `started` while already running: no-op, must not
+            # rewrite started_at or run_id.
+            later = first + timedelta(seconds=30)
+            async with engine.begin() as conn:
+                await lifecycle.mark_running(conn, run_name, "nf-run-2", later)
+            run = await _get_run(engine, run_name)
+            assert run["started_at"] == started_at
+            assert run["run_id"] == "nf-run-1"
+        finally:
+            await engine.dispose()
+
+    _run(go())
+
+
+def test_claim_does_not_reclaim_a_non_pending_job(db_asyncpg_url):
+    async def go():
+        engine = create_async_engine(db_asyncpg_url)
+        try:
+            wf_pk = await _seed_workflow(engine)
+            sample_id = await _seed_sample(engine)
+            r1 = f"run-{uuid.uuid4().hex[:8]}"
+            await _seed_run(
+                engine, run_name=r1, workflow_pk=wf_pk,
+                workflow_id="lc-wf", workflow_version="1.0.0", status="running",
+            )
+            job_id = await _seed_job(
+                engine, workflow_pk=wf_pk, sample_id=sample_id,
+                status="running", run_name=r1,
+            )
+            # A stray claim() for a job that's already running must not clobber
+            # its status or run_name back to a fresh claim.
+            r2 = f"run-{uuid.uuid4().hex[:8]}"
+            async with engine.begin() as conn:
+                await lifecycle.claim(
+                    conn, [job_id], r2,
+                    {"workflow_id": "lc-wf", "workflow_version": "1.0.0",
+                     "workflow_pk": wf_pk, "revision": "abc123",
+                     "claimed_at": datetime.now(timezone.utc)},
+                )
+            job = await _get_job(engine, job_id)
+            assert job["status"] == JobStatus.running
+            assert job["run_name"] == r1
+        finally:
+            await engine.dispose()
+
+    _run(go())
+
+
 def test_mark_submitted_no_match_returns_false_without_raising(db_asyncpg_url):
     async def go():
         engine = create_async_engine(db_asyncpg_url)
