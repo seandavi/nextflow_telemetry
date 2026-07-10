@@ -30,6 +30,7 @@ except Exception:
 
 from .client import JobClient
 from .config import ClientConfig
+from .srr import derive_sample_id
 from .submission import (
     build_nextflow_command,
     generate_metadata_tsv,
@@ -510,6 +511,172 @@ def submission(
                   "status", "samples_found", "samples_added", "samples_existing", "created_at", "error"):
             if p.get(k) is not None:
                 typer.echo(f"{k}: {p[k]}")
+
+    _emit(payload, as_json, human)
+
+
+# Default raw base for curatedMetagenomicData curation TSVs (waldronlab).
+_CMD_CURATION_BASE = (
+    "https://raw.githubusercontent.com/waldronlab/"
+    "curatedMetagenomicDataCuration/master/inst/curated"
+)
+
+
+async def _ingest_rows(
+    client: JobClient,
+    rows: list[dict],
+    *,
+    collection: str | None,
+    limit: int | None,
+) -> dict:
+    """Register curation-TSV rows as samples, attaching each to a collection.
+
+    Each row needs an ``ncbi_accession`` column. ``collection`` (if given) is
+    used for every row; otherwise the row's ``study_name`` column names the
+    collection. Rows without a real run accession are skipped (curation TSVs
+    carry placeholders like "Not applicable"). Membership goes through the
+    server's ``collection`` field — never ``metadata.cohort`` (retired).
+    """
+    registered = skipped = 0
+    for row in rows:
+        if limit is not None and registered >= limit:
+            break
+        acc = (row.get("ncbi_accession") or "").strip()
+        sample_id = derive_sample_id(acc)
+        if sample_id is None:
+            skipped += 1
+            continue
+        coll = collection or (row.get("study_name") or "").strip() or None
+        await client.register_sample(sample_id, ncbi_accession=acc, collection=coll)
+        registered += 1
+    return {"registered": registered, "skipped": skipped}
+
+
+@app.command(name="add-samples")
+def add_samples(
+    tsv: Path = typer.Option(..., "--tsv", help="Path to a sample TSV (columns: ncbi_accession, study_name)."),
+    collection: str = typer.Option(None, "--collection", help="Collection to attach every sample to. If omitted, each row's study_name column is used."),
+    limit: int = typer.Option(None, "--limit", help="Register at most this many samples."),
+    reconcile_after: bool = typer.Option(False, "--reconcile", help="After registering, create pending jobs (POST /admin/reconcile-jobs)."),
+    config: Path = opt_config,
+    server: str = opt_server,
+    as_json: bool = json_option,
+) -> None:
+    """Register samples from a curation TSV into a collection (membership, not metadata.cohort).
+
+    Requires an operator token for the mutating calls: set $NF_OPERATOR_TOKEN
+    (or token: in --config).
+    """
+    import csv
+
+    with tsv.open(newline="") as f:
+        rows = list(csv.DictReader(f, delimiter="\t"))
+
+    async def _run() -> dict:
+        cfg = _operator_config(config, server)
+        async with JobClient(cfg) as client:
+            result = await _ingest_rows(client, rows, collection=collection, limit=limit)
+            if reconcile_after:
+                result["reconcile"] = await client.reconcile()
+            return result
+
+    payload = _run_operator(_run())
+    payload["source"] = tsv.name
+
+    def human(p: dict) -> None:
+        typer.echo(f"{p['source']}: registered {p['registered']}, skipped {p['skipped']} (no run accession)")
+        if "reconcile" in p:
+            typer.echo(f"reconcile: {p['reconcile'].get('jobs_created')} pending jobs created")
+
+    _emit(payload, as_json, human)
+
+
+@app.command(name="add-cmd")
+def add_cmd(
+    study: list[str] = typer.Option(..., "--study", help="curatedMetagenomicData study name (repeatable), e.g. WirbelJ_2018."),
+    limit: int = typer.Option(25, "--limit", help="Max samples per study."),
+    base: str = typer.Option(_CMD_CURATION_BASE, "--base", help="Raw base URL for curated <study>_sample.tsv files."),
+    reconcile_after: bool = typer.Option(False, "--reconcile", help="After registering, create pending jobs."),
+    config: Path = opt_config,
+    server: str = opt_server,
+    as_json: bool = json_option,
+) -> None:
+    """Register samples from curatedMetagenomicData studies (collection = study name).
+
+    Fetches each study's `<study>_sample.tsv` from the waldronlab curation repo.
+    Requires an operator token (see add-samples).
+    """
+    import csv
+    import io
+    import urllib.request
+
+    async def _run() -> dict:
+        cfg = _operator_config(config, server)
+        per_study: dict = {}
+        total = 0
+        async with JobClient(cfg) as client:
+            for s in study:
+                try:
+                    raw = urllib.request.urlopen(f"{base}/{s}/{s}_sample.tsv", timeout=30).read().decode()
+                except Exception as e:  # network / 404 — record and continue to next study
+                    per_study[s] = {"error": str(e)}
+                    continue
+                rows = list(csv.DictReader(io.StringIO(raw), delimiter="\t"))
+                r = await _ingest_rows(client, rows, collection=s, limit=limit)
+                per_study[s] = r
+                total += r["registered"]
+            out: dict = {"studies": per_study, "total_registered": total}
+            if reconcile_after:
+                out["reconcile"] = await client.reconcile()
+            return out
+
+    payload = _run_operator(_run())
+
+    def human(p: dict) -> None:
+        for s, r in p["studies"].items():
+            if "error" in r:
+                typer.echo(f"  {s:24s} FETCH FAILED: {r['error']}")
+            else:
+                typer.echo(f"  {s:24s} registered {r['registered']}, skipped {r['skipped']}")
+        typer.echo(f"TOTAL registered {p['total_registered']}")
+        if "reconcile" in p:
+            typer.echo(f"reconcile: {p['reconcile'].get('jobs_created')} pending jobs created")
+
+    _emit(payload, as_json, human)
+
+
+@app.command(name="register-workflow")
+def register_workflow_cmd(
+    workflow_id: str = typer.Option(..., "--id", help="Workflow id, e.g. nf_testing."),
+    version: str = typer.Option(..., "--version", help="Workflow version, e.g. 0.1.0."),
+    repository_url: str = typer.Option(..., "--repo", help="Repository URL or absolute path to main.nf."),
+    revision: str = typer.Option(..., "--revision", help="Git branch/tag/commit (mutable — no rerun on change)."),
+    max_retries: int = typer.Option(3, "--max-retries", help="Retries before dead-lettering (0–10)."),
+    description: str = typer.Option(None, "--description", help="Free-text description."),
+    config: Path = opt_config,
+    server: str = opt_server,
+    as_json: bool = json_option,
+) -> None:
+    """Register (upsert) a workflow version. Requires an operator token."""
+    body: dict = {
+        "workflow_id": workflow_id,
+        "version": version,
+        "repository_url": repository_url,
+        "revision": revision,
+        "max_retries": max_retries,
+    }
+    if description:
+        body["description"] = description
+
+    async def _run() -> dict:
+        cfg = _operator_config(config, server)
+        async with JobClient(cfg) as client:
+            return await client.register_workflow(body)
+
+    payload = _run_operator(_run())
+
+    def human(p: dict) -> None:
+        typer.echo(f"workflow: {p.get('workflow_id')} v{p.get('version')} registered (id={p.get('id')})")
 
     _emit(payload, as_json, human)
 
