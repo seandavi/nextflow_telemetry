@@ -31,7 +31,12 @@
     "SUBMIT_BACKSTOP_HOURS": "48",
     // No heartbeat for this long once the wrapper is alive -> presumed dead.
     "LIVENESS_MINUTES": "10",
-    "CORS_ORIGINS": "*"
+    "CORS_ORIGINS": "*",
+    // Enables POST /admin/reset, which empties every Durable Object and the R2
+    // prefixes. True here because this deployment is disposable staging that
+    // nothing points at. A production deployment MUST set this to "false" —
+    // the route fails closed on any other value, so removing the var is also safe.
+    "ALLOW_RESET": "true"
   }
   // Secrets (wrangler secret put): API_TOKEN — when set, bearer auth is
   // enforced on every mutating route except /telemetry (Nextflow's weblog

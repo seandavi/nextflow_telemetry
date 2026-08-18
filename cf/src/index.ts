@@ -26,6 +26,21 @@ const WRAPPER_LOG_MAX = 4 * 1024 * 1024;
 const TASK_LOG_MAX = 5 * 1024 * 1024;
 const VALID_LOG_TYPES = new Set(["command_sh", "command_out", "command_err"]);
 
+/** Everything this service writes to R2. Reset clears these and nothing else. */
+const R2_PREFIXES = [
+  "ledger/",
+  "telemetry/",
+  "archive/",
+  "snapshots/",
+  "nextflow-logs/",
+  "task-logs/",
+];
+
+/** Fails closed: only the exact string "true" enables the reset route. */
+export function resetAllowed(env: Pick<Env, "ALLOW_RESET">): boolean {
+  return env.ALLOW_RESET === "true";
+}
+
 const api = new Hono<{ Bindings: Env }>();
 
 // ====================================================================
@@ -457,6 +472,45 @@ api.post("/admin/requeue-dead-letter", async (c) =>
 api.post("/admin/archive-retired", async (c) => {
   const pk = c.req.query("workflow_pk");
   return c.json(await control(c.env).archiveRetiredJobs(pk ? Number(pk) : undefined));
+});
+
+/**
+ * Wipe every trace of state: all three Durable Object classes and the R2
+ * prefixes. The teardown half of the dev loop — reset, re-migrate, test again.
+ *
+ * Guarded by an env flag as well as the bearer token, because the token is
+ * shared with every other write route and a fat-fingered path should not be
+ * able to empty the control plane. `resetAllowed` fails closed: anything other
+ * than the exact string "true" refuses.
+ */
+api.post("/admin/reset", async (c) => {
+  if (!resetAllowed(c.env)) {
+    return c.json({ detail: "Reset is disabled here. Set ALLOW_RESET=true to enable it." }, 403);
+  }
+  const ctl = control(c.env);
+
+  // Run names first: a RunDO is addressed by run_name, so once the rows are
+  // gone there is nothing left to tell us which timers to cancel.
+  const runs = await ctl.runNames();
+  for (const name of runs) await runDo(c.env, name).finalize();
+
+  const cleared = await ctl.reset();
+  await sink(c.env).reset();
+
+  let objects = 0;
+  for (const prefix of R2_PREFIXES) {
+    let cursor: string | undefined;
+    do {
+      const listed = await c.env.STORE.list({ prefix, cursor, limit: 1000 });
+      if (listed.objects.length) {
+        await c.env.STORE.delete(listed.objects.map((o) => o.key));
+        objects += listed.objects.length;
+      }
+      cursor = listed.truncated ? listed.cursor : undefined;
+    } while (cursor);
+  }
+
+  return c.json({ cleared, runs_finalized: runs.length, r2_objects_deleted: objects });
 });
 
 api.get("/admin/dispatchability", async (c) => c.json(await control(c.env).dispatchability()));

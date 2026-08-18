@@ -11,6 +11,7 @@
 import { env, runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ControlDO } from "../src/control-do";
+import { resetAllowed } from "../src/index";
 
 const WF = {
   workflow_id: "cmgd",
@@ -318,5 +319,48 @@ describe("retired-version archival", () => {
     const second = (await (await post("/api/admin/archive-retired", {})).json()) as any;
     expect(second.workflows_archived).toBe(1);
     expect(second.jobs_archived).toBe(1);
+  });
+});
+
+// Destructive by definition — must be the last describe in the file.
+describe("reset", () => {
+  it("fails closed on anything but the exact string true", () => {
+    expect(resetAllowed({ ALLOW_RESET: "true" })).toBe(true);
+    for (const v of ["false", "TRUE", "1", "yes", "", undefined]) {
+      expect(resetAllowed({ ALLOW_RESET: v as string | undefined })).toBe(false);
+    }
+  });
+
+  it("empties every object and the R2 prefixes", async () => {
+    // Leave something in each store first, so an empty result afterwards means
+    // "cleared" rather than "was never populated".
+    await post("/api/samples", { sample_id: "resetme", ncbi_accession: "SRR999999" });
+    await weblog("reset-probe", "process_started", {
+      trace: { tag: "resetme", process: "RESET_PROBE", status: "RUNNING" },
+    });
+    expect(((await (await get("/api/admin/stats")).json()) as any).samples).toBeGreaterThan(0);
+    expect(((await (await get("/api/metrics/processes/running")).json()) as any).by_process.length)
+      .toBeGreaterThan(0);
+
+    const res = (await (await post("/api/admin/reset", {})).json()) as any;
+    expect(res.cleared.samples).toBeGreaterThan(0);
+
+    const stats = (await (await get("/api/admin/stats")).json()) as any;
+    expect(stats.samples).toBe(0);
+    expect(stats.workflows).toBe(0);
+    expect(stats.jobs_by_status).toEqual({});
+    expect(stats.runs_by_status).toEqual({});
+    expect(stats.dead_letter_unresolved).toBe(0);
+
+    // The phantom in-flight counters go too — they are cumulative, so test
+    // traffic would otherwise leave permanent residue in the live metrics.
+    const running = (await (await get("/api/metrics/processes/running")).json()) as any;
+    expect(running.by_process).toEqual([]);
+    expect(running.total_running).toBe(0);
+
+    for (const prefix of ["ledger/", "telemetry/", "archive/", "task-logs/", "nextflow-logs/"]) {
+      const listed = await env.STORE.list({ prefix });
+      expect(listed.objects, `R2 prefix ${prefix}`).toHaveLength(0);
+    }
   });
 });

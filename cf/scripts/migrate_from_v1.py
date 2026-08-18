@@ -6,8 +6,8 @@ that are not retired. Event history (`telemetry`, `task_executions`,
 `task_logs`) is deliberately left behind: v2 keeps that class of data on R2, and
 the v1 rows span 2026-05-12 to 2026-07-09 only.
 
-Whether `jobs` come too is a separate call, because they are not history — they
-record which samples are already processed. Pass --jobs to bring them.
+Jobs are deliberately NOT carried (see issue #171): v2 reprocesses from scratch,
+so reconcile creates every job as `pending` and there is no import path.
 
 Reads Postgres through `docker exec pg_main psql` (the database only listens on
 127.0.0.1 of the container host) and writes through the v2 HTTP API, so the
@@ -15,8 +15,8 @@ wire protocol validates every row on the way in. Idempotent: every write is an
 upsert keyed on the same content address v1 used, so re-running converges.
 
   cf/scripts/migrate_from_v1.py --dry-run
-  cf/scripts/migrate_from_v1.py
-  cf/scripts/migrate_from_v1.py --jobs
+  cf/scripts/migrate_from_v1.py                # full catalog
+  cf/scripts/migrate_from_v1.py --limit 50     # light corpus for testing
 """
 from __future__ import annotations
 
@@ -118,43 +118,21 @@ select json_build_object(
  order by w.id
 """
 
-# Jobs are only meaningful for the versions we carried over, and only the
-# terminal ones are worth moving: anything else reconcile recreates as pending.
-JOBS_SQL = """
-select json_build_object(
-  'sample_id',        j.sample_id,
-  'workflow_id',      j.workflow_id,
-  'workflow_version', j.workflow_version,
-  'status',           j.status,
-  'retry_count',      j.retry_count,
-  'completed_at',     j.completed_at,
-  'failed_at',        j.failed_at,
-  'failure_reason',   j.failure_reason
-)::text
-  from jobs j join workflows w on w.id = j.workflow_pk
- where w.status <> 'retired' and j.status in ('completed', 'failed')
- order by j.id
-"""
-
-
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="report what would move, write nothing")
-    ap.add_argument("--jobs", action="store_true",
-                    help="also carry terminal jobs, so completed samples are not reprocessed")
+    ap.add_argument("--limit", type=int, default=0, metavar="N",
+                    help="carry only the first N samples (by v1 id) — a light corpus for testing")
     args = ap.parse_args()
 
     pw = pg_password()
-    samples = query(SAMPLES_SQL, pw)
+    sql = SAMPLES_SQL + (f"\n limit {int(args.limit)}" if args.limit else "")
+    samples = query(sql, pw)
     workflows = query(WORKFLOWS_SQL, pw)
-    jobs = query(JOBS_SQL, pw) if args.jobs else []
 
     print(f"samples   : {len(samples)}")
     print(f"workflows : {len(workflows)}  " +
           ", ".join(f"{w['workflow_id']}@{w['version']} ({w['status']})" for w in workflows))
-    if args.jobs:
-        done = sum(1 for j in jobs if j["status"] == "completed")
-        print(f"jobs      : {len(jobs)} terminal ({done} completed, {len(jobs) - done} failed)")
     if args.dry_run:
         print("\ndry run — nothing written")
         return
@@ -187,17 +165,6 @@ def main() -> None:
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         list(pool.map(send_sample, samples))
     print(f"samples written ({len(failures)} failures so far)")
-
-    if jobs:
-        # Reconcile first so a pending job exists for every (sample, version),
-        # then replay the terminal ones onto it.
-        code, _ = post("/api/admin/reconcile-jobs", {}, token)
-        print(f"reconcile : {code}")
-        code, err = post("/api/admin/import-jobs", {"jobs": jobs}, token)
-        if code != 200:
-            failures.append(f"import-jobs: {code} {err}")
-        else:
-            print(f"jobs      : {len(jobs)} imported")
 
     for f in failures[:20]:
         print("FAIL", f, file=sys.stderr)

@@ -14,6 +14,8 @@ export interface Env {
   CORS_ORIGINS: string;
   /** When set, bearer auth is enforced on mutating routes. */
   API_TOKEN?: string;
+  /** Must be exactly "true" for POST /admin/reset to do anything. */
+  ALLOW_RESET?: string;
 }
 
 /**

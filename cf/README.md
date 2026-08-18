@@ -58,6 +58,33 @@ weblog_url: https://nf-telemetry.<subdomain>.workers.dev/telemetry
 
 Every route is served at both `/` and `/api`, matching v1's split mount.
 
+## The dev loop
+
+v2 state is disposable until cutover. Teardown and rebuild is the supported
+cycle, not a workaround:
+
+```bash
+B=https://nf-telemetry.seandavi.workers.dev
+T=$(gcloud secrets versions access latest --secret=cdsci-nf-telemetry-v2-api-token --project=cdsci-infra)
+
+curl -s -X POST -H "Authorization: Bearer $T" $B/api/admin/reset   # wipe everything
+scripts/migrate_from_v1.py --limit 50                              # light corpus
+scripts/migrate_from_v1.py                                         # or the full catalog
+```
+
+`POST /admin/reset` empties all three Durable Object classes and deletes every
+object under the R2 prefixes this service writes. It finalises each RunDO before
+wiping the `runs` rows — a RunDO is addressed by `run_name`, so once the rows are
+gone nothing knows which timers to cancel.
+
+It is guarded by `ALLOW_RESET`, which must be exactly the string `"true"`; the
+check fails closed on any other value, including unset. That is deliberately a
+separate control from the bearer token, which every other write route shares.
+**A production deployment must set `ALLOW_RESET` to `"false"`.**
+
+Jobs are never migrated (issue #171) — v2 reprocesses from scratch, so run
+`POST /api/admin/reconcile-jobs` when you want work to become dispatchable.
+
 ## How this differs from the v2 spec, and why
 
 The spec's shape was followed where it earns its keep and collapsed where it

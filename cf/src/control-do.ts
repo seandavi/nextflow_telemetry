@@ -971,6 +971,16 @@ export class ControlDO extends DurableObject<Env> {
    * instance, leaving it broken until the constructor happened to re-run.
    * Deleting rows keeps the object usable and the schema intact.
    */
+  /**
+   * Every run name currently on record. The reset path needs these *before*
+   * wiping, because a RunDO is addressed by run_name and nothing else knows
+   * which ones exist — delete the rows first and the timers become orphans
+   * that fire against a run that no longer exists.
+   */
+  runNames(): string[] {
+    return this.all(`select run_name from runs`).map((r) => r.run_name as string);
+  }
+
   reset(): Row {
     const tables = [
       "job_counts",
