@@ -18,8 +18,12 @@ from pydantic import BaseModel, Field, field_validator
 
 
 def _redact_defaults(d: dict) -> dict:
-    """Strip submission.defaults from a config dict (may contain credential paths)."""
-    out = dict(d)
+    """Strip secrets from a config dict before it is reported to the server.
+
+    `token` is the bearer token itself; submission.defaults may hold credential paths.
+    GET /daemons is readable without auth, so anything left here is public.
+    """
+    out = {k: v for k, v in d.items() if k != "token"}
     if "submission" in out:
         out["submission"] = {k: v for k, v in out["submission"].items() if k != "defaults"}
     return out
