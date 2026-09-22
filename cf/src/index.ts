@@ -528,12 +528,26 @@ app.use("*", async (c, next) =>
   cors({ origin: (c.env.CORS_ORIGINS ?? "*").split(",").map((s) => s.trim()), credentials: true })(c, next),
 );
 
+/**
+ * Routes that never require the bearer token. Reads stay open (the dashboard is
+ * unauthenticated in v1). /telemetry must stay open because Nextflow's weblog
+ * reporter cannot send headers, and /runs/{run}/event because the SLURM run
+ * wrapper carries no token (v1 never required one there; run_name is an
+ * unguessable UUIDv7 and events are best-effort, so the trust posture matches
+ * the weblog). Exported so the rule is unit-tested rather than inferred.
+ */
+export function authExempt(method: string, path: string): boolean {
+  return (
+    method === "GET" ||
+    method === "OPTIONS" ||
+    path.endsWith("/telemetry") ||
+    /\/runs\/[^/]+\/event$/.test(path)
+  );
+}
+
 app.use("*", async (c, next) => {
   const token = c.env.API_TOKEN;
-  const path = new URL(c.req.url).pathname;
-  // Reads stay open (the dashboard is unauthenticated in v1) and /telemetry
-  // must stay open because Nextflow's weblog reporter cannot send headers.
-  if (!token || c.req.method === "GET" || c.req.method === "OPTIONS" || path.endsWith("/telemetry")) {
+  if (!token || authExempt(c.req.method, new URL(c.req.url).pathname)) {
     return next();
   }
   const auth = c.req.header("authorization") ?? "";

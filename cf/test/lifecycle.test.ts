@@ -11,7 +11,7 @@
 import { env, runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ControlDO } from "../src/control-do";
-import { resetAllowed } from "../src/index";
+import { authExempt, resetAllowed } from "../src/index";
 
 const WF = {
   workflow_id: "cmgd",
@@ -323,6 +323,18 @@ describe("retired-version archival", () => {
 });
 
 // Destructive by definition — must be the last describe in the file.
+describe("auth exemptions", () => {
+  it("lets the token-less wrapper and weblog through, nothing else that writes", () => {
+    expect(authExempt("POST", "/api/runs/r01abc/event")).toBe(true);
+    expect(authExempt("POST", "/runs/r01abc/event")).toBe(true);
+    expect(authExempt("POST", "/telemetry")).toBe(true);
+    expect(authExempt("GET", "/api/admin/stats")).toBe(true);
+    for (const p of ["/api/dispatch/batch", "/api/samples", "/api/admin/reset", "/api/runs/r01abc/events", "/api/task-logs"]) {
+      expect(authExempt("POST", p), p).toBe(false);
+    }
+  });
+});
+
 describe("reset", () => {
   it("fails closed on anything but the exact string true", () => {
     expect(resetAllowed({ ALLOW_RESET: "true" })).toBe(true);

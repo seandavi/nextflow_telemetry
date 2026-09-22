@@ -85,6 +85,47 @@ separate control from the bearer token, which every other write route shares.
 Jobs are never migrated (issue #171) — v2 reprocesses from scratch, so run
 `POST /api/admin/reconcile-jobs` when you want work to become dispatchable.
 
+### Local end-to-end (the pre-cluster gate, #181 / #183)
+
+The recommended way to seed a corpus is the same command an operator uses, not
+the migration script:
+
+```bash
+just v2-e2e                       # reset → seed via nf-client → happy path + 3 failure shapes
+just v2-run test,fail-mark SRR…   # one sample, one run, one profile
+```
+
+`v2-seed` loads `ArtachoA_2021_sample.tsv` and one curatedMetagenomicData study
+through unmodified `nf-client add-samples` / `add-cmd`, which is the #183
+acceptance. Cohorts have no write endpoint in either version: a collection
+exists once a sample is registered into it.
+
+Verified 2026-09-21 against the deployed worker: 94-sample happy path, `fail-mark`
+and `fail-fetch` (requeue once, then dead-letter at `max_retries=1`),
+`stochastic` (Nextflow task retries leave `retry_count` at 1), claim expiry at
+exactly `CLAIM_TTL_MINUTES`, liveness closure at exactly last heartbeat +
+`LIVENESS_MINUTES` with reason `presumed dead`, `job_counts` equal to the jobs
+scan afterwards. Two things the recipe does not automate:
+
+- **Timers.** Claim expiry: claim with `curl POST /api/dispatch/batch`, never
+  confirm, wait 5 min. Liveness: `nf-client run-wrapper --run-name R
+  --heartbeat-seconds 5 -- sleep 900`, `kill -9` the wrapper, wait 10 min.
+- **The wrapper.** `submission.mode: local` runs nextflow directly, so wrapper
+  events, `.nextflow.log` upload and `wait_seconds` only appear when the run
+  wrapper runs, as it does under SLURM. Drive it by hand as above, wrapping the
+  real `nextflow run` command. Task logs are only posted by `nf-client
+  upload-logs`, never by the daemon.
+
+Things the loop found, so you do not find them again:
+
+- `nf-client` must run from its own venv (`uv run --project packages/nf_client`);
+  the root venv's click 8.3 breaks typer 0.12 option parsing.
+- The run wrapper carries no bearer token, and v1 never required one on
+  `POST /runs/{run}/event`. v2 exempts that route (`authExempt` in `index.ts`).
+  The daemon does need `token:` in its client yaml when `API_TOKEN` is set.
+- `add-samples --reconcile` and `daemon` with `continuous: false` drain every
+  pending job, so a one-run test needs exactly one pending job.
+
 ## How this differs from the v2 spec, and why
 
 The spec's shape was followed where it earns its keep and collapsed where it
