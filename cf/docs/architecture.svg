@@ -110,7 +110,7 @@
   <g id="node-control" data-graph-role="node" data-node-id="control" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="60,540,240,680">
   <rect x="60.0" y="540.0" width="180.0" height="140.0" rx="8.0" fill="#0b3b5e" stroke="#67e8f9" stroke-width="1.8"/>
   <text x="150.0" y="610.0" text-anchor="middle" class="node-title" font-size="18.0">ControlDO</text>
-  <text x="150.0" y="632.0" text-anchor="middle" class="node-sub">singleton · owns every status write</text>
+  <text x="150.0" y="632.0" text-anchor="middle" class="node-sub">singleton · all status writes</text>
   <rect x="78.0" y="660.0" width="66" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
   <text x="111.0" y="671.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">SQLite</text>
   <rect x="152.0" y="660.0" width="74" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
@@ -203,6 +203,6 @@
     <text data-graph-role="decoration" x="570.96" y="974.0" class="legend">scheduled trigger</text>
   </g>
   <g id="footer" data-graph-role="reserved" data-graph-bounds="48,1008,552,1024">
-  <text x="48.0" y="1020.0" class="footnote">cf/ · not yet deployed, v1 (FastAPI + Postgres) is still the live server</text>
+  <text x="48.0" y="1020.0" class="footnote">live at nf-telemetry.seandavi.workers.dev · verified end to end 2026-09-21 · v1 still serves production</text>
   </g>
 </svg>

@@ -2,7 +2,10 @@
 
 Four views of `cf/`: what ControlDO stores, how the three Durable Object classes relate,
 what one run looks like end to end, and how the three timers close a run nobody reports on.
-Diagrams are Mermaid and render on GitHub.
+Diagrams are Mermaid and render on GitHub. For slides, the same topology as a validated
+standalone image, [`architecture.svg`](architecture.svg):
+
+![nf_telemetry v2 architecture](architecture.svg)
 
 ---
 
