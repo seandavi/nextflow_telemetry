@@ -58,6 +58,14 @@ weblog_url: https://nf-telemetry.<subdomain>.workers.dev/telemetry
 
 Every route is served at both `/` and `/api`, matching v1's split mount.
 
+**API reference:** [`/docs`](https://nf-telemetry.seandavi.workers.dev/docs) (Scalar) over
+[`/openapi.json`](https://nf-telemetry.seandavi.workers.dev/openapi.json). The document is
+built from the router at request time by `hono-openapi`, so it cannot list a route that does
+not exist; `test/openapi.test.ts` fails if a route exists that it does not list. Request and
+response shapes are Zod in `src/schemas.ts`, and the lifecycle suite parses live responses
+through them, so a handler that changes shape fails a test before it breaks a client (#184;
+the rest of the contract work, generated TS types and validation on every route, is #173).
+
 ## The dev loop
 
 v2 state is disposable until cutover. Teardown and rebuild is the supported

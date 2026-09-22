@@ -12,6 +12,7 @@ import { env, runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ControlDO } from "../src/control-do";
 import { authExempt, resetAllowed } from "../src/index";
+import * as S from "../src/schemas";
 
 const WF = {
   workflow_id: "cmgd",
@@ -323,6 +324,29 @@ describe("retired-version archival", () => {
 });
 
 // Destructive by definition — must be the last describe in the file.
+describe("responses match the published contract", () => {
+  // Runs against the corpus the suite above left behind. A handler that
+  // changes shape fails here before it fails in the frontend (#184, #173).
+  const parse = async (path: string, schema: { parse: (v: unknown) => unknown }) => {
+    const res = await SELF.fetch(`https://x${path}`);
+    expect(res.status, path).toBe(200);
+    schema.parse(await res.json());
+  };
+  it("stats, workflows, samples, cohorts, runs", async () => {
+    await parse("/api/admin/stats", S.Stats);
+    await parse("/api/workflows", S.Workflow.array());
+    await parse("/api/samples?limit=5", S.SampleList);
+    await parse("/api/samples/facets/collections", S.CollectionFacets);
+    await parse("/api/cohorts", S.Cohort.array());
+    await parse("/api/runs?limit=5", S.RunList);
+    await parse("/api/metrics/processes/running", S.RunningProcesses);
+    const runs = (await (await SELF.fetch("https://x/api/runs?limit=1")).json()) as { runs: { run_name: string }[] };
+    if (runs.runs[0]) await parse(`/api/runs/${runs.runs[0].run_name}`, S.RunDetail);
+    const wf = (await (await SELF.fetch("https://x/api/workflows")).json()) as { id: number }[];
+    if (wf[0]) await parse(`/api/workflows/${wf[0].id}/job-summary`, S.JobSummary);
+  });
+});
+
 describe("auth exemptions", () => {
   it("lets the token-less wrapper and weblog through, nothing else that writes", () => {
     expect(authExempt("POST", "/api/runs/r01abc/event")).toBe(true);

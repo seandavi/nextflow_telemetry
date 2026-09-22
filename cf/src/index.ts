@@ -18,8 +18,13 @@ import { RunDO } from "./run-do";
 import { SinkDO, type TelemetryEnvelope } from "./sink-do";
 import { control, runDo, sink, type Env } from "./types";
 import { gzip } from "./util";
+import { describeRoute, openAPIRouteHandler, resolver } from "hono-openapi";
+import { Scalar } from "@scalar/hono-api-reference";
+import { z } from "zod";
+import * as S from "./schemas";
 
 export { ControlDO, RunDO, SinkDO };
+export { api };
 
 const NEXTFLOW_LOG_MAX = 16 * 1024 * 1024;
 const WRAPPER_LOG_MAX = 4 * 1024 * 1024;
@@ -47,7 +52,7 @@ const api = new Hono<{ Bindings: Env }>();
 // dispatch
 // ====================================================================
 
-api.post("/dispatch/batch", async (c) => {
+api.post("/dispatch/batch", describeRoute({ summary: "Claim a batch of pending jobs and mint a run", tags: ["dispatch"], requestBody: { content: { "application/json": { schema: resolver(S.ClaimRequest) } } }, responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.ClaimedBatch) } } }, "204": { description: "Nothing pending for the requested workflows" } } }), async (c) => {
   const body = await json(c);
   const limit = clamp(num(body.limit, 50), 1, 500);
   const workflowIds = body.workflow_id == null ? null : ([] as string[]).concat(body.workflow_id);
@@ -61,7 +66,7 @@ api.post("/dispatch/batch", async (c) => {
   return c.json(batch);
 });
 
-api.post("/dispatch/submitted", async (c) => {
+api.post("/dispatch/submitted", describeRoute({ summary: "Confirm the run was handed to the executor", tags: ["dispatch"], requestBody: { content: { "application/json": { schema: resolver(S.SubmittedRequest) } } }, responses: { "200": { description: "OK" } } }), async (c) => {
   const body = await json(c);
   const runName = String(body.run_name ?? "");
   const ok = await control(c.env).markSubmitted(runName, body.executor_job_id ?? null);
@@ -73,7 +78,7 @@ api.post("/dispatch/submitted", async (c) => {
   return c.json({ run_name: runName, status: "submitted" });
 });
 
-api.post("/dispatch/requeue-expired", (c) => {
+api.post("/dispatch/requeue-expired", describeRoute({ summary: "Deprecated no-op: claim expiry is a per-run timer now", tags: ["dispatch"], deprecated: true, responses: { "200": { description: "OK" } } }), (c) => {
   c.header("Deprecation", "true");
   c.header("Link", '</docs/v2.md#claim-ttl>; rel="deprecation"');
   return c.json({ requeued_runs: 0 });
@@ -84,7 +89,7 @@ api.post("/dispatch/requeue-expired", (c) => {
 // reporter has no way to send a bearer token.
 // ====================================================================
 
-api.post("/telemetry", async (c) => {
+api.post("/telemetry", describeRoute({ summary: "Nextflow weblog event (unauthenticated: the reporter cannot send headers)", tags: ["telemetry"], responses: { "200": { description: "OK" } } }), async (c) => {
   const body = await json(c);
   stripZoneIds(body?.metadata);
 
@@ -130,7 +135,7 @@ api.post("/telemetry", async (c) => {
 // run lifecycle events (wrapper / pipeline hooks / daemon)
 // ====================================================================
 
-api.post("/runs/:run_name/event", async (c) => {
+api.post("/runs/:run_name/event", describeRoute({ summary: "Run-lifecycle event from the SLURM wrapper (multipart; unauthenticated)", tags: ["runs"], responses: { "201": { description: "OK", content: { "application/json": { schema: resolver(S.RunEventAccepted) } } } } }), async (c) => {
   const runName = c.req.param("run_name");
   const form = await c.req.formData().catch(() => null);
   if (!form) return c.json({ detail: "expected multipart form data" }, 422);
@@ -214,7 +219,7 @@ api.post("/runs/:run_name/event", async (c) => {
   );
 });
 
-api.get("/runs", async (c) => {
+api.get("/runs", describeRoute({ summary: "List runs, newest claim first", tags: ["runs"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.RunList) } } } } }), async (c) => {
   const limit = clamp(num(c.req.query("limit"), 50), 1, 500);
   const offset = Math.max(0, num(c.req.query("offset"), 0));
   const res = await control(c.env).listRuns({
@@ -226,7 +231,7 @@ api.get("/runs", async (c) => {
   return c.json({ ...res, limit, offset });
 });
 
-api.get("/runs/:run_name", async (c) => {
+api.get("/runs/:run_name", describeRoute({ summary: "One run with job counts, classification and log availability", tags: ["runs"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.RunDetail) } } }, "404": { description: "Unknown run" } } }), async (c) => {
   const runName = c.req.param("run_name");
   const row = (await control(c.env).getRun(runName)) as Record<string, unknown> | null;
   if (!row) return c.json({ detail: `No workflow run with name '${runName}'` }, 404);
@@ -242,7 +247,7 @@ api.get("/runs/:run_name", async (c) => {
 // samples
 // ====================================================================
 
-api.post("/samples", async (c) => {
+api.post("/samples", describeRoute({ summary: "Register (upsert) a sample, optionally into a collection", tags: ["samples"], requestBody: { content: { "application/json": { schema: resolver(S.RegisterSampleRequest) } } }, responses: { "201": { description: "OK", content: { "application/json": { schema: resolver(S.Sample) } } } } }), async (c) => {
   const body = await json(c);
   if (!body.sample_id || !body.ncbi_accession) {
     return c.json({ detail: "sample_id and ncbi_accession are required" }, 422);
@@ -250,7 +255,7 @@ api.post("/samples", async (c) => {
   return c.json(await control(c.env).registerSample(body), 201);
 });
 
-api.get("/samples", async (c) => {
+api.get("/samples", describeRoute({ summary: "List samples with search and collection filters", tags: ["samples"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.SampleList) } } } } }), async (c) => {
   const limit = clamp(num(c.req.query("limit"), 100), 1, 1000);
   const offset = Math.max(0, num(c.req.query("offset"), 0));
   const res = await control(c.env).listSamples({
@@ -262,18 +267,18 @@ api.get("/samples", async (c) => {
   return c.json({ ...res, limit, offset });
 });
 
-api.get("/samples/facets/collections", async (c) => c.json(await control(c.env).collectionFacets()));
+api.get("/samples/facets/collections", describeRoute({ summary: "Per-collection sample counts over the whole catalog", tags: ["samples"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.CollectionFacets) } } } } }), async (c) => c.json(await control(c.env).collectionFacets()));
 
-api.get("/samples/by-srr/:srr", async (c) => {
+api.get("/samples/by-srr/:srr", describeRoute({ summary: "Look up the sample containing an SRR accession", tags: ["samples"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.Sample) } } }, "404": { description: "No sample has that SRR" } } }), async (c) => {
   const row = await control(c.env).getSampleBySrr(c.req.param("srr"));
   return row ? c.json(row) : c.json({ detail: `No sample found with SRR '${c.req.param("srr")}'` }, 404);
 });
 
-api.get("/samples/by-biosample/:biosample_id", async (c) =>
+api.get("/samples/by-biosample/:biosample_id", describeRoute({ summary: "Samples annotated with a BioSample id", tags: ["samples"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(z.array(S.Sample)) } } } } }), async (c) =>
   c.json(await control(c.env).getSamplesByBiosample(c.req.param("biosample_id"))),
 );
 
-api.get("/samples/:sample_id", async (c) => {
+api.get("/samples/:sample_id", describeRoute({ summary: "One sample by content address", tags: ["samples"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.Sample) } } }, "404": { description: "Unknown sample" } } }), async (c) => {
   const row = await control(c.env).getSample(c.req.param("sample_id"));
   return row ? c.json(row) : c.json({ detail: `Sample '${c.req.param("sample_id")}' not found` }, 404);
 });
@@ -282,7 +287,7 @@ api.get("/samples/:sample_id", async (c) => {
 // workflows
 // ====================================================================
 
-api.post("/workflows", async (c) => {
+api.post("/workflows", describeRoute({ summary: "Register (upsert) a workflow version", tags: ["workflows"], requestBody: { content: { "application/json": { schema: resolver(S.RegisterWorkflowRequest) } } }, responses: { "201": { description: "OK", content: { "application/json": { schema: resolver(S.Workflow) } } } } }), async (c) => {
   const body = await json(c);
   for (const k of ["workflow_id", "version", "repository_url", "revision"]) {
     if (!body[k]) return c.json({ detail: `${k} is required` }, 422);
@@ -290,14 +295,14 @@ api.post("/workflows", async (c) => {
   return c.json(await control(c.env).registerWorkflow(body), 201);
 });
 
-api.get("/workflows", async (c) => c.json(await control(c.env).listWorkflows(c.req.query("status") ?? null)));
+api.get("/workflows", describeRoute({ summary: "List workflow versions", tags: ["workflows"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(z.array(S.Workflow)) } } } } }), async (c) => c.json(await control(c.env).listWorkflows(c.req.query("status") ?? null)));
 
-api.get("/workflows/:pk{[0-9]+}", async (c) => {
+api.get("/workflows/:pk{[0-9]+}", describeRoute({ summary: "One workflow version by pk", tags: ["workflows"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.Workflow) } } }, "404": { description: "Unknown workflow" } } }), async (c) => {
   const row = await control(c.env).getWorkflow(Number(c.req.param("pk")));
   return row ? c.json(row) : notFoundWorkflow(c);
 });
 
-api.patch("/workflows/:pk{[0-9]+}/status", async (c) => {
+api.patch("/workflows/:pk{[0-9]+}/status", describeRoute({ summary: "Pause, resume or retire a version; in-flight runs finish", tags: ["workflows"], requestBody: { content: { "application/json": { schema: resolver(S.WorkflowStatusRequest) } } }, responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.Workflow) } } } } }), async (c) => {
   const { status } = await json(c);
   if (!["active", "paused", "retired"].includes(status)) {
     return c.json({ detail: "status must be one of: active, paused, retired" }, 422);
@@ -306,14 +311,14 @@ api.patch("/workflows/:pk{[0-9]+}/status", async (c) => {
   return row ? c.json(row) : notFoundWorkflow(c);
 });
 
-api.patch("/workflows/:pk{[0-9]+}/revision", async (c) => {
+api.patch("/workflows/:pk{[0-9]+}/revision", describeRoute({ summary: "Move the git revision without forcing reprocessing (ADR-0004)", tags: ["workflows"], requestBody: { content: { "application/json": { schema: resolver(S.WorkflowRevisionRequest) } } }, responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.Workflow) } } } } }), async (c) => {
   const { revision } = await json(c);
   if (!revision) return c.json({ detail: "revision is required" }, 422);
   const row = await control(c.env).updateWorkflowRevision(Number(c.req.param("pk")), revision);
   return row ? c.json(row) : notFoundWorkflow(c);
 });
 
-api.get("/workflows/:pk{[0-9]+}/job-summary", async (c) => {
+api.get("/workflows/:pk{[0-9]+}/job-summary", describeRoute({ summary: "Job counts by status, from the trigger-maintained job_counts table", tags: ["workflows"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.JobSummary) } } } } }), async (c) => {
   const row = await control(c.env).jobSummary(Number(c.req.param("pk")));
   return row ? c.json(row) : notFoundWorkflow(c);
 });
@@ -322,7 +327,7 @@ api.get("/workflows/:pk{[0-9]+}/job-summary", async (c) => {
 // task logs — blobs live in R2, never in the control plane
 // ====================================================================
 
-api.post("/task-logs", async (c) => {
+api.post("/task-logs", describeRoute({ summary: "Upload one task log file (multipart) to R2", tags: ["task-logs"], responses: { "201": { description: "OK" } } }), async (c) => {
   const form = await c.req.formData().catch(() => null);
   if (!form) return c.json({ detail: "expected multipart form data" }, 422);
   const runName = String(form.get("run_name") ?? "");
@@ -348,7 +353,7 @@ api.post("/task-logs", async (c) => {
   );
 });
 
-api.get("/task-logs/:run_name/:task_hash{.+}", async (c) => {
+api.get("/task-logs/:run_name/:task_hash{.+}", describeRoute({ summary: "Task logs for one work-dir hash (ab/cdef12 form)", tags: ["task-logs"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.TaskLogs) } } } } }), async (c) => {
   const runName = c.req.param("run_name");
   const taskHash = c.req.param("task_hash");
   const listed = await c.env.STORE.list({ prefix: `task-logs/${runName}/${taskHash}/` });
@@ -372,16 +377,16 @@ api.get("/task-logs/:run_name/:task_hash{.+}", async (c) => {
 // daemons
 // ====================================================================
 
-api.put("/daemons/heartbeat", async (c) => c.json(await control(c.env).daemonHeartbeat(await json(c))));
+api.put("/daemons/heartbeat", describeRoute({ summary: "Daemon heartbeat; upserts the fleet row", tags: ["daemons"], requestBody: { content: { "application/json": { schema: resolver(S.DaemonHeartbeatRequest) } } }, responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.Daemon) } } } } }), async (c) => c.json(await control(c.env).daemonHeartbeat(await json(c))));
 
-api.get("/daemons", async (c) =>
+api.get("/daemons", describeRoute({ summary: "List daemons (active = seen within 2 min)", tags: ["daemons"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(z.array(S.Daemon)) } } } } }), async (c) =>
   c.json(await control(c.env).listDaemons(c.req.query("active_only") === "true")),
 );
-api.get("/daemons/", async (c) =>
+api.get("/daemons/", describeRoute({ summary: "Alias of /daemons", tags: ["daemons"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(z.array(S.Daemon)) } } } } }), async (c) =>
   c.json(await control(c.env).listDaemons(c.req.query("active_only") === "true")),
 );
 
-api.delete("/daemons/:agent_id{.+}", async (c) => {
+api.delete("/daemons/:agent_id{.+}", describeRoute({ summary: "Remove a daemon row", tags: ["daemons"], responses: { "200": { description: "OK" } } }), async (c) => {
   const id = c.req.param("agent_id");
   const ok = await control(c.env).deleteDaemon(id);
   return ok ? c.json({ deleted: id }) : c.json({ detail: `Agent '${id}' not found` }, 404);
@@ -391,10 +396,10 @@ api.delete("/daemons/:agent_id{.+}", async (c) => {
 // cohorts (collections)
 // ====================================================================
 
-api.get("/cohorts", async (c) => c.json(await control(c.env).listCohorts()));
-api.get("/cohorts/leaderboard", async (c) => c.json(await control(c.env).leaderboard()));
+api.get("/cohorts", describeRoute({ summary: "List collections with sample counts", tags: ["cohorts"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(z.array(S.Cohort)) } } } } }), async (c) => c.json(await control(c.env).listCohorts()));
+api.get("/cohorts/leaderboard", describeRoute({ summary: "Completion progress per collection against active workflows", tags: ["cohorts"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(z.array(S.Cohort)) } } } } }), async (c) => c.json(await control(c.env).leaderboard()));
 
-api.get("/cohorts/:id/summary", async (c) => {
+api.get("/cohorts/:id/summary", describeRoute({ summary: "Job status breakdown for one collection", tags: ["cohorts"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.CohortSummary) } } }, "404": { description: "Unknown cohort" } } }), async (c) => {
   const row = await control(c.env).cohortSummary(c.req.param("id"), {
     workflow_id: c.req.query("workflow_id") ?? null,
     workflow_version: c.req.query("workflow_version") ?? null,
@@ -403,13 +408,13 @@ api.get("/cohorts/:id/summary", async (c) => {
   return row ? c.json(row) : c.json({ detail: `Cohort '${c.req.param("id")}' not found.` }, 404);
 });
 
-api.get("/cohorts/:id/failures", (c) => historicalTier(c));
+api.get("/cohorts/:id/failures", describeRoute({ summary: "Historical tier: returns 501 until a query tier exists over the R2 event archive (#175)", tags: ["cohorts"], responses: { "501": { description: "OK" } } }), (c) => historicalTier(c));
 
 // ====================================================================
 // metrics
 // ====================================================================
 
-api.get("/metrics/processes/running", async (c) => {
+api.get("/metrics/processes/running", describeRoute({ summary: "In-flight process counts from SinkDO", tags: ["metrics"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.RunningProcesses) } } } } }), async (c) => {
   const [live, active] = await Promise.all([
     sink(c.env).runningProcesses(),
     control(c.env).activeRunCount(),
@@ -421,22 +426,22 @@ api.get("/metrics/processes/running", async (c) => {
 // R2 rather than in a queryable table. Explicit 501 beats a silently empty
 // response — see cf/README.md "historical tier".
 for (const p of ["summary", "retries", "resources-by-attempt", "failures", "failure-signatures", "tasks", "timeline"]) {
-  api.get(`/metrics/processes/${p}`, (c) => historicalTier(c));
+  api.get(`/metrics/processes/${p}`, describeRoute({ summary: `Historical tier (${p}): 501 until a query tier exists over the R2 event archive (#175)`, tags: ["metrics"], responses: { "501": { description: "Not built yet" } } }), (c) => historicalTier(c));
 }
 
 // ====================================================================
 // admin
 // ====================================================================
 
-api.post("/admin/reconcile-jobs", async (c) => c.json({ jobs_created: await control(c.env).reconcileJobs() }));
+api.post("/admin/reconcile-jobs", describeRoute({ summary: "Create pending jobs for samples × active workflow versions", tags: ["admin"], responses: { "200": { description: "OK" } } }), async (c) => c.json({ jobs_created: await control(c.env).reconcileJobs() }));
 
-api.post("/admin/reset-running", async (c) => {
+api.post("/admin/reset-running", describeRoute({ summary: "Reset running/failed jobs of a workflow to pending (?workflow_pk=)", tags: ["admin"], responses: { "200": { description: "OK" } } }), async (c) => {
   const pk = num(c.req.query("workflow_pk"), NaN);
   if (Number.isNaN(pk)) return c.json({ detail: "workflow_pk is required" }, 422);
   return c.json({ reset: await control(c.env).resetJobsToPending(pk, ["running", "failed"]) });
 });
 
-api.post("/admin/close-run", async (c) => {
+api.post("/admin/close-run", describeRoute({ summary: "Force-close a run as completed and sweep its jobs", tags: ["admin"], requestBody: { content: { "application/json": { schema: resolver(S.CloseRunRequest) } } }, responses: { "200": { description: "OK" } } }), async (c) => {
   const runName = c.req.query("run_name") ?? (await json(c)).run_name;
   if (!runName) return c.json({ detail: "run_name is required" }, 422);
   const res = await control(c.env).closeRun(runName, "completed", null);
@@ -447,12 +452,12 @@ api.post("/admin/close-run", async (c) => {
 
 // Both of these were cron-driven sweeps in v1. Expiry is a per-run timer now,
 // so they have nothing to do — kept so existing crontabs and scripts don't 404.
-api.post("/admin/expire-stale-runs", (c) => {
+api.post("/admin/expire-stale-runs", describeRoute({ summary: "Deprecated no-op: the submit backstop is a per-run timer", tags: ["admin"], deprecated: true, responses: { "200": { description: "OK" } } }), (c) => {
   c.header("Deprecation", "true");
   return c.json({ stale_runs_closed: 0, jobs_swept: 0 });
 });
 
-api.post("/admin/heartbeat-watchdog", (c) => {
+api.post("/admin/heartbeat-watchdog", describeRoute({ summary: "Deprecated no-op: liveness is a per-run timer", tags: ["admin"], deprecated: true, responses: { "200": { description: "OK" } } }), (c) => {
   c.header("Deprecation", "true");
   return c.json({
     checked_at: new Date().toISOString(),
@@ -463,13 +468,13 @@ api.post("/admin/heartbeat-watchdog", (c) => {
   });
 });
 
-api.post("/admin/requeue-dead-letter", async (c) =>
+api.post("/admin/requeue-dead-letter", describeRoute({ summary: "Return dead-lettered jobs to pending", tags: ["admin"], responses: { "200": { description: "OK" } } }), async (c) =>
   c.json({ requeued: await control(c.env).requeueDeadLetter() }),
 );
 
 // Housekeeping the daily cron also does; exposed so an operator who just
 // retired a version does not have to wait for it.
-api.post("/admin/archive-retired", async (c) => {
+api.post("/admin/archive-retired", describeRoute({ summary: "Archive retired versions' jobs to R2 now instead of at the daily cron", tags: ["admin"], responses: { "200": { description: "OK" } } }), async (c) => {
   const pk = c.req.query("workflow_pk");
   return c.json(await control(c.env).archiveRetiredJobs(pk ? Number(pk) : undefined));
 });
@@ -483,7 +488,7 @@ api.post("/admin/archive-retired", async (c) => {
  * able to empty the control plane. `resetAllowed` fails closed: anything other
  * than the exact string "true" refuses.
  */
-api.post("/admin/reset", async (c) => {
+api.post("/admin/reset", describeRoute({ summary: "Wipe all DO state and R2 prefixes. Requires ALLOW_RESET=true", tags: ["admin"], responses: { "200": { description: "OK" }, "403": { description: "ALLOW_RESET is not true" } } }), async (c) => {
   if (!resetAllowed(c.env)) {
     return c.json({ detail: "Reset is disabled here. Set ALLOW_RESET=true to enable it." }, 403);
   }
@@ -513,10 +518,37 @@ api.post("/admin/reset", async (c) => {
   return c.json({ cleared, runs_finalized: runs.length, r2_objects_deleted: objects });
 });
 
-api.get("/admin/dispatchability", async (c) => c.json(await control(c.env).dispatchability()));
-api.get("/admin/stats", async (c) => c.json(await control(c.env).stats()));
+api.get("/admin/dispatchability", describeRoute({ summary: "Pending work no active daemon can claim", tags: ["admin"], responses: { "200": { description: "OK" } } }), async (c) => c.json(await control(c.env).dispatchability()));
+api.get("/admin/stats", describeRoute({ summary: "Counts of everything, from job_counts and runs", tags: ["admin"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.Stats) } } } } }), async (c) => c.json(await control(c.env).stats()));
 
-api.get("/health", (c) => c.json({ message: "App Started", status: "Healthy", database: "Connected" }));
+// ====================================================================
+// contract: the document is built from the router at request time, so it
+// cannot list a route that does not exist. Schemas live in ./schemas.ts.
+// ====================================================================
+
+api.get(
+  "/openapi.json",
+  openAPIRouteHandler(api, {
+    documentation: {
+      info: {
+        title: "nf_telemetry v2",
+        version: "2.0.0",
+        description:
+          "Cloudflare-native control plane for curatedMetagenomicData processing. " +
+          "Wire-compatible with v1: nf-client, the SLURM run wrapper and the Nextflow weblog " +
+          "reporter only need a new base URL. Every route is served at both / and /api. " +
+          "Writes require a bearer token except /telemetry and /runs/{run}/event. " +
+          "See cf/README.md and cf/docs/diagrams.md in the repository.",
+      },
+      servers: [{ url: "https://nf-telemetry.seandavi.workers.dev/api" }],
+      components: { securitySchemes: { bearer: { type: "http", scheme: "bearer" } } },
+      security: [{ bearer: [] }],
+    },
+  }),
+);
+api.get("/docs", Scalar({ url: "/openapi.json", pageTitle: "nf_telemetry v2 API" }));
+
+api.get("/health", describeRoute({ summary: "Liveness probe", tags: ["health"], responses: { "200": { description: "OK" } } }), (c) => c.json({ message: "App Started", status: "Healthy", database: "Connected" }));
 
 // ====================================================================
 // app assembly
