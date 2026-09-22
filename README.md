@@ -98,6 +98,14 @@ without it, the job is failed (or re-queued if retries remain).
 
 ## Architecture
 
+> **v2 (Cloudflare control plane).** A wire-compatible replacement for the server
+> below lives in [`cf/`](cf/): Workers + Durable Objects + R2, no Postgres, no cron
+> sweepers. It is deployed and verified end to end but no cluster points at it yet.
+> Start with [`cf/README.md`](cf/README.md), the diagrams in
+> [`cf/docs/diagrams.md`](cf/docs/diagrams.md) (topology, run sequence, timers, state
+> machines) and [ADR 0006](docs/adr/0006-cloudflare-control-plane.md). The rest of
+> this section describes v1, which is what production runs today.
+
 ```
                         ┌─────────────────────────────────┐
                         │       HPC cluster (Anvil/Alpine) │

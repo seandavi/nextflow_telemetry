@@ -1,6 +1,8 @@
-# nf_telemetry v2 — data model and object topology
+# nf_telemetry v2 — data model, object topology, and lifecycles
 
-Two views of `cf/`: what ControlDO stores, and how the three Durable Object classes relate.
+Four views of `cf/`: what ControlDO stores, how the three Durable Object classes relate,
+what one run looks like end to end, and how the three timers close a run nobody reports on.
+Diagrams are Mermaid and render on GitHub.
 
 ---
 
@@ -203,3 +205,199 @@ flowchart TB
 - Nothing here is a cron sweeper. The daily trigger takes a snapshot and reclaims retired
   jobs; claim expiry and heartbeat death are RunDO alarms, which is what let the v1
   `requeue-expired`, `expire-stale-runs` and `heartbeat-watchdog` endpoints become no-ops.
+
+---
+
+## One run, happy path
+
+Every arrow into the Worker is a v1 path. The daemon and the weblog are the only callers
+that need to know the server exists; the wrapper is best-effort and can never fail a run.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant D as nf-client daemon
+    participant W as SLURM wrapper
+    participant N as nextflow -with-weblog
+    participant API as API Worker
+    participant C as ControlDO
+    participant R as RunDO (run_name)
+    participant S as SinkDO
+    participant R2
+
+    D->>API: POST /dispatch/batch
+    API->>C: claimBatch(limit, workflow filter)
+    C-->>API: run_name + jobs (status: claimed)
+    API->>R: arm("claim", CLAIM_TTL 5 min)
+    API-->>D: 200 ClaimedBatch
+
+    D->>D: sbatch wrapper job
+    D->>API: POST /dispatch/submitted
+    API->>C: markSubmitted(run_name, slurm job id)
+    API->>R: arm("backstop", SUBMIT_BACKSTOP 48 h)
+
+    Note over W: SLURM starts the job
+    W->>API: POST /runs/{run}/event wrapper_started
+    API->>C: applyRunEvent
+    API->>R: heartbeat(LIVENESS 10 min)
+    W->>API: pre_nextflow (wait_seconds)
+    loop every 60 s
+        W->>API: heartbeat
+        API->>R: heartbeat → re-arm alarm
+        R--)C: last_heartbeat_at (at most every 5 min)
+    end
+
+    W->>N: nextflow run ... -name run_name
+    N->>API: POST /telemetry started
+    API->>C: markRunning(run_name, run_id)
+    API->>S: write(event)
+    loop per task
+        N->>API: process_submitted / started / completed
+        API->>S: write(event) + in-flight counters
+    end
+    N->>API: process_completed MARK_COMPLETE (sample)
+    API->>C: completeSample(run_name, sample_id) → job completed
+    N->>API: POST /telemetry completed
+    API->>C: closeRun("completed") → sweep incomplete jobs, ledger
+    C->>R2: ledger/YYYY/MM/{run_name}.jsonl
+    API->>R: finalize() → alarm cancelled, storage deleted
+
+    W->>API: wrapper_exited (exit_code) + .nextflow.log multipart
+    API->>R2: nextflow-logs/{run}/nextflow.log, wrapper_output.log
+    API->>C: closeRun(...) → already_closed, no-op
+    S->>R2: telemetry/events/dt=…/*.ndjson.gz (500 rows or 60 s)
+```
+
+**Reading notes**
+
+- Steps 3, 8 and 13 are the three phases a RunDO can be in. Each `arm`/`heartbeat`
+  replaces the previous alarm; a RunDO has exactly one.
+- The run is closed at step 25 by the weblog, not at step 29 by the wrapper. `closeRun`
+  is idempotent, so whichever terminal signal lands first wins and the rest are no-ops.
+  This is why `wrapper_exited` with a non-zero code cannot un-complete a run that
+  Nextflow already reported as completed.
+- `MARK_COMPLETE` (step 22) completes the job the moment it lands. Jobs still not
+  completed when the run closes are swept: `retry_count < max_retries` → back to
+  `pending` with `retry_count + 1`; otherwise `failed` plus a `dead_letter` row.
+- Only step 1, 6 and the operator routes need the bearer token. `/telemetry` and
+  `/runs/{run}/event` are open because neither the weblog reporter nor the wrapper can
+  carry one (`authExempt` in `index.ts`).
+
+---
+
+## The three timers
+
+What happens when the happy path stops. Each is a RunDO alarm; none is a sweeper.
+Verified on the deployed worker 2026-09-21 with a real clock (see `cf/README.md`).
+
+```mermaid
+sequenceDiagram
+    participant D as daemon / wrapper
+    participant API as API Worker
+    participant R as RunDO
+    participant C as ControlDO
+    participant R2
+
+    rect rgb(245, 245, 235)
+    Note over D,R2: 1 · Claim expiry — daemon claimed but never confirmed submitted
+    D->>API: POST /dispatch/batch
+    API->>R: arm("claim", 5 min)
+    Note over D: daemon dies before sbatch
+    R->>R: alarm fires at claimed_at + 5:00
+    R->>C: expireClaim(run_name)
+    C->>C: run → expired · jobs → pending, retry_count unchanged
+    Note right of C: nothing was attempted, so no retry is burned
+    end
+
+    rect rgb(235, 245, 245)
+    Note over D,R2: 2 · Submit backstop — sbatch accepted, wrapper never started
+    D->>API: POST /dispatch/submitted
+    API->>R: arm("backstop", 48 h)
+    Note over D: SLURM holds the job past the backstop
+    R->>R: alarm fires
+    R->>C: closeRun("failed", "no wrapper activity within submit backstop")
+    C->>C: sweep: requeue or dead-letter per retry budget
+    C->>R2: ledger record
+    end
+
+    rect rgb(245, 235, 235)
+    Note over D,R2: 3 · Liveness — wrapper started, then heartbeats stopped
+    D->>API: heartbeat
+    API->>R: heartbeat(10 min) → re-arm
+    Note over D: SIGKILL / node failure / walltime
+    R->>R: alarm fires at last_heartbeat + 10:00
+    R->>C: closeRun("failed", "presumed dead: heartbeats stopped")
+    C->>C: sweep: requeue or dead-letter per retry budget
+    C->>R2: ledger record
+    end
+
+    Note over R: after any alarm: storage.deleteAll() — the object is gone
+```
+
+| Timer | Armed by | Fires after | Terminal state | Retry burned? |
+|---|---|---|---|---|
+| claim | `POST /dispatch/batch` | `CLAIM_TTL_MINUTES` (5) | run `expired`, jobs `pending` | no |
+| backstop | `POST /dispatch/submitted` | `SUBMIT_BACKSTOP_HOURS` (48) | run `failed`, jobs swept | yes |
+| liveness | `wrapper_started`, every `heartbeat` | `LIVENESS_MINUTES` (10) | run `failed`, jobs swept | yes |
+
+All three are cancelled by `finalize()`, which every terminal path calls: weblog
+`completed`, `wrapper_exited`, `POST /admin/close-run`, and `POST /admin/reset`.
+
+---
+
+## State machines
+
+Every transition below is one ControlDO method, and the `job_counts` triggers fire on
+each. There are no other writers. Both machines are the v1 ones; only the owner changed.
+
+### Job
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending : reconcileJobs
+    pending --> claimed : claimBatch
+    claimed --> pending : expireClaim (claim TTL, no retry burned)
+    claimed --> submitted : markSubmitted
+    submitted --> running : markRunning (weblog started)
+    submitted --> completed : completeSample (MARK_COMPLETE)
+    running --> completed : completeSample (MARK_COMPLETE)
+    submitted --> pending : closeRun sweep, retry_count < max_retries
+    running --> pending : closeRun sweep, retry_count < max_retries
+    submitted --> failed : closeRun sweep, budget exhausted
+    running --> failed : closeRun sweep, budget exhausted
+    failed --> pending : requeueDeadLetter (operator)
+    completed --> [*]
+    note right of failed : also writes a dead_letter row
+    note right of completed : terminal. A late MARK_COMPLETE or a failing wrapper never flips it back
+```
+
+### Run
+
+```mermaid
+stateDiagram-v2
+    [*] --> claimed : claimBatch (mints run_name, arms claim timer)
+    claimed --> expired : expireClaim (claim alarm)
+    claimed --> submitted : markSubmitted (arms backstop)
+    submitted --> running : markRunning (weblog started)
+    submitted --> completed : closeRun "completed"
+    running --> completed : closeRun "completed"
+    submitted --> failed : closeRun "failed"
+    running --> failed : closeRun "failed"
+    expired --> [*]
+    completed --> [*]
+    failed --> [*]
+    note right of completed : callers of closeRun: weblog completed, wrapper_exited 0, admin close-run
+    note right of failed : callers of closeRun: wrapper_exited non-zero, backstop alarm, liveness alarm, admin close-run
+```
+
+**Reading notes**
+
+- A run's `status` and a job's `status` are independent columns. A run can be
+  `completed` while its job is `failed`: Nextflow finished, but `MARK_COMPLETE` never
+  fired for that sample, so the sweep failed it. `fail-mark` in `nf_testing` produces
+  exactly this.
+- `closeRun` on an already-terminal run returns `already_closed: true` and changes
+  nothing. That guard is what makes the four callers of each terminal state safe to
+  race.
+- `expired` is the only run state that costs the jobs nothing. Everything else that
+  ends a run without `MARK_COMPLETE` spends one unit of the retry budget.
