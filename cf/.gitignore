@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+dist/
+
+# Quarto render output of docs/diagrams.md — regenerate, don't track.
+# diagrams_files/ alone is ~900K of vendored bootstrap/popper/tippy.
+docs/diagrams_files/
+docs/*.html

@@ -24,6 +24,11 @@ the cluster" is wrong for this deployment.
 
 ## Cluster inventory (SSH, users, paths)
 
+**Paths are standardised as `NF_TEL_*` variables**, sourced from `~/.nf_tel.env`
+on each login node (`source ~/.nf_tel.env` in non-login shells). Full table and
+storage facts: `docs/hpc-layout.md`; sources: `config/nf_tel.env.{alpine,anvil}`.
+Prefer `$NF_TEL_LOGS`, `$NF_TEL_DAEMON`, `$NF_TEL_CONFIG` over the literal paths below.
+
 Two live SLURM clusters run `cmgd_nextflow`. Any triage/report agent needs this
 to reach `sacct` / `squeue` / `srun`. The live roster + each daemon's full config
 is also queryable at runtime — `GET /api/daemons/` returns `config_yaml`

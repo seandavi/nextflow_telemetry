@@ -1,0 +1,208 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 1080" width="960" height="1080" data-generator="fireworks-tech-graph" data-schema-version="1" data-text-metrics="heuristic-v1" data-style-id="3" data-visual-theme="Blueprint" data-diagram-type="architecture" data-motion-scene="" data-semantic-profile="generic" data-semantic-valid="true" data-quality-profile="standard" data-max-bends-per-edge="12" data-max-total-bends="100" data-max-route-stretch="5.0" data-max-bridged-crossings="8" data-min-node-gap="0.0" data-min-container-gutter="0.0" data-min-label-clearance="2.0" data-min-segment-length="0.0">
+  <defs>
+    <marker id="arrowA" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#67e8f9"/>
+    </marker>
+    <marker id="arrowB" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee"/>
+    </marker>
+    <marker id="arrowC" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrowE" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#fde047"/>
+    </marker>
+    <marker id="arrowF" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#c084fc"/>
+    </marker>
+    <marker id="arrowG" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/>
+    </marker>
+    <marker id="arrowH" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#bae6fd"/>
+    </marker>
+    <pattern id="blueprintGrid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#0ea5e9" stroke-opacity="0.12" stroke-width="1"/>
+    </pattern>
+    <style>
+    text { font-family: 'SF Mono', 'Fira Code', Menlo, 'Microsoft YaHei', 'SimHei', monospace; }
+    .title { font-size: 30px; font-weight: 700; fill: #e0f2fe; }
+    .subtitle { font-size: 14px; font-weight: 500; fill: #7dd3fc; }
+    .section { font-size: 13px; font-weight: 700; fill: #67e8f9; letter-spacing: 1.4px; }
+    .section-sub { font-size: 12px; font-weight: 500; fill: #7dd3fc; }
+    .node-title { font-weight: 700; fill: #e0f2fe; }
+    .node-sub { font-size: 12px; font-weight: 500; fill: #bae6fd; }
+    .node-type { font-size: 11px; font-weight: 700; fill: #7dd3fc; letter-spacing: 0.08em; }
+    .arrow-label { font-size: 12px; font-weight: 600; fill: #e0f2fe; }
+    .legend { font-size: 12px; font-weight: 500; fill: #bae6fd; }
+    .footnote { font-size: 12px; font-weight: 500; fill: #7dd3fc; }
+    .metric-label { font-size: 8.5px; font-weight: 700; fill: #7dd3fc; text-transform: uppercase; }
+    .metric-value { font-size: 9.5px; font-weight: 700; fill: #e0f2fe; }
+    </style>
+  </defs>
+  <rect data-graph-role="background" width="960.0" height="1080.0" fill="#082f49"/>
+  <text x="480.0" y="56" text-anchor="middle" class="title">nf_telemetry v2 — Cloudflare Control Plane</text>
+  <text x="480.0" y="82" text-anchor="middle" class="subtitle">Workers + Durable Objects + R2 · drop-in wire-compatible replacement for the v1 FastAPI/Postgres server</text>
+  <g id="hpc" data-graph-role="container" data-container-id="hpc" data-semantic-role="boundary" data-graph-bounds="40,100,600,270">
+  <rect data-graph-role="container" x="40.0" y="100.0" width="560.0" height="170.0" rx="16.0" fill="none" stroke="#0ea5e9" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="58.0" y="124.0" class="section">HPC CLUSTERS · ANVIL / ALPINE — UNCHANGED FROM V1</text>
+    <rect id="hpc-header" data-graph-role="reserved" data-reserved-kind="container-header" x="48" y="106" width="370.08" height="30" fill="none" stroke="none"/>
+  </g>
+  <g id="cron_box" data-graph-role="container" data-container-id="cron_box" data-semantic-role="boundary" data-graph-bounds="620,100,920,270">
+  <rect data-graph-role="container" x="620.0" y="100.0" width="300.0" height="170.0" rx="16.0" fill="none" stroke="#0ea5e9" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="638.0" y="124.0" class="section">SCHEDULED</text>
+    <rect id="cron_box-header" data-graph-role="reserved" data-reserved-kind="container-header" x="628" y="106" width="97.86" height="30" fill="none" stroke="none"/>
+  </g>
+  <g id="do_layer" data-graph-role="container" data-container-id="do_layer" data-semantic-role="boundary" data-graph-bounds="40,500,800,700">
+  <rect data-graph-role="container" x="40.0" y="500.0" width="760.0" height="200.0" rx="16.0" fill="none" stroke="#0ea5e9" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="58.0" y="524.0" class="section">DURABLE OBJECTS — COMPUTE + STATE LAYER</text>
+    <rect id="do_layer-header" data-graph-role="reserved" data-reserved-kind="container-header" x="48" y="506" width="310.02" height="30" fill="none" stroke="none"/>
+  </g>
+  <g id="storage" data-graph-role="container" data-container-id="storage" data-semantic-role="boundary" data-graph-bounds="40,750,920,940">
+  <rect data-graph-role="container" x="40.0" y="750.0" width="880.0" height="190.0" rx="16.0" fill="none" stroke="#0ea5e9" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="58.0" y="774.0" class="section">R2 — OBJECT STORAGE</text>
+    <rect id="storage-header" data-graph-role="reserved" data-reserved-kind="container-header" x="48" y="756" width="164.68" height="30" fill="none" stroke="none"/>
+  </g>
+  <path id="e1-daemon-api" data-graph-role="edge" data-edge-id="e1-daemon-api" data-source="daemon" data-target="api" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="1" data-route-stretch="1.0" data-bridges="" d="M 133,216 L 133,375 L 290,375" fill="none" stroke="#67e8f9" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="e2-wrapper-api" data-graph-role="edge" data-edge-id="e2-wrapper-api" data-source="wrapper" data-target="api" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 319,216 L 319,240 L 471,240 L 471,320" fill="none" stroke="#67e8f9" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="e3-nextflow-api" data-graph-role="edge" data-edge-id="e3-nextflow-api" data-source="nextflow" data-target="api" data-edge-kind="flow" data-topic-id="" data-flow="data" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 505,216 L 505,236.4 L 489,236.4 L 489,320" fill="none" stroke="#fde047" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowE)"/>
+  <path id="e4-cron-api" data-graph-role="edge" data-edge-id="e4-cron-api" data-source="cron" data-target="api" data-edge-kind="flow" data-topic-id="" data-flow="async" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="1" data-route-stretch="1.0" data-bridges="" d="M 770,250 L 770,366 L 670,366" fill="none" stroke="#c084fc" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowF)" stroke-dasharray="6,4"/>
+  <path id="api-control" data-graph-role="edge" data-edge-id="api-control" data-source="api" data-target="control" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="3" data-route-stretch="1.483" data-bridges="" d="M 462,430 L 462,450.4 L 48,450.4 L 48,540 L 150,540" fill="none" stroke="#67e8f9" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="api-run" data-graph-role="edge" data-edge-id="api-run" data-source="api" data-target="run" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 480,430 L 480,481.4 L 420,481.4 L 420,540" fill="none" stroke="#67e8f9" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="api-sink" data-graph-role="edge" data-edge-id="api-sink" data-source="api" data-target="sink" data-edge-kind="flow" data-topic-id="" data-flow="data" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 498,430 L 498,450.4 L 690,450.4 L 690,540" fill="none" stroke="#fde047" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowE)"/>
+  <path id="e7-api-r2" data-graph-role="edge" data-edge-id="e7-api-r2" data-source="api" data-target="r2" data-edge-kind="flow" data-topic-id="" data-flow="write" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="3" data-route-stretch="1.464" data-bridges="" d="M 670,384 L 804,384 L 804,769.6 L 498,769.6 L 498,790" fill="none" stroke="#22d3ee" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowB)"/>
+  <path id="run-control-alarm" data-graph-role="edge" data-edge-id="run-control-alarm" data-source="run" data-target="control" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="0" data-route-stretch="1.0" data-bridges="" d="M 330,601 L 240,601" fill="none" stroke="#67e8f9" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="run-control-heartbeat" data-graph-role="edge" data-edge-id="run-control-heartbeat" data-source="run" data-target="control" data-edge-kind="flow" data-topic-id="" data-flow="neutral" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="0" data-route-stretch="1.0" data-bridges="" d="M 330,619 L 240,619" fill="none" stroke="#bae6fd" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowH)" stroke-dasharray="6,4"/>
+  <path id="e5-control-r2" data-graph-role="edge" data-edge-id="e5-control-r2" data-source="control" data-target="r2" data-edge-kind="flow" data-topic-id="" data-flow="write" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 150,680 L 150,704 L 462,704 L 462,790" fill="none" stroke="#22d3ee" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowB)"/>
+  <path id="e6-sink-r2" data-graph-role="edge" data-edge-id="e6-sink-r2" data-source="sink" data-target="r2" data-edge-kind="flow" data-topic-id="" data-flow="write" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 690,680 L 690,704 L 480,704 L 480,790" fill="none" stroke="#22d3ee" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowB)"/>
+  <g id="node-daemon" data-graph-role="node" data-node-id="daemon" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="60,140,206,216">
+  <rect x="60.0" y="140.0" width="146.0" height="76.0" rx="8.0" fill="#0b3b5e" stroke="#67e8f9" stroke-width="1.8"/>
+  <text x="133.0" y="178.0" text-anchor="middle" class="node-title" font-size="13.22">nf-client daemon</text>
+  <text x="133.0" y="200.0" text-anchor="middle" class="node-sub">claim · confirm</text>
+  </g>
+  <g id="node-wrapper" data-graph-role="node" data-node-id="wrapper" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="246,140,392,216">
+  <rect x="246.0" y="140.0" width="146.0" height="76.0" rx="8.0" fill="#0b3b5e" stroke="#67e8f9" stroke-width="1.8"/>
+  <text x="319.0" y="178.0" text-anchor="middle" class="node-title" font-size="12.0">SLURM run wrapper</text>
+  <text x="319.0" y="200.0" text-anchor="middle" class="node-sub">heartbeats · logs</text>
+  </g>
+  <g id="node-nextflow" data-graph-role="node" data-node-id="nextflow" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="432,140,578,216">
+  <rect x="432.0" y="140.0" width="146.0" height="76.0" rx="8.0" fill="#0b3b5e" stroke="#67e8f9" stroke-width="1.8"/>
+  <text x="505.0" y="178.0" text-anchor="middle" class="node-title" font-size="12.0">nextflow -with-weblog</text>
+  <text x="505.0" y="200.0" text-anchor="middle" class="node-sub">weblog events</text>
+  </g>
+  <g id="node-cron" data-graph-role="node" data-node-id="cron" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="650,140,890,250">
+  <rect x="650.0" y="140.0" width="240.0" height="110.0" rx="8.0" fill="#0b3b5e" stroke="#67e8f9" stroke-width="1.8"/>
+  <text x="770.0" y="195.0" text-anchor="middle" class="node-title" font-size="18.0">Cron Trigger</text>
+  <text x="770.0" y="217.0" text-anchor="middle" class="node-sub">06:00 UTC daily</text>
+  <rect x="668.0" y="230.0" width="82" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="709.0" y="241.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">snapshot</text>
+  <rect x="758.0" y="230.0" width="74" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="795.0" y="241.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">archive</text>
+  </g>
+  <g id="node-api" data-graph-role="node" data-node-id="api" data-semantic-role="double_rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="290,320,670,430">
+  <rect x="290.0" y="320.0" width="380.0" height="110.0" rx="8.0" fill="#0b3b5e" stroke="#67e8f9" stroke-width="2.0"/>
+  <rect x="296.0" y="326.0" width="368.0" height="98.0" rx="5.0" fill="none" stroke="#67e8f9" stroke-width="1.2" opacity="0.65"/>
+  <text x="480.0" y="375.0" text-anchor="middle" class="node-title" font-size="18.0">API Worker · Hono</text>
+  <text x="480.0" y="397.0" text-anchor="middle" class="node-sub">parse → route, no business logic</text>
+  <rect x="308.0" y="410.0" width="146" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="381.0" y="421.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">mounted / + /api</text>
+  </g>
+  <g id="node-control" data-graph-role="node" data-node-id="control" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="60,540,240,680">
+  <rect x="60.0" y="540.0" width="180.0" height="140.0" rx="8.0" fill="#0b3b5e" stroke="#67e8f9" stroke-width="1.8"/>
+  <text x="150.0" y="610.0" text-anchor="middle" class="node-title" font-size="18.0">ControlDO</text>
+  <text x="150.0" y="632.0" text-anchor="middle" class="node-sub">singleton · all status writes</text>
+  <rect x="78.0" y="660.0" width="66" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="111.0" y="671.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">SQLite</text>
+  <rect x="152.0" y="660.0" width="74" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="189.0" y="671.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">no lock</text>
+  </g>
+  <g id="node-run" data-graph-role="node" data-node-id="run" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="330,540,510,680">
+  <rect x="330.0" y="540.0" width="180.0" height="140.0" rx="8.0" fill="#0b3b5e" stroke="#67e8f9" stroke-width="1.8"/>
+  <text x="420.0" y="610.0" text-anchor="middle" class="node-title" font-size="18.0">RunDO</text>
+  <text x="420.0" y="632.0" text-anchor="middle" class="node-sub">×1 per live run · ephemeral</text>
+  <rect x="348.0" y="660.0" width="106" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="401.0" y="671.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">1 alarm/run</text>
+  <rect x="462.0" y="660.0" width="90" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="507.0" y="671.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">ephemeral</text>
+  </g>
+  <g id="node-sink" data-graph-role="node" data-node-id="sink" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="600,540,780,680">
+  <rect x="600.0" y="540.0" width="180.0" height="140.0" rx="8.0" fill="#0b3b5e" stroke="#67e8f9" stroke-width="1.8"/>
+  <text x="690.0" y="610.0" text-anchor="middle" class="node-title" font-size="18.0">SinkDO</text>
+  <text x="690.0" y="632.0" text-anchor="middle" class="node-sub">event buffer + counters</text>
+  <rect x="618.0" y="660.0" width="66" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="651.0" y="671.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">buffer</text>
+  <rect x="692.0" y="660.0" width="82" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="733.0" y="671.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">counters</text>
+  </g>
+  <g id="node-r2" data-graph-role="node" data-node-id="r2" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="280,790,680,890">
+  <rect x="280.0" y="790.0" width="400.0" height="100.0" rx="8.0" fill="#0b3b5e" stroke="#67e8f9" stroke-width="1.8"/>
+  <text x="480.0" y="840.0" text-anchor="middle" class="node-title" font-size="18.0">R2 Bucket · nf-telemetry</text>
+  <text x="480.0" y="862.0" text-anchor="middle" class="node-sub">logs, ledger, archive &amp; events</text>
+  <rect x="298.0" y="870.0" width="106" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="351.0" y="881.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">gzip NDJSON</text>
+  <rect x="412.0" y="870.0" width="130" height="16" rx="3" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="477.0" y="881.5" text-anchor="middle" font-size="11" font-weight="500" fill="#38bdf8">daily snapshot</text>
+  </g>
+  <g id="e1-daemon-api-label" data-graph-role="label" data-owner="e1-daemon-api" data-graph-bounds="26.24,281.5,130,301.5">
+  <rect x="26.24" y="281.5" width="103.76" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="78.12" y="295.5" text-anchor="middle" class="arrow-label">claim / confirm</text>
+  </g>
+  <g id="e2-wrapper-api-label" data-graph-role="label" data-owner="e2-wrapper-api" data-graph-bounds="328,227,462,247">
+  <rect x="328.0" y="227.0" width="134.0" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="395.0" y="241.0" text-anchor="middle" class="arrow-label">events / heartbeat</text>
+  </g>
+  <g id="e3-nextflow-api-label" data-graph-role="label" data-owner="e3-nextflow-api" data-graph-bounds="401.36,268.2,454,288.2">
+  <rect x="401.36" y="268.2" width="52.64" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="427.68" y="282.2" text-anchor="middle" class="arrow-label">weblog</text>
+  </g>
+  <g id="e4-cron-api-label" data-graph-role="label" data-owner="e4-cron-api" data-graph-bounds="707.4,294,767,314">
+  <rect x="707.4" y="294.0" width="59.6" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="737.2" y="308.0" text-anchor="middle" class="arrow-label">trigger</text>
+  </g>
+  <g id="api-control-label" data-graph-role="label" data-owner="api-control" data-graph-bounds="195.2,437.4,314.8,457.4">
+  <rect x="195.2" y="437.4" width="119.60000000000001" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="255.0" y="451.4" text-anchor="middle" class="arrow-label">state read/write</text>
+  </g>
+  <g id="api-run-label" data-graph-role="label" data-owner="api-run" data-graph-bounds="405.68,454.4,494.32,474.4">
+  <rect x="405.68" y="454.4" width="88.64000000000001" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="450.0" y="468.4" text-anchor="middle" class="arrow-label">arm deadline</text>
+  </g>
+  <g id="api-sink-label" data-graph-role="label" data-owner="api-sink" data-graph-bounds="550.04,437.4,637.96,457.4">
+  <rect x="550.04" y="437.4" width="87.92" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="594.0" y="451.4" text-anchor="middle" class="arrow-label">every event</text>
+  </g>
+  <g id="e7-api-r2-label" data-graph-role="label" data-owner="e7-api-r2" data-graph-bounds="807,562.8,874.76,582.8">
+  <rect x="807.0" y="562.8" width="67.75999999999999" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="840.88" y="576.8" text-anchor="middle" class="arrow-label">log blobs</text>
+  </g>
+  <g id="run-control-alarm-label" data-graph-role="label" data-owner="run-control-alarm" data-graph-bounds="262.16,570,307.84,590">
+  <rect x="262.16" y="570.0" width="45.68" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="285.0" y="584.0" text-anchor="middle" class="arrow-label">alarm</text>
+  </g>
+  <g id="run-control-heartbeat-label" data-graph-role="label" data-owner="run-control-heartbeat" data-graph-bounds="246.68,606,323.32,626">
+  <rect x="246.68" y="606.0" width="76.64" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="285.0" y="620.0" text-anchor="middle" class="arrow-label">heartbeat</text>
+  </g>
+  <g id="e5-control-r2-label" data-graph-role="label" data-owner="e5-control-r2" data-graph-bounds="244.04,691,367.96,711">
+  <rect x="244.04" y="691.0" width="123.92" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="306.0" y="705.0" text-anchor="middle" class="arrow-label">ledger / snapshot</text>
+  </g>
+  <g id="e6-sink-r2-label" data-graph-role="label" data-owner="e6-sink-r2" data-graph-bounds="539.12,691,630.88,711">
+  <rect x="539.12" y="691.0" width="91.76" height="20" rx="6" fill="#082f49" opacity="0.9"/>
+  <text x="585.0" y="705.0" text-anchor="middle" class="arrow-label">NDJSON flush</text>
+  </g>
+  <g id="legend" data-graph-role="legend">
+    <rect id="legend-zone" data-graph-role="reserved" data-reserved-kind="legend" x="40" y="956" width="660.4" height="46" rx="10" fill="none" stroke="none"/>
+    <line data-graph-role="decoration" x1="50.0" y1="970.0" x2="80.0" y2="970.0" stroke="#67e8f9" stroke-width="2.1" marker-end="url(#arrowA)"/>
+    <text data-graph-role="decoration" x="90.0" y="974.0" class="legend">claim / dispatch</text>
+    <line data-graph-role="decoration" x1="214.72" y1="970.0" x2="244.72" y2="970.0" stroke="#fde047" stroke-width="2.1" marker-end="url(#arrowE)"/>
+    <text data-graph-role="decoration" x="254.72" y="974.0" class="legend">telemetry event</text>
+    <line data-graph-role="decoration" x1="381.36" y1="970.0" x2="411.36" y2="970.0" stroke="#22d3ee" stroke-width="2.1" marker-end="url(#arrowB)"/>
+    <text data-graph-role="decoration" x="421.36" y="974.0" class="legend">durable write</text>
+    <line data-graph-role="decoration" x1="530.96" y1="970.0" x2="560.96" y2="970.0" stroke="#c084fc" stroke-width="2.1" marker-end="url(#arrowF)"/>
+    <text data-graph-role="decoration" x="570.96" y="974.0" class="legend">scheduled trigger</text>
+  </g>
+  <g id="footer" data-graph-role="reserved" data-graph-bounds="48,1008,552,1024">
+  <text x="48.0" y="1020.0" class="footnote">live at nf-telemetry.seandavi.workers.dev · verified end to end 2026-09-21 · v1 still serves production</text>
+  </g>
+</svg>

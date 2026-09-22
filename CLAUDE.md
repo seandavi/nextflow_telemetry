@@ -40,6 +40,14 @@ Two packages in one repo:
 - **`src/nextflow_telemetry/`** — FastAPI server (the telemetry/orchestration backend)
 - **`packages/nf_client/`** — CLI client (`nf-client`) that runs on HPC nodes to claim and submit jobs
 
+Plus a third, in-progress implementation:
+
+- **`cf/`** — v2 of the server: same wire protocol, Cloudflare Workers + Durable
+  Objects + R2 instead of FastAPI + Postgres. Not yet deployed; v1 is still the
+  live server. See `cf/README.md` for what is and isn't implemented (the
+  historical `/metrics/processes/*` tier and `/submissions` are not) and for the
+  places where it deliberately diverges from the v2 spec. TypeScript, `npm test`.
+
 ### Server layout
 
 - **`db.py`** — SQLAlchemy Core table definitions (`telemetry_tbl`, `samples_tbl`, `workflows_tbl`, `jobs_tbl`, `workflow_runs_tbl`, `dead_letter_tbl`). No ORM. Alembic imports `metadata` directly from here.
