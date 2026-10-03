@@ -80,8 +80,9 @@ Do not use `nf-client submit --dry-run` as a smoke test: fetching a batch claims
 
 | Field | Content |
 |---|---|
-| `sample_id` | BioSample accession (e.g. `SAMN12345678`) |
+| `sample_id` | md5 of the sorted, deduplicated run accessions (content address; outputs are published under it) |
 | `ncbi_accession` | Semicolon-separated run accessions (e.g. `SRR001;SRR002`) |
+| `biosample_id` | BioSample accession when known (set by study submissions; empty for cMD TSV loads) |
 
 The submit template writes a TSV with columns `sample_id` and `NCBI_accession`
 (the pipeline's column name) and passes it as `--metadata_tsv`.
