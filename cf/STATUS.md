@@ -17,7 +17,6 @@ cluster points at it yet, and the next step is the first real batch from Alpine.
 | ✓ | `just v2-e2e` reproduces the loop from an empty catalog | `justfile`, `cf/README.md` |
 | ✓ | ADR written; sequence + state diagrams | `docs/adr/0006`, `cf/docs/diagrams.md` |
 | ✓ | Both clusters: `~/.nf_tel.env` path standard, `main` checkout, housekeeping done | `docs/hpc-layout.md` |
-| → | Deployment holds the local test corpus (nf_testing, 102 samples) and one run parked in `submitted` behind the 48 h backstop | `/api/admin/stats` |
 | → | 2026-10-03: both clusters on one setup (`templates/submit_slurm.sh.j2`, `~/.nf_tel.env`) pointing at v2; token rotated; first real `cmgd_nextflow 2.2.1` batch (3 × ZellerG_2014) running on Alpine. Anvil daemon stopped during Purdue maintenance | [#178](https://github.com/seandavi/nextflow_telemetry/issues/178), `docs/hpc-layout.md` |
 | ○ | 8 analytical endpoints 501; `/submissions`, `/curated`, OAuth not built | #175, #180, #176 |
 
