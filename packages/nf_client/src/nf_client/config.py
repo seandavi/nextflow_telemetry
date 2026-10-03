@@ -6,15 +6,45 @@ Workflow details (repository, revision) come from the server's dispatch response
 The profile is execution-environment-specific and lives here in the client config
 so the same workflow definition can run on different HPC systems (e.g. anvil vs alpine).
 
+String values may reference environment variables as ``${NAME}``; they are
+expanded at load time, so one YAML can serve every cluster that exports the
+same ``NF_TEL_*`` variables (docs/hpc-layout.md). Bare ``$NAME`` is left alone
+because some defaults are shell snippets expanded later inside the job.
+
 See packages/nf_client/client-example.yaml for a fully annotated reference config.
 """
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
+
+_ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _expand_env(value: Any, where: str = "") -> Any:
+    """Replace ``${NAME}`` in every string of a loaded YAML tree.
+
+    An unset variable is an error, not an empty string: a silently blank
+    account or store path would submit jobs that charge or write the wrong place.
+    """
+    if isinstance(value, dict):
+        return {k: _expand_env(v, f"{where}.{k}" if where else str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand_env(v, f"{where}[{i}]") for i, v in enumerate(value)]
+    if isinstance(value, str):
+        def sub(m: re.Match[str]) -> str:
+            name = m.group(1)
+            if name not in os.environ:
+                raise ValueError(f"config {where}: environment variable {name} is not set")
+            return os.environ[name]
+        return _ENV_REF.sub(sub, value)
+    return value
+
 
 
 def _redact_defaults(d: dict) -> dict:
@@ -74,7 +104,7 @@ class ClientConfig(BaseModel):
     def from_yaml(cls, path: Path | str) -> "ClientConfig":
         path = Path(path)
         raw = yaml.safe_load(path.read_text())
-        return cls.model_validate(raw)
+        return cls.model_validate(_expand_env(raw))
 
     def sanitized_config_yaml(self) -> str:
         """Return config as YAML with submission.defaults stripped (may contain credential paths)."""
