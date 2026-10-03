@@ -53,15 +53,18 @@ Selected via `-profile`, composable (`alpine,gcs`):
 ## 2. nf-client (`client-<cluster>.yaml`, on the cluster, NOT in repo)
 
 Schema = `packages/nf_client/src/nf_client/config.py`; annotated example =
-`packages/nf_client/client-example.yaml`. Reloaded every poll cycle.
-- `server_url`, `weblog_url` — API + weblog endpoints.
+`packages/nf_client/client-example.yaml`; per-cluster sources =
+`config/client-<cluster>.yaml.example`. Reloaded every poll cycle. `${NAME}`
+values expand from the daemon env (`~/.nf_tel.env`, `~/.nf_tel.secrets`).
+- `server_url`, `weblog_url` — API + weblog endpoints; `token` — `${NF_OPERATOR_TOKEN}`.
 - `profile` — the Nextflow `-profile` passed to every run on this cluster.
 - `continuous`, `dispatch.{batch_size,workflow_id,workflow_version}`.
 - `submission.{mode,template_path,max_concurrent_runs,slurm_export_none,defaults}`.
-- `submission.defaults` — template variables (mem, cpus, time, account, partition,
-  credentials, `client_env_setup`). May hold credential paths → stripped from any
-  config echo.
-See `alpine-daemon` for the full field rundown.
+- `submission.defaults` — scheduler choices for `templates/submit_slurm.sh.j2`:
+  mem, cpus, time, partition, qos, `account: ${NF_TEL_ACCOUNT}`, `log_dir: ${NF_TEL_LOGS}`.
+  Paths, modules and credentials come from `~/.nf_tel.env`, not the yaml
+  (`docs/hpc-layout.md`). The SLURM allocation is `NF_TEL_ACCOUNT`.
+See `alpine-daemon` for start/stop and the cluster table.
 
 ## 3. Telemetry server (env vars → `config.py` `Settings`)
 
