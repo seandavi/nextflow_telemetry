@@ -133,14 +133,12 @@ Tracker: **#94**. Rollout: ship API with enforcement **off**, roll daemons, then
 ### Epic G — Ops resilience & misc  (backlog / as-needed)
 - **#84** Postgres backup strategy — **do soon**; the DB is self-hosted now, this is
   cheap insurance. Arguably belongs in the near-term tier.
+- **#86** client-side disk buffer + retry (parking-lot; only if we see event loss).
+- **#87** off-cluster orchestrator (push mode via SSH ControlPersist) — preserve pull.
 - **#18** pre-populate pipeline DBs in `store_dir` before running.
 - **#46** command-line API client.
-
-### CLOSED — Not Planned
-- **#48** Temporal investigation — solves orchestration, not the visibility gap we
-  have; re-introduces heavy stateful infra.
-- **#86** client-side disk buffer + retry — only if we see event loss; not planned.
-- **#87** off-cluster orchestrator (SSH push mode) — preserve pull-mode semantics.
+- **#48** Temporal investigation — **recommend decline/park**: solves orchestration,
+  not the visibility gap we actually have; re-introduces heavy stateful infra.
 
 ## Architecture deepening (design review, 2026-07-10)
 
