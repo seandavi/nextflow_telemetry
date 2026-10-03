@@ -21,7 +21,7 @@ submission:
     mem: "8G"
     cpus: 2
     time: "23:00:00"
-    partition: "amilan"
-    qos: "normal"
+    partition: "acpu"        # amilan was retired; acpu caps at 1 day
+    qos: "cpu-normal"        # cpu-long allows 7 days
     account: "${NF_TEL_ACCOUNT}"
     log_dir: "${NF_TEL_LOGS}"
