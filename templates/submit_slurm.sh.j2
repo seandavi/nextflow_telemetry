@@ -17,6 +17,10 @@ source ~/.nf_tel.env
 
 export GOOGLE_APPLICATION_CREDENTIALS=$NF_TEL_CREDS
 [ -n "$NF_TEL_MODULES" ] && module load $NF_TEL_MODULES
+# Alpine's nextflow module sets NXF_HOME to scratch, which purges the pipeline
+# asset; re-assert the persistent values after loading modules.
+export NXF_HOME=$NF_TEL_NXF_HOME
+export NXF_SINGULARITY_CACHEDIR=$NF_TEL_SIF_CACHE
 
 WORKDIR=$NF_TEL_SCRATCH/$SLURM_JOB_ID
 mkdir -p $WORKDIR $NF_TEL_LOGS $NF_TEL_STORE
