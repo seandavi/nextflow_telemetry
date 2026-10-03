@@ -205,3 +205,6 @@ results/
 /obscura-worker
 /obscura-*.tar.gz
 client-local-v2.yaml
+
+# Ephemeral Agent Workspace
+.task/
