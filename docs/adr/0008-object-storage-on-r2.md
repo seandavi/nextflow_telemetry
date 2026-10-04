@@ -82,8 +82,9 @@ We will keep all cloud object storage for these projects on **Cloudflare R2**.
 - Publishing to R2 needs Nextflow >= 25.04: 24.04's nf-amazon sends writes
   to `s3.<location-hint>.amazonaws.com` instead of the R2 endpoint
   (pipeline ADR-0015). Alpine runs a 25.10.8 launcher on Java 18. Anvil only
-  has Java 8/11, which caps Nextflow at 23.10.1, so Anvil keeps publishing to
-  GCS until it has Java 17.
+  has Java 8/11, which caps Nextflow at 23.10.1; its daemon has been stopped
+  since 2026-10-03 and must get Java 17+ and `anvil,r2` before it dispatches
+  again, so no new outputs go to GCS.
 - `cmgd-raw` was created private on 2026-10-03. Turning on public read, as
   `storage-layout.md` intends, is a separate step once there are outputs to
   serve.

@@ -45,7 +45,7 @@ remote commands with `source ~/.nf_tel.env`.
 | Cluster user | `seda0001_amc` | `x-seandavi` |
 | `NF_TEL_ACCOUNT` | `amc-general` | `cis240955` (ACCESS; `NF_TEL_HOME` derives from it) |
 | Partition / qos | `acpu` / `cpu-normal` (1 day); `amilan` is gone | `shared` |
-| Nextflow `-profile` | `alpine,r2` (R2 `s3://cmgd-raw`, ADR 0008) | `anvil,gcs` (Java 11 caps Nextflow below the 25.04 the r2 profile needs) |
+| Nextflow `-profile` | `alpine,r2` (R2 `s3://cmgd-raw`, ADR 0008) | daemon stopped since 2026-10-03; do **not** restart on `anvil,gcs` (new GCS writes violate ADR 0008). Needs Java 17+ for Nextflow >= 25.04 and `anvil,r2` first |
 | `slurm_export_none` | `true` (login env leaks to compute) | `false` |
 | Nextflow | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, `jdk/18.0.1.1`); not the 24.04 module | pinned 23.10.1 launcher in `$NF_TEL_DAEMON` (Java 11 only) |
 | Short test partition | `atesting`, qos `testing` (1 h) | — |
@@ -57,9 +57,13 @@ remote commands with `source ~/.nf_tel.env`.
 ssh <cluster>
 source ~/.nf_tel.env
 tmux kill-session -t nf 2>/dev/null
+sleep 3   # killing the last session stops the tmux server; an immediate new-session dies with it
 tmux new-session -d -s nf "$NF_TEL_REPO/config/nf_tel_daemon.sh"
 tail -n 20 $NF_TEL_DAEMON/daemon.log
 ```
+
+Confirm from a fresh connection that the process survived, not just the log:
+`tmux ls; pgrep -af '^/.*nf-client daemon'`.
 
 No `tmux send-keys` (Anvil's slow login rc eats the keystrokes) and no `&`
 inside `ssh host '...'` (the ssh session hangs on the held fd).

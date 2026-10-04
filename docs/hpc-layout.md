@@ -45,7 +45,10 @@ ssh <cluster> 'source ~/.nf_tel.env && cd $NF_TEL_REPO && git pull --ff-only'
 Nextflow on both clusters is the standalone launcher at `$NF_TEL_DAEMON/nextflow`
 (`curl -fsSL https://get.nextflow.io`), pinned by `NXF_VER`. Alpine needs >= 25.04
 for the `r2` profile and < 26.04 until the pipeline passes the strict parser;
-Anvil's Java 11 caps it at 23.10.1, so Anvil stays on `anvil,gcs`.
+Anvil's Java 11 caps it at 23.10.1, which cannot use `r2`; Anvil's daemon is
+stopped (since 2026-10-03) and must not be restarted on `anvil,gcs`, since that
+would write new outputs to GCS ([ADR 0008](adr/0008-object-storage-on-r2.md)).
+Give it Java 17+ and `anvil,r2` first (untested option: a user-space JDK under `$NF_TEL_DAEMON`).
 
 Rule of thumb: **projects** = anything a run needs to resume or an operator
 needs to read later. **scratch** = anything regenerable. **home** = credentials
