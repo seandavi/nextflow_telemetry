@@ -6,7 +6,7 @@
 
 Three decisions the layout rests on:
 
-1. **All cloud storage moves to Cloudflare R2.** Zero egress to onclappc02 (campus firewall constraint) and to outside readers. GCS was a Cloud-Run-era choice; nothing else points us there now.
+1. **All cloud storage moves to Cloudflare R2.** Zero egress to onclappc02 (campus firewall constraint) and to outside readers. GCS was a Cloud-Run-era choice; nothing else points us there now. Accepted as [ADR 0008](adr/0008-object-storage-on-r2.md).
 2. **Raw pipeline outputs are derived from NCBI.** They are not the source of truth — `cmgd-public` (curated) + Postgres (orchestration/telemetry) are. Raw is durable for a hot window, then archived to cold storage. Worst-case loss is recoverable by re-running the pipeline at NCBI bandwidth + compute cost.
 3. **One DuckLake across all data-products projects** (cmgd, omicidx, bioc, …). Schema-per-project in a shared `cdsci-lake` bucket with a shared `cdsci_lake_catalog` Postgres DB. Per-project lakes were considered and rejected: cross-project queries become joins, not federations.
 

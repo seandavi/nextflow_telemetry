@@ -53,3 +53,4 @@ other. This preserves the historical record rather than rewriting it.
 | [0002](0002-run-death-classification.md) | Run death classification | Accepted |
 | [0003](0003-dispatchability-detection.md) | Dispatchability detection (pending work with no active daemon) | Accepted |
 | [0007](0007-readset-identity.md) | Identify processing units as readsets digested with the refget seqcol algorithm | Accepted (not yet implemented) |
+| [0008](0008-object-storage-on-r2.md) | Keep all cloud object storage on Cloudflare R2 | Accepted |
