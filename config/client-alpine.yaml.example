@@ -4,7 +4,7 @@ server_url: "https://nf-telemetry.seandavi.workers.dev/api"
 weblog_url: "https://nf-telemetry.seandavi.workers.dev/telemetry"
 token: "${NF_OPERATOR_TOKEN}"
 
-profile: "alpine,gcs"
+profile: "alpine,r2"   # R2 output (ADR 0008); needs ~/.nf_tel.r2 and Nextflow >= 25.04
 continuous: true
 
 dispatch:

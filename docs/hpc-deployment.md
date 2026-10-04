@@ -22,8 +22,10 @@ Paths, variables and the file inventory are in [`hpc-layout.md`](hpc-layout.md).
 
 The daemon runs on the cluster and only makes outbound HTTPS calls
 ([ADR 0001](adr/0001-pull-mode-orchestration.md)). The daemon's dispatch calls
-carry the bearer token; `/telemetry` and `/runs/{run}/event` are open, so the
-wrapper job needs no secret.
+carry the bearer token; `/telemetry` and `/runs/{run}/event` are open. The
+wrapper job's only secret is the R2 write key for `-profile r2`
+([ADR 0008](adr/0008-object-storage-on-r2.md)), which the Nextflow driver uses
+for the `publishDir` copy.
 
 ## First-time setup on a cluster
 
@@ -33,6 +35,10 @@ scp config/nf_tel.env.<cluster> <cluster>:~/.nf_tel.env
 gcloud secrets versions access latest --secret=cdsci-nf-telemetry-v2-api-token --project=cdsci-infra \
   | sed 's/^/export NF_OPERATOR_TOKEN=/' \
   | ssh <cluster> 'umask 077; cat > ~/.nf_tel.secrets'
+g() { gcloud secrets versions access latest --secret=$1 --project=cdsci-infra; }
+printf 'export R2_ACCOUNT_ID=%s\nexport R2_ACCESS_KEY_ID=%s\nexport R2_SECRET_ACCESS_KEY=%s\n' \
+  "$(g cdsci-r2-account-id)" "$(g cdsci-r2-access-key-id)" "$(g cdsci-r2-secret-access-key)" \
+  | ssh <cluster> 'umask 077; cat > ~/.nf_tel.r2'
 
 # on the cluster
 echo '[ -f ~/.nf_tel.env ] && . ~/.nf_tel.env' >> ~/.bash_profile
@@ -41,6 +47,7 @@ mkdir -p $NF_TEL_DAEMON $NF_TEL_LOGS $NF_TEL_STORE
 git clone https://github.com/seandavi/nextflow_telemetry $NF_TEL_REPO
 cp $NF_TEL_REPO/config/client-$NF_TEL_CLUSTER.yaml.example $NF_TEL_CONFIG
 uv tool install --python 3.13 $NF_TEL_REPO/packages/nf_client
+curl -fsSL https://get.nextflow.io -o $NF_TEL_DAEMON/nextflow && chmod +x $NF_TEL_DAEMON/nextflow   # pinned by NXF_VER
 ```
 
 Before the first start, render the template and let SLURM validate it without

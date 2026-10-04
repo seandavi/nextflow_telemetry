@@ -6,6 +6,7 @@ Every SLURM cluster runs the same pieces; only values differ:
 |---|---|---|
 | Paths, account, modules | `config/nf_tel.env.<cluster>` | `~/.nf_tel.env`, sourced from `~/.bash_profile` |
 | v2 bearer token | GSM `cdsci-nf-telemetry-v2-api-token` (project `cdsci-infra`) | `~/.nf_tel.secrets` (mode 600, `export NF_OPERATOR_TOKEN=...`) |
+| R2 S3 keys (`-profile r2`) | GSM `cdsci-r2-account-id`, `cdsci-r2-access-key-id`, `cdsci-r2-secret-access-key` | `~/.nf_tel.r2` (mode 600, `export R2_ACCOUNT_ID=...` etc.), sourced by the submit script ([ADR 0008](adr/0008-object-storage-on-r2.md)) |
 | Client yaml | `config/client-<cluster>.yaml.example` | `$NF_TEL_CONFIG` |
 | Submit template | `templates/submit_slurm.sh.j2` | read from `$NF_TEL_REPO` |
 | Daemon launcher | `config/nf_tel_daemon.sh` | run from `$NF_TEL_REPO` in tmux |
@@ -38,8 +39,13 @@ ssh <cluster> 'source ~/.nf_tel.env && cd $NF_TEL_REPO && git pull --ff-only'
 | `NF_TEL_NXF_HOME` | `NXF_HOME` (assets, plugins) | `/projects/seda0001_amc/nf_home` | `$HOME/nxf_home` |
 | `NF_TEL_SCRATCH` | per-run launch dir root, ephemeral | `/scratch/alpine/seda0001_amc/nf_worker` | `/anvil/scratch/x-seandavi/cmgd_data` |
 | `NF_TEL_SIF_CACHE` | container image cache, ephemeral | `/scratch/alpine/seda0001_amc/apptainer_cache` | `/anvil/scratch/x-seandavi/singularity_cache` |
-| `NF_TEL_CREDS` | GCS service-account json | `$HOME/curatedmetagenomicdata-*.json` | same |
-| `NF_TEL_MODULES` | `module load` list for the submit script | `singularity git nextflow` | `openjdk/11.0.8_10` (+ `NXF_VER=23.10.1`) |
+| `NF_TEL_CREDS` | GCS service-account json (legacy `gcs` profile) | `$HOME/curatedmetagenomicdata-*.json` | same |
+| `NF_TEL_MODULES` | `module load` list for the submit script | `singularity git jdk/18.0.1.1` (+ `NXF_VER=25.10.8`) | `openjdk/11.0.8_10` (+ `NXF_VER=23.10.1`) |
+
+Nextflow on both clusters is the standalone launcher at `$NF_TEL_DAEMON/nextflow`
+(`curl -fsSL https://get.nextflow.io`), pinned by `NXF_VER`. Alpine needs >= 25.04
+for the `r2` profile and < 26.04 until the pipeline passes the strict parser;
+Anvil's Java 11 caps it at 23.10.1, so Anvil stays on `anvil,gcs`.
 
 Rule of thumb: **projects** = anything a run needs to resume or an operator
 needs to read later. **scratch** = anything regenerable. **home** = credentials
@@ -77,7 +83,7 @@ and check `sbatch --test-only` with the rendered script before starting the daem
 | home | 2 G quota, **84 % full** | 25 G quota, 9.3 G used, 8.2 G is `~/.apptainer` |
 | projects | 250 G, 140 G used (56 %) | 5 T, 132 G used |
 | scratch | 2.8 P shared, purged | 100 T, purged |
-| nextflow | none on login node (`module load` per job) | pinned 23.10.1 at `$NF_TEL_DAEMON/nextflow` |
+| nextflow | 25.10.8 launcher at `$NF_TEL_DAEMON/nextflow` (Java 18 module); the 24.04 module is not used | pinned 23.10.1 at `$NF_TEL_DAEMON/nextflow` |
 | partitions | `acpu` (1 day) with qos `cpu-normal`; `cpu-long` for 7 days. `amilan` is gone. | `shared` |
 
 Housekeeping still open:

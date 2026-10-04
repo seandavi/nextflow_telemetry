@@ -71,14 +71,19 @@ We will keep all cloud object storage for these projects on **Cloudflare R2**.
 
 - `curatedMetagenomicsNextflow` needs an R2 storage profile (S3 endpoint
   `https://<account>.r2.cloudflarestorage.com`, path-style access, keys from
-  Secret Manager) used in place of `gcs` on Alpine and Anvil. The Nextflow
-  driver on the cluster login node needs write keys at run time. It uses the
+  Secret Manager) used in place of `gcs`. The Nextflow driver (the SLURM
+  wrapper job) needs write keys at run time. It uses the
   existing R2 S3 keys `cdsci-r2-access-key-id`, `cdsci-r2-secret-access-key`
   and `cdsci-r2-account-id` (the same keys as the operators' rclone `r2:`
-  remote). They are account-wide, so they can write to every R2 bucket on the
-  account; we accept that on the cluster login nodes. A bucket-scoped key
+  remote), installed as `~/.nf_tel.r2`. They are account-wide, so they can
+  write to every R2 bucket on the account; we accept that on the clusters. A bucket-scoped key
   (`cmgd-r2-write-token` in `storage-layout.md`) can replace them later
   without changing the pipeline profile.
+- Publishing to R2 needs Nextflow >= 25.04: 24.04's nf-amazon sends writes
+  to `s3.<location-hint>.amazonaws.com` instead of the R2 endpoint
+  (pipeline ADR-0015). Alpine runs a 25.10.8 launcher on Java 18. Anvil only
+  has Java 8/11, which caps Nextflow at 23.10.1, so Anvil keeps publishing to
+  GCS until it has Java 17.
 - `cmgd-raw` was created private on 2026-10-03. Turning on public read, as
   `storage-layout.md` intends, is a separate step once there are outputs to
   serve.

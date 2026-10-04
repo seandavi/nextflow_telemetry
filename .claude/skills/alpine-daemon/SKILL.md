@@ -30,6 +30,7 @@ Source of truth: `docs/hpc-layout.md` (variables, files) and
 |---|---|
 | Paths, `NF_TEL_ACCOUNT`, `NF_TEL_MODULES` | `~/.nf_tel.env` ← `config/nf_tel.env.<cluster>` |
 | v2 bearer token | `~/.nf_tel.secrets` (600) ← GSM `cdsci-nf-telemetry-v2-api-token` |
+| R2 keys (`-profile r2`) | `~/.nf_tel.r2` (600) ← GSM `cdsci-r2-*`; sourced by the submit template, which refuses r2 runs without it |
 | Client yaml | `$NF_TEL_CONFIG` ← `config/client-<cluster>.yaml.example` (uses `${NF_TEL_*}`) |
 | Submit template | `$NF_TEL_REPO/templates/submit_slurm.sh.j2` (one for all SLURM clusters) |
 | Launcher | `$NF_TEL_REPO/config/nf_tel_daemon.sh` |
@@ -44,9 +45,9 @@ remote commands with `source ~/.nf_tel.env`.
 | Cluster user | `seda0001_amc` | `x-seandavi` |
 | `NF_TEL_ACCOUNT` | `amc-general` | `cis240955` (ACCESS; `NF_TEL_HOME` derives from it) |
 | Partition / qos | `acpu` / `cpu-normal` (1 day); `amilan` is gone | `shared` |
-| Nextflow `-profile` | `alpine,gcs` | `anvil,gcs` |
+| Nextflow `-profile` | `alpine,r2` (R2 `s3://cmgd-raw`, ADR 0008) | `anvil,gcs` (Java 11 caps Nextflow below the 25.04 the r2 profile needs) |
 | `slurm_export_none` | `true` (login env leaks to compute) | `false` |
-| Nextflow | `module load nextflow` per job | pinned 23.10.1 launcher in `$NF_TEL_DAEMON` (Java 11 only) |
+| Nextflow | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, `jdk/18.0.1.1`); not the 24.04 module | pinned 23.10.1 launcher in `$NF_TEL_DAEMON` (Java 11 only) |
 | Short test partition | `atesting`, qos `testing` (1 h) | — |
 | GCS access | `rclone gs1:` only (no gcloud/gsutil) | — |
 

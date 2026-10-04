@@ -16,8 +16,15 @@
 source ~/.nf_tel.env
 
 export GOOGLE_APPLICATION_CREDENTIALS=$NF_TEL_CREDS
-[ -n "$NF_TEL_MODULES" ] && module load $NF_TEL_MODULES
-# Alpine's nextflow module sets NXF_HOME to scratch, which purges the pipeline
+# R2 S3 keys for -profile r2 (ADR 0008): ~/.nf_tel.r2, mode 600, exports
+# R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY from GSM cdsci-r2-*.
+[ -r ~/.nf_tel.r2 ] && source ~/.nf_tel.r2
+{% if 'r2' in profile.split(',') %}if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ]; then
+  echo "profile {{ profile }} needs R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (~/.nf_tel.r2); not starting" >&2
+  exit 2
+fi
+{% endif %}[ -n "$NF_TEL_MODULES" ] && module load $NF_TEL_MODULES
+# Some nextflow modules set NXF_HOME to scratch, which purges the pipeline
 # asset; re-assert the persistent values after loading modules.
 export NXF_HOME=$NF_TEL_NXF_HOME
 export NXF_SINGULARITY_CACHEDIR=$NF_TEL_SIF_CACHE
