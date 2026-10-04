@@ -72,10 +72,13 @@ We will keep all cloud object storage for these projects on **Cloudflare R2**.
 - `curatedMetagenomicsNextflow` needs an R2 storage profile (S3 endpoint
   `https://<account>.r2.cloudflarestorage.com`, path-style access, keys from
   Secret Manager) used in place of `gcs` on Alpine and Anvil. The Nextflow
-  driver on the cluster login node needs write keys at run time. They should
-  be the bucket-scoped `cmgd-r2-write-token` that `storage-layout.md` ("Access
-  tokens") plans, not the account-wide `cdsci-r2-*` keys; that token does not
-  exist yet.
+  driver on the cluster login node needs write keys at run time. It uses the
+  existing R2 S3 keys `cdsci-r2-access-key-id`, `cdsci-r2-secret-access-key`
+  and `cdsci-r2-account-id` (the same keys as the operators' rclone `r2:`
+  remote). They are account-wide, so they can write to every R2 bucket on the
+  account; we accept that on the cluster login nodes. A bucket-scoped key
+  (`cmgd-r2-write-token` in `storage-layout.md`) can replace them later
+  without changing the pipeline profile.
 - `cmgd-raw` was created private on 2026-10-03. Turning on public read, as
   `storage-layout.md` intends, is a separate step once there are outputs to
   serve.

@@ -118,6 +118,6 @@ All app/infrastructure secrets — Cloudflare API token, R2 access keys, Cloudfl
 
 Token scopes:
 
-- **`cmgd-raw` / `cmgd-public`**: read tokens are unnecessary (public). Write tokens scoped per-bucket and held by the daemon / publishing pipeline. Stored as `cmgd-r2-write-token` in GCP SM.
+- **`cmgd-raw` / `cmgd-public`**: read tokens are unnecessary (public). Write tokens scoped per-bucket and held by the daemon / publishing pipeline. Stored as `cmgd-r2-write-token` in GCP SM. Until that token exists, the pipeline publishes with the account-wide `cdsci-r2-*` keys ([ADR 0008](adr/0008-object-storage-on-r2.md)).
 - **`cdsci-lake`**: per-project R/W tokens scoped to that project's schema-shaped prefix. Read-only token published to external consumers as needed. Stored as `cmgd-lake-rw-token`, `cmgd-lake-readonly-token`, etc.
 - **`cdsci-backups`**: dedicated write-only token. Restore uses a separate, rarely-issued admin token. Object Lock makes accidental deletion impossible during the retention window. Stored as `cdsci-backups-write-token` (the restore admin token is operator-only and not in GCP SM).
