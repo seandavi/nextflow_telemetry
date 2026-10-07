@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { T } from '../tokens'
-import { fmtNum } from '../lib/format'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { useStudies } from '../lib/useStudies'
 import { CATALOG_URL, STATUS_LABEL, STATUS_ORDER, type StudyRow, type StudyStatus } from '../lib/studies'
@@ -111,6 +110,19 @@ export default function StudiesPage({ pollInterval = 30_000 }: { pollInterval?: 
           columns={[
             { key: 'study_name', label: 'Study', mono: true,
               render: (v, r) => <span title={r.catalog?.notes || (r.catalog ? undefined : 'v2 collection not in the study catalog')}>{v as string}{!r.catalog && <span style={{ color: T.muted }}> *</span>}</span> },
+            { key: 'status', label: 'Status', render: (_, r) => <Badge label={STATUS_LABEL[r.status]} variant={STATUS_BADGE[r.status]} /> },
+            { key: 'progress', label: 'Progress', render: (_, r) => <MiniBar pct={pctDone(r)} color={STATUS_COLOR[r.status]} /> },
+            { key: 'n_curated', label: 'Curated', align: 'right', mono: true, render: v => v == null ? '—' : (v as number).toLocaleString() },
+            { key: 'registered', label: 'Registered', align: 'right', mono: true, render: v => (v as number).toLocaleString() },
+            { key: 'completed', label: 'Completed', align: 'right', mono: true,
+              render: v => <span style={{ color: (v as number) ? T.green : T.muted }}>{(v as number).toLocaleString()}</span> },
+            { key: 'running', label: 'Run / Fail', align: 'right', mono: true, render: (_, r) => (
+              <span>
+                <span style={{ color: r.running ? T.amber : T.muted }}>{r.running.toLocaleString()}</span>
+                <span style={{ color: T.muted }}> / </span>
+                <span style={{ color: r.failed ? T.red : T.muted }}>{r.failed.toLocaleString()}</span>
+              </span>
+            ) },
             { key: 'bioproject', label: 'BioProject', mono: true, render: (_, r) => {
               const id = r.catalog?.study_id ?? ''
               return id.startsWith('PRJ')
@@ -124,19 +136,6 @@ export default function StudiesPage({ pollInterval = 30_000 }: { pollInterval?: 
             { key: 'pmid', label: 'PMID', mono: true, render: (_, r) => r.catalog?.pmid
               ? <a href={`https://pubmed.ncbi.nlm.nih.gov/${r.catalog.pmid}/`} target="_blank" rel="noreferrer" style={link}>{r.catalog.pmid}</a>
               : <span style={{ color: T.muted }}>—</span> },
-            { key: 'n_curated', label: 'Curated', align: 'right', mono: true, render: v => v == null ? '—' : fmtNum(v as number) },
-            { key: 'registered', label: 'Registered', align: 'right', mono: true, render: v => fmtNum(v as number) },
-            { key: 'completed', label: 'Completed', align: 'right', mono: true,
-              render: v => <span style={{ color: (v as number) ? T.green : T.muted }}>{fmtNum(v as number)}</span> },
-            { key: 'running', label: 'Run / Fail', align: 'right', mono: true, render: (_, r) => (
-              <span>
-                <span style={{ color: r.running ? T.amber : T.muted }}>{fmtNum(r.running)}</span>
-                <span style={{ color: T.muted }}> / </span>
-                <span style={{ color: r.failed ? T.red : T.muted }}>{fmtNum(r.failed)}</span>
-              </span>
-            ) },
-            { key: 'progress', label: 'Progress', render: (_, r) => <MiniBar pct={pctDone(r)} color={STATUS_COLOR[r.status]} /> },
-            { key: 'status', label: 'Status', render: (_, r) => <Badge label={STATUS_LABEL[r.status]} variant={STATUS_BADGE[r.status]} /> },
           ]}
         />
         {s.rows.some(r => !r.catalog) && (
