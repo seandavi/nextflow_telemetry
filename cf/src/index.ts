@@ -331,6 +331,8 @@ api.post("/task-logs", describeRoute({ summary: "Upload one task log file (multi
   const form = await c.req.formData().catch(() => null);
   if (!form) return c.json({ detail: "expected multipart form data" }, 422);
   const runName = String(form.get("run_name") ?? "");
+  // Ad-hoc Nextflow runs stringify params.run_name=null; never file logs under it.
+  if (!runName || runName === "null") return c.json({ detail: "run_name is required" }, 400);
   const logType = String(form.get("log_type") ?? "");
   const content: unknown = form.get("content");
   if (!VALID_LOG_TYPES.has(logType)) {
@@ -342,7 +344,7 @@ api.post("/task-logs", describeRoute({ summary: "Upload one task log file (multi
   // Normalise to Nextflow's short work-dir hash (ab/cdef12) so it matches the
   // hash carried in trace events; the afterScript derives it from the full path.
   const taskHash = shortHash(String(form.get("task_hash") ?? ""));
-  const text = await content.text();
+  const text = (await content.text()).replaceAll("\x00", "");
   const uploadedAt = new Date().toISOString();
   const key = `task-logs/${runName}/${taskHash}/${logType}`;
   await c.env.STORE.put(key, text, { customMetadata: { uploaded_at: uploadedAt } });

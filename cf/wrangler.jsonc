@@ -31,12 +31,14 @@
     "SUBMIT_BACKSTOP_HOURS": "48",
     // No heartbeat for this long once the wrapper is alive -> presumed dead.
     "LIVENESS_MINUTES": "10",
-    "CORS_ORIGINS": "*",
-    // Enables POST /admin/reset, which empties every Durable Object and the R2
-    // prefixes. True here because this deployment is disposable staging that
-    // nothing points at. A production deployment MUST set this to "false" —
-    // the route fails closed on any other value, so removing the var is also safe.
-    "ALLOW_RESET": "true"
+    // Comma-separated browser origins allowed by CORS: the dashboard and Vite dev.
+    "CORS_ORIGINS": "https://cmgd.cancerdatasci.org,http://localhost:5173",
+    // POST /admin/reset empties every Durable Object and the R2 prefixes. Off in
+    // production; the route fails closed on any value but "true", so removing the
+    // var is also safe. Enable on a staging deploy with
+    // `wrangler deploy --var ALLOW_RESET:true`. The test suite sets its own
+    // ALLOW_RESET=true in vitest.config.ts.
+    "ALLOW_RESET": "false"
   }
   // Secrets (wrangler secret put): API_TOKEN — when set, bearer auth is
   // enforced on every mutating route except /telemetry (Nextflow's weblog

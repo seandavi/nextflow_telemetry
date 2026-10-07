@@ -68,8 +68,12 @@ the rest of the contract work, generated TS types and validation on every route,
 
 ## The dev loop
 
-v2 state is disposable until cutover. Teardown and rebuild is the supported
-cycle, not a workaround:
+Teardown and rebuild is the supported cycle on a staging deploy. **Reset is
+disabled in production** (`ALLOW_RESET="false"` in `wrangler.jsonc`;
+`POST /admin/reset` returns 403). To use it, deploy a disposable copy with
+`wrangler deploy --var ALLOW_RESET:true` against a separate name/bucket (for
+example `--name nf-telemetry-staging` plus its own R2 bucket and secrets), never
+the production Worker:
 
 ```bash
 B=https://nf-telemetry.seandavi.workers.dev
@@ -88,7 +92,7 @@ gone nothing knows which timers to cancel.
 It is guarded by `ALLOW_RESET`, which must be exactly the string `"true"`; the
 check fails closed on any other value, including unset. That is deliberately a
 separate control from the bearer token, which every other write route shares.
-**A production deployment must set `ALLOW_RESET` to `"false"`.**
+**A production deployment keeps `ALLOW_RESET` at `"false"`** (the default in `wrangler.jsonc`; the test suite enables it in `vitest.config.ts`).
 
 Jobs are never migrated (issue #171) — v2 reprocesses from scratch, so run
 `POST /api/admin/reconcile-jobs` when you want work to become dispatchable.
