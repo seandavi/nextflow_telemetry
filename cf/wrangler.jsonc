@@ -1,0 +1,44 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nf-telemetry",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-30",
+  // Required by @cloudflare/vitest-pool-workers; nothing in src/ needs Node.
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "55bf7202fe14474e57a300f56a652f64",
+  "observability": { "enabled": true },
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "CONTROL", "class_name": "ControlDO" },
+      { "name": "RUN", "class_name": "RunDO" },
+      { "name": "SINK", "class_name": "SinkDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ControlDO", "RunDO", "SinkDO"] }
+  ],
+
+  "r2_buckets": [{ "binding": "STORE", "bucket_name": "nf-telemetry" }],
+
+  // Daily ControlDO snapshot to R2 (disaster recovery, spec §10).
+  "triggers": { "crons": ["0 6 * * *"] },
+
+  "vars": {
+    // Claim not confirmed submitted within this window -> jobs return to pending.
+    "CLAIM_TTL_MINUTES": "5",
+    // Backstop for a run sitting in the scheduler queue with no wrapper yet.
+    "SUBMIT_BACKSTOP_HOURS": "48",
+    // No heartbeat for this long once the wrapper is alive -> presumed dead.
+    "LIVENESS_MINUTES": "10",
+    "CORS_ORIGINS": "*",
+    // Enables POST /admin/reset, which empties every Durable Object and the R2
+    // prefixes. True here because this deployment is disposable staging that
+    // nothing points at. A production deployment MUST set this to "false" —
+    // the route fails closed on any other value, so removing the var is also safe.
+    "ALLOW_RESET": "true"
+  }
+  // Secrets (wrangler secret put): API_TOKEN — when set, bearer auth is
+  // enforced on every mutating route except /telemetry (Nextflow's weblog
+  // reporter cannot send auth headers).
+}

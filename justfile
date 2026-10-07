@@ -100,6 +100,40 @@ down:
 logs:
 	docker compose logs -f nextflow_telemetry_api
 
+# ── v2 (Cloudflare control plane) local loop — issues #181 / #183 ─────────────
+# nf-client runs from its own venv: the root venv's click 8.3 breaks typer 0.12.
+v2_url := "https://nf-telemetry.seandavi.workers.dev"
+nfc := "uv run --project packages/nf_client nf-client"
+
+# Wipe v2 (needs ALLOW_RESET=true on the worker) and export the operator token.
+v2-reset:
+	curl -sf -X POST -H "Authorization: Bearer $(gcloud secrets versions access latest --secret=cdsci-nf-telemetry-v2-api-token --project=cdsci-infra)" {{v2_url}}/api/admin/reset
+	@echo
+
+# Register nf_testing + load ArtachoA_2021 and one curated study through unmodified nf-client (#183).
+v2-seed:
+	{{nfc}} register-workflow --server {{v2_url}}/api --id nf_testing --version 0.1.0 \
+	  --repo {{justfile_directory()}}/nf_testing/main.nf --revision local --max-retries 1 --description "Stub pipeline for v2 E2E"
+	{{nfc}} add-samples --server {{v2_url}}/api --tsv ArtachoA_2021_sample.tsv --collection ArtachoA_2021 --reconcile
+	{{nfc}} add-cmd --server {{v2_url}}/api --study WirbelJ_2018 --limit 25 --reconcile
+
+# One sample, one run, under a nextflow profile (test | test,fail-mark | test,fail-fetch | test,stochastic).
+# Prints the resulting job counts for the `v2test` collection.
+v2-run profile srr:
+	printf 'ncbi_accession\tstudy_name\n{{srr}}\tv2test\n' > /tmp/v2-one.tsv
+	{{nfc}} add-samples --server {{v2_url}}/api --tsv /tmp/v2-one.tsv --collection v2test --reconcile
+	sed 's|^profile:.*|profile: {{profile}}|' client-local-v2.yaml > /tmp/v2-client.yaml
+	{{nfc}} daemon --config /tmp/v2-client.yaml --batch-size 1
+	curl -s {{v2_url}}/api/cohorts/v2test/summary | python3 -c 'import sys,json;print(json.load(sys.stdin)["job_status_counts"])'
+
+# Whole loop from an empty catalog. Timer tests (claim expiry, liveness kill) stay manual: cf/README.md.
+v2-e2e: v2-reset v2-seed
+	just v2-run test SRR9990001
+	just v2-run test,fail-mark SRR9990002
+	just v2-run test,fail-fetch SRR9990003
+	just v2-run test,stochastic SRR9990004
+	curl -s {{v2_url}}/api/admin/stats
+
 # Seed samples + workflow from the ArtachoA_2021 TSV and reconcile jobs.
 seed:
 	uv run nf-client register-workflow --server http://localhost:8000/api \

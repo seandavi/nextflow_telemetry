@@ -1,5 +1,9 @@
 # HPC Deployment Guide (Alpine)
 
+> Paths on both clusters are now `NF_TEL_*` variables from `~/.nf_tel.env`; see
+> [`hpc-layout.md`](hpc-layout.md) for the table, quotas and what lives where.
+> Literal paths below are the Alpine values.
+
 This guide covers running `nf-client` on the Alpine HPC cluster at CU Anschutz to dispatch
 batches of the curatedMetagenomicData (cmgd) pipeline.
 
