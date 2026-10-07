@@ -1,160 +1,100 @@
-# HPC Deployment Guide (Alpine)
+# HPC deployment guide
 
-> Paths on both clusters are now `NF_TEL_*` variables from `~/.nf_tel.env`; see
-> [`hpc-layout.md`](hpc-layout.md) for the table, quotas and what lives where.
-> Literal paths below are the Alpine values.
-
-This guide covers running `nf-client` on the Alpine HPC cluster at CU Anschutz to dispatch
-batches of the curatedMetagenomicData (cmgd) pipeline.
+One procedure for every SLURM cluster (Alpine, Anvil, and later Bridges-2).
+Paths, variables and the file inventory are in [`hpc-layout.md`](hpc-layout.md).
 
 ## Architecture
 
 ```
-┌─────────────────────┐        ┌──────────────────────────┐
-│  Telemetry Server   │◄───────│  Alpine head node         │
-│  (public HTTPS)     │        │  nf-client daemon (tmux)  │
-│                     │        │  claims batches, sbatch   │
-└─────────────────────┘        └──────────┬───────────────┘
-         ▲                                │ sbatch
-         │ -with-weblog                   ▼
-         │                     ┌──────────────────────────┐
-         └─────────────────────│  SLURM wrapper job        │
-                               │  runs nextflow            │
-                               │  → submits per-sample     │
-                               │    tasks to SLURM         │
-                               └──────────────────────────┘
+┌──────────────────────────────┐        ┌──────────────────────────┐
+│  v2 control plane            │◄───────│  login node              │
+│  nf-telemetry.seandavi       │ HTTPS  │  nf-client daemon (tmux) │
+│  .workers.dev                │        │  claims batches, sbatch  │
+└──────────────────────────────┘        └──────────┬───────────────┘
+         ▲                                         │ sbatch
+         │ -with-weblog, run-wrapper events        ▼
+         │                              ┌──────────────────────────┐
+         └──────────────────────────────│  SLURM wrapper job        │
+                                        │  runs nextflow, which     │
+                                        │  submits per-sample tasks │
+                                        └──────────────────────────┘
 ```
 
-- The daemon runs on the Alpine **head node** (not from your laptop via SSH).
-- The SLURM wrapper job is lightweight (2G / 1 CPU / 100h) — it orchestrates Nextflow,
-  which itself submits per-sample compute tasks to SLURM via `process.executor = 'slurm'`.
-- Nextflow sends weblog events to the public telemetry server URL. Alpine compute nodes
-  can reach the public internet.
+The daemon runs on the cluster and only makes outbound HTTPS calls
+([ADR 0001](adr/0001-pull-mode-orchestration.md)). The daemon's dispatch calls
+carry the bearer token; `/telemetry` and `/runs/{run}/event` are open. The
+wrapper job's only secret is the R2 write key for `-profile r2`
+([ADR 0008](adr/0008-object-storage-on-r2.md)), which the Nextflow driver uses
+for the `publishDir` copy.
 
-## Installation on Alpine
+## First-time setup on a cluster
 
 ```bash
-ssh alpine
-cd /projects/seda0001_amc/nf_worker
+# from a workstation with this repo
+scp config/nf_tel.env.<cluster> <cluster>:~/.nf_tel.env
+gcloud secrets versions access latest --secret=cdsci-nf-telemetry-v2-api-token --project=cdsci-infra \
+  | sed 's/^/export NF_OPERATOR_TOKEN=/' \
+  | ssh <cluster> 'umask 077; cat > ~/.nf_tel.secrets'
+g() { gcloud secrets versions access latest --secret=$1 --project=cdsci-infra; }
+printf 'export R2_ACCOUNT_ID=%s\nexport R2_ACCESS_KEY_ID=%s\nexport R2_SECRET_ACCESS_KEY=%s\n' \
+  "$(g cdsci-r2-account-id)" "$(g cdsci-r2-access-key-id)" "$(g cdsci-r2-secret-access-key)" \
+  | ssh <cluster> 'umask 077; cat > ~/.nf_tel.r2'
 
-# Pull latest code
-git pull
-
-# Install nf-client into project venv (uv already available)
-uv pip install -e packages/nf_client
-
-# Verify
-nf-client --help
+# on the cluster
+echo '[ -f ~/.nf_tel.env ] && . ~/.nf_tel.env' >> ~/.bash_profile
+source ~/.nf_tel.env
+mkdir -p $NF_TEL_DAEMON $NF_TEL_LOGS $NF_TEL_STORE
+git clone https://github.com/seandavi/nextflow_telemetry $NF_TEL_REPO
+cp $NF_TEL_REPO/config/client-$NF_TEL_CLUSTER.yaml.example $NF_TEL_CONFIG
+uv tool install --python 3.13 $NF_TEL_REPO/packages/nf_client
+curl -fsSL https://get.nextflow.io -o $NF_TEL_DAEMON/nextflow && chmod +x $NF_TEL_DAEMON/nextflow   # pinned by NXF_VER
 ```
 
-> **Note**: If `nf-client` fails with a Click `make_metavar` error after a `uv sync`,
-> re-run `uv pip install -e packages/nf_client` — it re-pins `click<8.2`.
-
-## Configuration
-
-Copy the example config and fill in the server URL:
+Before the first start, render the template and let SLURM validate it without
+claiming work:
 
 ```bash
-cp config/client-alpine.yaml.example client-alpine.yaml
+sbatch --test-only <rendered script>
 ```
 
-Edit `client-alpine.yaml` (gitignored):
+A partition, qos or account the cluster no longer accepts fails here instead of
+on every batch.
 
-```yaml
-server_url: "https://YOUR_SERVER.run.app"
-weblog_url: "https://YOUR_SERVER.run.app/telemetry"
+## Pipeline prerequisites
 
-dispatch:
-  batch_size: 100             # samples per Nextflow wrapper run
-  workflow_id: "cmgd_nextflow"
-  workflow_version: "1.3.0"
+- The reference store at `$NF_TEL_STORE` should be populated before running more
+  than one batch at a time, or concurrent runs download the same databases.
+- After registering a new pipeline revision, refresh the cached asset on each
+  cluster (`nextflow pull seandavi/curatedMetagenomicsNextflow -r <rev>` with the
+  cluster's `NXF_HOME`). `nextflow run` does not fetch new tags on its own.
 
-submission:
-  mode: slurm
-  template_path: "templates/submit_alpine.sh.j2"
-  max_concurrent_runs: 5      # hold back if 5 wrapper jobs already in SLURM queue
-  defaults:
-    mem: "2G"
-    cpus: 1
-    time: "100:00:00"
-    qos: "long"
-    partition: "amilan"
-    log_dir: "/projects/seda0001_amc/cmgd/job_logs"
-    singularity_cache: "/scratch/alpine/seda0001_amc/apptainer_cache"
-    store_dir: "/projects/seda0001_amc/nf_keep/store"
-    google_credentials: "$HOME/curatedmetagenomicdata-232f4a306d1d.json"
-```
+## Loading work
 
-## Registering the cmgd workflow
-
-Before dispatching, the pipeline must be registered with the server:
+Workflows and samples are registered against the control plane from any machine
+with the operator token:
 
 ```bash
-curl -X POST https://YOUR_SERVER.run.app/workflows \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "workflow_id": "cmgd_nextflow",
-    "version": "1.3.0",
-    "repository_url": "https://github.com/seandavi/curatedmetagenomicsnextflow",
-    "revision": "main",
-    "profile": "alpine",
-    "max_retries": 4,
-    "description": "curatedMetagenomicData pipeline — Alpine SLURM"
-  }'
+export NF_OPERATOR_TOKEN=$(gcloud secrets versions access latest --secret=cdsci-nf-telemetry-v2-api-token --project=cdsci-infra)
+S=https://nf-telemetry.seandavi.workers.dev/api
+nf-client register-workflow --server $S --id cmgd_nextflow --version 2.2.1 \
+  --repo https://github.com/seandavi/curatedMetagenomicsNextflow --revision 23e89cd --max-retries 2
+nf-client add-cmd --server $S --study ZellerG_2014 --limit 2 --reconcile
 ```
 
-Then reconcile jobs (creates one pending job per sample × active workflow version):
-
-```bash
-curl -X POST https://YOUR_SERVER.run.app/admin/reconcile-jobs
-```
-
-## Running the daemon
-
-The daemon claims batches, generates metadata TSVs, submits SLURM wrapper jobs,
-and sleeps when the concurrency limit is reached. Run it in a `tmux` session
-so it persists after you disconnect:
-
-```bash
-tmux new -s nf-daemon
-nf-client daemon --config client-alpine.yaml
-# Ctrl-B D  to detach
-# tmux attach -t nf-daemon  to reattach
-```
-
-To do a dry run first (fetch one batch, print the command, don't submit):
-
-```bash
-nf-client submit --config client-alpine.yaml --dry-run
-```
+Do not use `nf-client submit --dry-run` as a smoke test: fetching a batch claims it.
 
 ## Sample data model
 
-| DB column | Content |
-|-----------|---------|
-| `sample_id` | BioSample accession (e.g. `SAMN12345678`) |
-| `metadata.ncbi_accession` | Semicolon-separated SRR list (e.g. `SRR001;SRR002`) |
+| Field | Content |
+|---|---|
+| `sample_id` | md5 of the sorted, deduplicated run accessions (content address; outputs are published under it) |
+| `ncbi_accession` | Semicolon-separated run accessions (e.g. `SRR001;SRR002`) |
+| `biosample_id` | BioSample accession when known (set by study submissions; empty for cMD TSV loads) |
 
-The submit template generates a TSV with columns `sample_id` and `NCBI_accession`
-(the pipeline's expected column name) and passes it as `--metadata_tsv`.
+The submit template writes a TSV with columns `sample_id` and `NCBI_accession`
+(the pipeline's column name) and passes it as `--metadata_tsv`.
 
-## Concurrency limits
+## Concurrency
 
-Alpine enforces per-user job limits. `max_concurrent_runs` in the config caps how many
-SLURM wrapper jobs are submitted at once. The daemon checks `squeue` before each
-submission and pauses when the limit is reached.
-
-Recommended values:
-- `max_concurrent_runs: 5` — 5 wrapper jobs × 100 samples = 500 samples in flight
-- `batch_size: 100` — samples per wrapper job (also controls Nextflow's `--sample_ids` channel size)
-
-## Security note
-
-The `/telemetry` weblog endpoint is unauthenticated — Nextflow does not support sending
-an auth token with weblog events. This means the endpoint accepts events from anyone
-who knows the URL. Mitigation options for the future:
-- IP allowlist on the load balancer (limit to Alpine egress IPs)
-- Shared-secret middleware (requires Nextflow to support a custom header — not yet available)
-
-For now, the endpoint is append-only and read endpoints are separate, so the exposure
-is limited to someone injecting spurious telemetry records.
+`max_concurrent_runs` caps wrapper jobs in the queue; the daemon checks `squeue`
+before each submission. `dispatch.batch_size` is samples per wrapper job.

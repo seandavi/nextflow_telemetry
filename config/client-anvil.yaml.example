@@ -1,25 +1,26 @@
-server_url: "https://REPLACE_WITH_DEPLOYED_URL"
-weblog_url: "https://REPLACE_WITH_DEPLOYED_URL/telemetry"
+# Installed at $NF_TEL_CONFIG. ${NAME} is expanded from the daemon's environment
+# (~/.nf_tel.env, ~/.nf_tel.secrets); an unset variable fails the load.
+server_url: "https://nf-telemetry.seandavi.workers.dev/api"
+weblog_url: "https://nf-telemetry.seandavi.workers.dev/telemetry"
+token: "${NF_OPERATOR_TOKEN}"
+
+profile: "anvil,gcs"
+continuous: true
 
 dispatch:
-  batch_size: 10
+  batch_size: 200
   workflow_id: "cmgd_nextflow"
-  workflow_version: "1.4.0"
 
 submission:
   mode: slurm
-  template_path: "templates/submit_anvil.sh.j2"
-  max_concurrent_runs: 3
-  slurm_export_none: false
+  template_path: "${NF_TEL_REPO}/templates/submit_slurm.sh.j2"
+  max_concurrent_runs: 5
+  slurm_export_none: false   # Anvil's compute environment is clean
 
   defaults:
     mem: "4G"
     cpus: 2
     time: "96:00:00"
-    account: "tra220018"
     partition: "shared"
-    log_dir: "/anvil/scratch/x-seandavi/cmgd_logs"
-    singularity_cache: "/anvil/scratch/x-seandavi/singularity_cache"
-    nxf_home: "/anvil/scratch/x-seandavi/nxf_home"
-    nextflow_bin: "/anvil/scratch/x-seandavi/bin/nextflow"
-    google_credentials: "/home/x-seandavi/curatedmetagenomicdata-232f4a306d1d.json"
+    account: "${NF_TEL_ACCOUNT}"
+    log_dir: "${NF_TEL_LOGS}"

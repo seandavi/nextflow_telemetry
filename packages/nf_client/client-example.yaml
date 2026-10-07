@@ -5,6 +5,15 @@
 #
 # The daemon reloads this file on every poll cycle, so edits take effect
 # within one poll interval without restarting the process.
+#
+# String values may reference environment variables as ${NAME}; nf-client
+# expands them at load and fails if one is unset. Bare $NAME is left as is
+# (useful for shell snippets expanded inside the job). The HPC clusters use
+# this to read paths and the account from ~/.nf_tel.env (docs/hpc-layout.md).
+
+# Bearer token for the control plane's authenticated routes (dispatch, admin).
+# Keep it out of the file: export it and reference it.
+token: "${NF_OPERATOR_TOKEN}"
 
 # URL of the telemetry API server (no trailing slash).
 server_url: "https://nf-telemetry-example.run.app/api"
@@ -36,9 +45,10 @@ submission:
 
   # Path to the Jinja2 submit script template (absolute path recommended).
   # All submit templates live in the repo's top-level templates/ directory.
-  # Copy templates/submit_example.sh.j2 (the run_wrapper reference) or an
-  # existing cluster template (submit_alpine / submit_anvil) as a starting point.
-  template_path: "/path/to/nextflow_telemetry/templates/submit_mycluster.sh.j2"
+  # SLURM clusters use templates/submit_slurm.sh.j2, which takes paths and
+  # modules from ~/.nf_tel.env; templates/submit_example.sh.j2 is a minimal
+  # run_wrapper reference for other schedulers.
+  template_path: "${NF_TEL_REPO}/templates/submit_slurm.sh.j2"
 
   # Maximum number of wrapper SLURM jobs (one per batch) allowed to run
   # concurrently. The daemon checks squeue before each fetch and waits if
@@ -50,22 +60,13 @@ submission:
   # the environment is clean (e.g. Anvil).
   slurm_export_none: false
 
-  # Variables injected into the submit script template. Exact keys depend on
-  # the template; add or remove as needed for your cluster.
+  # Variables injected into the submit script template. Keys below are what
+  # submit_slurm.sh.j2 reads; account and qos are optional.
   defaults:
     mem: "4G"
     cpus: 2
     time: "48:00:00"   # must be within your QOS wall-time limit; check with `sacctmgr show qos`
-    account: "my_allocation"
     partition: "shared"
-    log_dir: "/scratch/myuser/logs"
-    singularity_cache: "/scratch/myuser/singularity_cache"
-    nxf_home: "/scratch/myuser/nxf_home"
-    nextflow_bin: "nextflow"                          # or absolute path if not on PATH
-    google_credentials: "/home/myuser/gcp-key.json"  # omit if not using GCS
-    # Shell snippet run inside the submit job to put the `nf-client` executable
-    # on PATH, so `nf-client run-wrapper` resolves on the compute node (it emits
-    # lifecycle telemetry and uploads .nextflow.log). With `uv tool install`,
-    # nf-client lives in ~/.local/bin. Required for the run_wrapper-based
-    # templates (submit_alpine / submit_anvil / submit_example).
-    client_env_setup: "export PATH=$HOME/.local/bin:$PATH"
+    qos: "normal"
+    account: "${NF_TEL_ACCOUNT}"
+    log_dir: "${NF_TEL_LOGS}"   # #SBATCH --output needs a literal path, so it comes from the yaml

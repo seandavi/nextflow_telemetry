@@ -1,0 +1,78 @@
+#!/bin/bash
+#SBATCH --mem={{ mem }}
+#SBATCH --cpus-per-task={{ cpus }}
+#SBATCH --time={{ time }}
+#SBATCH --partition={{ partition }}
+{% if account | default('') %}#SBATCH --account={{ account }}
+{% endif %}{% if qos | default('') %}#SBATCH --qos={{ qos }}
+{% endif %}#SBATCH --job-name={{ run_name }}
+#SBATCH --output={{ log_dir }}/slurm-%j.out
+
+# One template for every SLURM cluster. Cluster differences live in
+# ~/.nf_tel.env (paths, NF_TEL_MODULES, PATH) and in the client yaml
+# (partition, qos, account, resources). See docs/hpc-layout.md.
+# Sourced explicitly: batch shells are not login shells, and Alpine submits
+# with --export=NONE.
+source ~/.nf_tel.env
+
+export GOOGLE_APPLICATION_CREDENTIALS=$NF_TEL_CREDS
+# R2 S3 keys for -profile r2 (ADR 0008): ~/.nf_tel.r2, mode 600, exports
+# R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY from GSM cdsci-r2-*.
+[ -r ~/.nf_tel.r2 ] && source ~/.nf_tel.r2
+{% if 'r2' in profile.split(',') %}if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ]; then
+  echo "profile {{ profile }} needs R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (~/.nf_tel.r2); not starting" >&2
+  exit 2
+fi
+{% endif %}[ -n "$NF_TEL_MODULES" ] && module load $NF_TEL_MODULES
+# Some nextflow modules set NXF_HOME to scratch, which purges the pipeline
+# asset; re-assert the persistent values after loading modules.
+export NXF_HOME=$NF_TEL_NXF_HOME
+export NXF_SINGULARITY_CACHEDIR=$NF_TEL_SIF_CACHE
+
+WORKDIR=$NF_TEL_SCRATCH/$SLURM_JOB_ID
+mkdir -p $WORKDIR $NF_TEL_LOGS $NF_TEL_STORE
+cd $WORKDIR
+
+mkdir -p tempdir
+export TMPDIR=$WORKDIR/tempdir
+export NXF_TEMP=$WORKDIR/tempdir
+
+# Per-sample tasks run as SLURM jobs on the same account/partition as this
+# wrapper. store_dir and its bind come from NF_TEL_STORE so the reference DBs
+# follow the allocation rather than the path hard-coded in the pipeline profile.
+cat << NFOVERRIDE > nextflow_override.config
+process.executor = 'slurm'
+process.clusterOptions = '--partition {{ partition }}{% if account | default('') %} --account {{ account }}{% endif %}{% if qos | default('') %} --qos={{ qos }}{% endif %} --output=$NF_TEL_LOGS/nf-%j.out'
+process.queueSize = 200
+process.time = '24h'
+params.store_dir = '$NF_TEL_STORE'
+singularity.runOptions = '--bind $NF_TEL_STORE:/keep/store/'
+NFOVERRIDE
+
+cat << 'METATSV' > metadata.tsv
+{{ metadata_tsv_content }}
+METATSV
+
+# run-wrapper emits run-lifecycle telemetry (wrapper_started / heartbeat /
+# wrapper_exited) and uploads .nextflow.log on exit. wrapper_exited closes the
+# run server-side, so no separate close-run call is needed. Telemetry failures
+# are swallowed; the wrapper propagates nextflow's exit code.
+nf-client run-wrapper \
+  --run-name {{ run_name }} \
+  --telemetry-url {{ server_url }} \
+  -- \
+  nextflow run {{ workflow_repository }} \
+    -name {{ run_name }} \
+    -revision {{ workflow_revision }} \
+    -profile {{ profile }} \
+    -c nextflow_override.config \
+    --metadata_tsv metadata.tsv \
+    --run_name {{ run_name }} \
+    -with-weblog {{ weblog_url }}
+
+NF_EXIT=$?
+echo "Nextflow exited with code $NF_EXIT"
+cp .nextflow.log $NF_TEL_LOGS/nextflow-${SLURM_JOB_ID}.log 2>/dev/null || true
+rm -rf $WORKDIR
+
+exit $NF_EXIT

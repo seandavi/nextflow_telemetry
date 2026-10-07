@@ -6,7 +6,7 @@
 
 Three decisions the layout rests on:
 
-1. **All cloud storage moves to Cloudflare R2.** Zero egress to onclappc02 (campus firewall constraint) and to outside readers. GCS was a Cloud-Run-era choice; nothing else points us there now.
+1. **All cloud storage moves to Cloudflare R2.** Zero egress to onclappc02 (campus firewall constraint) and to outside readers. GCS was a Cloud-Run-era choice; nothing else points us there now. Accepted as [ADR 0008](adr/0008-object-storage-on-r2.md).
 2. **Raw pipeline outputs are derived from NCBI.** They are not the source of truth — `cmgd-public` (curated) + Postgres (orchestration/telemetry) are. Raw is durable for a hot window, then archived to cold storage. Worst-case loss is recoverable by re-running the pipeline at NCBI bandwidth + compute cost.
 3. **One DuckLake across all data-products projects** (cmgd, omicidx, bioc, …). Schema-per-project in a shared `cdsci-lake` bucket with a shared `cdsci_lake_catalog` Postgres DB. Per-project lakes were considered and rejected: cross-project queries become joins, not federations.
 
@@ -118,6 +118,6 @@ All app/infrastructure secrets — Cloudflare API token, R2 access keys, Cloudfl
 
 Token scopes:
 
-- **`cmgd-raw` / `cmgd-public`**: read tokens are unnecessary (public). Write tokens scoped per-bucket and held by the daemon / publishing pipeline. Stored as `cmgd-r2-write-token` in GCP SM.
+- **`cmgd-raw` / `cmgd-public`**: read tokens are unnecessary (public). Write tokens scoped per-bucket and held by the daemon / publishing pipeline. Stored as `cmgd-r2-write-token` in GCP SM. Until that token exists, the pipeline publishes with the account-wide `cdsci-r2-*` keys ([ADR 0008](adr/0008-object-storage-on-r2.md)).
 - **`cdsci-lake`**: per-project R/W tokens scoped to that project's schema-shaped prefix. Read-only token published to external consumers as needed. Stored as `cmgd-lake-rw-token`, `cmgd-lake-readonly-token`, etc.
 - **`cdsci-backups`**: dedicated write-only token. Restore uses a separate, rarely-issued admin token. Object Lock makes accidental deletion impossible during the retention window. Stored as `cdsci-backups-write-token` (the restore admin token is operator-only and not in GCP SM).
