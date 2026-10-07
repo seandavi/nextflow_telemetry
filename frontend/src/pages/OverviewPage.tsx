@@ -3,6 +3,8 @@ import { T } from '../tokens'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { fmtNum, fmtPct } from '../lib/format'
 import { api, unless501, NOT_AVAILABLE, type NotAvailableValue } from '../lib/api'
+import { useStudies } from '../lib/useStudies'
+import StudyHeadline from '../components/StudyHeadline'
 import KPICard from '../components/KPICard'
 import SectionHeader from '../components/SectionHeader'
 import DataTable from '../components/DataTable'
@@ -103,6 +105,7 @@ export default function OverviewPage({ pollInterval = 30_000 }: { pollInterval?:
   const [running, setRunning]   = useState<RunningProcessesResponse | null>(null)
   const [dispatchability, setDispatchability] = useState<DispatchabilityResult | null>(null)
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
+  const studies = useStudies(tick)
 
   useEffect(() => {
     unless501(api.metrics.summary({ windowDays: 30 })).then(setSummary).catch(console.error)
@@ -122,6 +125,7 @@ export default function OverviewPage({ pollInterval = 30_000 }: { pollInterval?:
     return (
       <PageWrap>
         {dispatchability && <StuckWorkBanner data={dispatchability} />}
+        <StudyHeadline s={studies} />
         <Panel>
           <SectionHeader title="Process Execution" sub={fmtUpdated(lastUpdated)} />
           <NotAvailable what="Task completions, failures, exit codes and retries" />
@@ -142,6 +146,7 @@ export default function OverviewPage({ pollInterval = 30_000 }: { pollInterval?:
   return (
     <PageWrap>
       {dispatchability && <StuckWorkBanner data={dispatchability} />}
+      <StudyHeadline s={studies} />
       <div>
         <SectionHeader title="Process Execution"
           sub={`Last ${summary.window_days ?? 30} days · ${fmtNum(c.process_completed_rows)} task completions`}
