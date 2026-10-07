@@ -100,7 +100,7 @@ export default function StudiesPage({ pollInterval = 30_000 }: { pollInterval?: 
           <div style={{ fontSize: 11, color: T.muted }}>
             {shown.length} of {s.rows.length} studies. Catalog columns from{' '}
             <a href={CATALOG_URL} target="_blank" rel="noreferrer" style={link}>studies_status.csv</a>{' '}
-            (master); registered / completed / running / failed are live samples under the active workflow version.
+            (master); registered / completed / running / failed are live samples under the active workflow version (running includes jobs claimed or submitted to a cluster queue).
           </div>
         </div>
 
