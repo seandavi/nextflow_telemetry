@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { T } from '../tokens'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { fmtNum, fmtPct } from '../lib/format'
-import { api } from '../lib/api'
+import { api, unless501, NOT_AVAILABLE, type NotAvailableValue } from '../lib/api'
 import KPICard from '../components/KPICard'
 import SectionHeader from '../components/SectionHeader'
 import DataTable from '../components/DataTable'
@@ -10,6 +10,7 @@ import MiniBar from '../components/MiniBar'
 import DonutChart from '../components/DonutChart'
 import Panel from '../components/Panel'
 import PageWrap from '../components/PageWrap'
+import NotAvailable from '../components/NotAvailable'
 import type { ProcessSummaryResponse, RunningProcessesResponse, RunningProcessRow, TopFailureRow, TopRetryRow, TopFailureExitCodeRow, DispatchabilityResult } from '../types'
 
 function StuckWorkBanner({ data }: { data: DispatchabilityResult }) {
@@ -98,13 +99,13 @@ function RunningPanel({ data }: { data: RunningProcessesResponse }) {
 }
 
 export default function OverviewPage({ pollInterval = 30_000 }: { pollInterval?: number }) {
-  const [summary, setSummary]   = useState<ProcessSummaryResponse | null>(null)
+  const [summary, setSummary]   = useState<ProcessSummaryResponse | NotAvailableValue | null>(null)
   const [running, setRunning]   = useState<RunningProcessesResponse | null>(null)
   const [dispatchability, setDispatchability] = useState<DispatchabilityResult | null>(null)
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
   useEffect(() => {
-    api.metrics.summary({ windowDays: 30 }).then(setSummary).catch(console.error)
+    unless501(api.metrics.summary({ windowDays: 30 })).then(setSummary).catch(console.error)
     api.metrics.running().then(setRunning).catch(console.error)
     api.admin.dispatchability().then(setDispatchability).catch(console.error)
   }, [tick])
@@ -113,6 +114,19 @@ export default function OverviewPage({ pollInterval = 30_000 }: { pollInterval?:
     return (
       <PageWrap>
         <div style={{ color: T.muted, fontSize: 14, padding: '32px 0' }}>Loading…</div>
+      </PageWrap>
+    )
+  }
+
+  if (summary === NOT_AVAILABLE) {
+    return (
+      <PageWrap>
+        {dispatchability && <StuckWorkBanner data={dispatchability} />}
+        <Panel>
+          <SectionHeader title="Process Execution" sub={fmtUpdated(lastUpdated)} />
+          <NotAvailable what="Task completions, failures, exit codes and retries" />
+        </Panel>
+        <RunningPanel data={running} />
       </PageWrap>
     )
   }
