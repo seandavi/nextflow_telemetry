@@ -40,15 +40,22 @@ ssh <cluster> 'source ~/.nf_tel.env && cd $NF_TEL_REPO && git pull --ff-only'
 | `NF_TEL_SCRATCH` | per-run launch dir root, ephemeral | `/scratch/alpine/seda0001_amc/nf_worker` | `/anvil/scratch/x-seandavi/cmgd_data` |
 | `NF_TEL_SIF_CACHE` | container image cache, ephemeral | `/scratch/alpine/seda0001_amc/apptainer_cache` | `/anvil/scratch/x-seandavi/singularity_cache` |
 | `NF_TEL_CREDS` | GCS service-account json (legacy `gcs` profile) | `$HOME/curatedmetagenomicdata-*.json` | same |
-| `NF_TEL_MODULES` | `module load` list for the submit script | `singularity git jdk/18.0.1.1` (+ `NXF_VER=25.10.8`) | `openjdk/11.0.8_10` (+ `NXF_VER=23.10.1`) |
+| `NF_TEL_MODULES` | `module load` list for the submit script | `singularity git jdk/18.0.1.1` (+ `NXF_VER=25.10.8`) | none; user-space JDK 21 at `$NF_TEL_DAEMON/jdk` (+ `NXF_VER=25.10.8`) |
 
 Nextflow on both clusters is the standalone launcher at `$NF_TEL_DAEMON/nextflow`
-(`curl -fsSL https://get.nextflow.io`), pinned by `NXF_VER`. Alpine needs >= 25.04
-for the `r2` profile and < 26.04 until the pipeline passes the strict parser;
-Anvil's Java 11 caps it at 23.10.1, which cannot use `r2`; Anvil's daemon is
-stopped (since 2026-10-03) and must not be restarted on `anvil,gcs`, since that
-would write new outputs to GCS ([ADR 0008](adr/0008-object-storage-on-r2.md)).
-Give it Java 17+ and `anvil,r2` first (untested option: a user-space JDK under `$NF_TEL_DAEMON`).
+(`curl -fsSL https://get.nextflow.io`), pinned by `NXF_VER`. Both clusters need >= 25.04
+for the `r2` profile ([ADR 0008](adr/0008-object-storage-on-r2.md)) and < 26.04 until
+the pipeline passes the strict parser. Anvil's modules stop at Java 11, so it runs a
+user-space Temurin 21 JDK at `$NF_TEL_DAEMON/jdk` (`JAVA_HOME` in `~/.nf_tel.env`):
+
+```bash
+curl -fsSL -o /tmp/jdk.tgz https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse
+mkdir $NF_TEL_DAEMON/jdk && tar -xzf /tmp/jdk.tgz -C $NF_TEL_DAEMON/jdk --strip-components=1
+```
+
+A launcher fetched for 23.x cannot boot 25.x (`exec: --: invalid option`); re-fetch it
+from get.nextflow.io when crossing major versions. Never run Anvil on `anvil,gcs`:
+that writes new outputs to GCS.
 
 Rule of thumb: **projects** = anything a run needs to resume or an operator
 needs to read later. **scratch** = anything regenerable. **home** = credentials
@@ -86,7 +93,7 @@ and check `sbatch --test-only` with the rendered script before starting the daem
 | home | 2 G quota, **84 % full** | 25 G quota, 9.3 G used, 8.2 G is `~/.apptainer` |
 | projects | 250 G, 140 G used (56 %) | 5 T, 132 G used |
 | scratch | 2.8 P shared, purged | 100 T, purged |
-| nextflow | 25.10.8 launcher at `$NF_TEL_DAEMON/nextflow` (Java 18 module); the 24.04 module is not used | pinned 23.10.1 at `$NF_TEL_DAEMON/nextflow` |
+| nextflow | 25.10.8 launcher at `$NF_TEL_DAEMON/nextflow` (Java 18 module); the 24.04 module is not used | 25.10.8 launcher at `$NF_TEL_DAEMON/nextflow` (Temurin 21 at `$NF_TEL_DAEMON/jdk`) |
 | partitions | `acpu` (1 day) with qos `cpu-normal`; `cpu-long` for 7 days. `amilan` is gone. | `shared` |
 
 Housekeeping still open:
