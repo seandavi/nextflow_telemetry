@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { LayoutDashboard, BarChart2, GitBranch, FlaskConical, SendHorizonal, Server, Users, Activity, LogIn, LogOut, type LucideIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { LayoutDashboard, BarChart2, Library, GitBranch, FlaskConical, SendHorizonal, Server, Users, Activity, LogIn, LogOut, type LucideIcon } from 'lucide-react'
 import { T } from './tokens'
 import { MOCK_HEALTH } from './lib/mock-data'
 import { AuthProvider, useAuth } from './lib/auth'
@@ -8,17 +8,19 @@ import MetricsPage from './pages/MetricsPage'
 import WorkflowsPage from './pages/WorkflowsPage'
 import SamplesPage from './pages/SamplesPage'
 import CohortsPage from './pages/CohortsPage'
+import StudiesPage from './pages/StudiesPage'
 import DispatchPage from './pages/DispatchPage'
 import RunsPage from './pages/RunsPage'
 import InfraPage from './pages/InfraPage'
 
-type NavId = 'overview' | 'metrics' | 'workflows' | 'samples' | 'cohorts' | 'dispatch' | 'runs' | 'infra'
+type NavId = 'overview' | 'metrics' | 'workflows' | 'samples' | 'studies' | 'cohorts' | 'dispatch' | 'runs' | 'infra'
 
 const NAV: Array<{ id: NavId; label: string; icon: LucideIcon; sub: string }> = [
   { id: 'overview',  label: 'Overview',        icon: LayoutDashboard, sub: 'Pipeline health'      },
   { id: 'metrics',   label: 'Process Metrics', icon: BarChart2,       sub: 'Failures & resources' },
   { id: 'workflows', label: 'Workflows',        icon: GitBranch,       sub: 'Registry'             },
   { id: 'samples',   label: 'Samples',          icon: FlaskConical,    sub: 'Catalog'              },
+  { id: 'studies',   label: 'Studies',          icon: Library,         sub: 'cMD study progress'   },
   { id: 'cohorts',   label: 'Cohorts',          icon: Users,           sub: 'Collection summary'   },
   { id: 'dispatch',  label: 'Dispatch',         icon: SendHorizonal,   sub: '& Admin'              },
   { id: 'runs',      label: 'Runs',             icon: Activity,        sub: 'Run health & deaths'  },
@@ -191,8 +193,21 @@ function Sidebar({ active, onNav, pollInterval, onPollInterval }: {
   )
 }
 
+// ponytail: path <-> page sync so pages are linkable (e.g. /studies); swap for a router when pages need params.
+const pageFromPath = (): NavId =>
+  NAV.find(n => `/${n.id}` === window.location.pathname)?.id ?? 'overview'
+
 export default function App() {
-  const [page, setPage] = useState<NavId>('overview')
+  const [page, setPageState] = useState<NavId>(pageFromPath)
+  const setPage = (id: NavId) => {
+    setPageState(id)
+    window.history.pushState(null, '', id === 'overview' ? '/' : `/${id}`)
+  }
+  useEffect(() => {
+    const onPop = () => setPageState(pageFromPath())
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
   const [pollInterval, setPollInterval] = useState(30_000)
 
   const pageMap: Record<NavId, React.ReactElement> = {
@@ -200,6 +215,7 @@ export default function App() {
     metrics:   <MetricsPage   pollInterval={pollInterval} />,
     workflows: <WorkflowsPage pollInterval={pollInterval} />,
     samples:   <SamplesPage   pollInterval={pollInterval} />,
+    studies:   <StudiesPage   pollInterval={pollInterval} />,
     cohorts:   <CohortsPage   pollInterval={pollInterval} />,
     dispatch:  <DispatchPage />,
     runs:      <RunsPage      pollInterval={pollInterval} />,
