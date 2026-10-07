@@ -1,6 +1,6 @@
 # 0004. Distinguish workflow version (logical) from revision (operational)
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-07)
 - **Date:** 2026-07-02
 - **Deciders:** Sean Davis
 
@@ -106,6 +106,18 @@ mismatch by letting the version be the coarser epoch label.
 - **Follow-up work:** surface the per-sample revision in the UI ("which code
   produced this output"); consider a first-class "reprocess subset" operation;
   ratify the epoch-numbering convention above.
+
+## Worked example
+
+- **Pipeline 2.2.2** adds the telemetry URL and a task-log guard. No output
+  changes, so it is a hotfix: `PATCH /workflows/{pk}/revision` to the new tag
+  and requeue failed jobs only.
+- **Pipeline 2.3.0** adds HUMAnN bundles and `--metaphlan_profile`. Outputs
+  change, so it is a new `(workflow_id, version)` with a new job set and
+  reprocessing epoch.
+
+v2 implements the split: `WorkflowRevisionRequest` in `cf/src/schemas.ts` backs
+the revision route, and the job key excludes revision.
 
 ## References
 

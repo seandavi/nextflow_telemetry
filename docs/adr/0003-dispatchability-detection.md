@@ -54,3 +54,7 @@ shows a banner when this set is non-empty. This is the first-class answer to
 - `src/nextflow_telemetry/routers/admin.py` (`GET /admin/dispatchability`).
 - seandavi/nextflow_telemetry#104 (implementation + Overview banner).
 - [0001](0001-pull-mode-orchestration.md) (why daemon liveness is load-bearing).
+
+## Implementation note (2026-10-07)
+
+Also implemented in `cf/src/control-do.ts` (dispatchability) alongside the v1 services.

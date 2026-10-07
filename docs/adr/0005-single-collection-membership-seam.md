@@ -1,5 +1,9 @@
 # Single write seam for collection membership; `metadata.cohort` retired
 
+- **Status:** Accepted
+- **Date:** 2026-07-10
+- **Deciders:** Sean Davis
+
 ## Context
 
 "Which collection is this sample in?" was written three ways — the accession
@@ -31,3 +35,6 @@ is no surrogate id.
   many-to-one table later.
 - Membership is many-to-many and purely operational (completion monitoring), so
   Samples-page collection chips are overlap-allowed, not a partition.
+- The v2 `collection_samples` table (`cf/src/control-do.ts`) and the planned
+  catalog `study_samples` join ([0009](0009-catalog-in-postgres-control-plane-in-worker.md))
+  are the same seam: one many-to-many membership join, written in one place.
