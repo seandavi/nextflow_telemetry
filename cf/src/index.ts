@@ -575,7 +575,11 @@ export function authExempt(method: string, path: string): boolean {
     method === "GET" ||
     method === "OPTIONS" ||
     path.endsWith("/telemetry") ||
-    /\/runs\/[^/]+\/event$/.test(path)
+    /\/runs\/[^/]+\/event$/.test(path) ||
+    // The pipeline's per-task afterScript cannot carry a token either; it only
+    // ever knows the run_name it was dispatched with, so the posture matches
+    // /runs/{run}/event. Upload is bounded by TASK_LOG_MAX and the 400 guard.
+    path.endsWith("/task-logs")
   );
 }
 

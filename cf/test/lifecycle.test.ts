@@ -352,8 +352,10 @@ describe("auth exemptions", () => {
     expect(authExempt("POST", "/api/runs/r01abc/event")).toBe(true);
     expect(authExempt("POST", "/runs/r01abc/event")).toBe(true);
     expect(authExempt("POST", "/telemetry")).toBe(true);
+    expect(authExempt("POST", "/api/task-logs")).toBe(true);
+    expect(authExempt("POST", "/task-logs")).toBe(true);
     expect(authExempt("GET", "/api/admin/stats")).toBe(true);
-    for (const p of ["/api/dispatch/batch", "/api/samples", "/api/admin/reset", "/api/runs/r01abc/events", "/api/task-logs"]) {
+    for (const p of ["/api/dispatch/batch", "/api/samples", "/api/admin/reset", "/api/runs/r01abc/events", "/api/workflows"]) {
       expect(authExempt("POST", p), p).toBe(false);
     }
   });
