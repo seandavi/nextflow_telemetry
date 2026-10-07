@@ -8,10 +8,10 @@
  * plus the two things that used to need cron sweepers and now hang off DO
  * alarms: claim expiry and heartbeat death.
  */
-import { env, runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
+import { createExecutionContext, env, runDurableObjectAlarm, runInDurableObject, SELF, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ControlDO } from "../src/control-do";
-import { authExempt, resetAllowed } from "../src/index";
+import worker, { authExempt, resetAllowed } from "../src/index";
 import * as S from "../src/schemas";
 
 const WF = {
@@ -352,8 +352,10 @@ describe("auth exemptions", () => {
     expect(authExempt("POST", "/api/runs/r01abc/event")).toBe(true);
     expect(authExempt("POST", "/runs/r01abc/event")).toBe(true);
     expect(authExempt("POST", "/telemetry")).toBe(true);
+    expect(authExempt("POST", "/api/task-logs")).toBe(true);
+    expect(authExempt("POST", "/task-logs")).toBe(true);
     expect(authExempt("GET", "/api/admin/stats")).toBe(true);
-    for (const p of ["/api/dispatch/batch", "/api/samples", "/api/admin/reset", "/api/runs/r01abc/events", "/api/task-logs"]) {
+    for (const p of ["/api/dispatch/batch", "/api/samples", "/api/admin/reset", "/api/runs/r01abc/events", "/api/workflows"]) {
       expect(authExempt("POST", p), p).toBe(false);
     }
   });
@@ -398,5 +400,67 @@ describe("reset", () => {
       const listed = await env.STORE.list({ prefix });
       expect(listed.objects, `R2 prefix ${prefix}`).toHaveLength(0);
     }
+  });
+});
+
+describe("production hardening", () => {
+  // Calls the Worker with a swapped env so the suite-wide ALLOW_RESET=true is untouched.
+  async function withEnv(overrides: Record<string, string | undefined>, path: string, init: RequestInit) {
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(new Request(`https://x${path}`, init), { ...env, ...overrides }, ctx);
+    await waitOnExecutionContext(ctx);
+    return res;
+  }
+
+  it("POST /admin/reset is 403 when ALLOW_RESET is false or unset, even with a valid token", async () => {
+    const init = { method: "POST", headers: { authorization: "Bearer t" } };
+    for (const ALLOW_RESET of ["false", undefined]) {
+      const res = await withEnv({ API_TOKEN: "t", ALLOW_RESET }, "/admin/reset", init);
+      expect(res.status, String(ALLOW_RESET)).toBe(403);
+    }
+  });
+
+  it("with API_TOKEN set, unauthenticated writes are 401 except /telemetry and the run event", async () => {
+    const t = { API_TOKEN: "t" };
+    const reconcile = await withEnv(t, "/api/admin/reconcile-jobs", { method: "POST" });
+    expect(reconcile.status).toBe(401);
+
+    const telemetry = await withEnv(t, "/telemetry", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: "x", runName: "auth-probe", event: "started", utcTime: new Date().toISOString() }),
+    });
+    expect(telemetry.status).not.toBe(401);
+
+    const fd = new FormData();
+    fd.set("event", JSON.stringify({ utc_time: new Date().toISOString(), event: "x" }));
+    const event = await withEnv(t, "/runs/x/event", { method: "POST", body: fd });
+    expect(event.status).not.toBe(401);
+  });
+
+  async function uploadLog(fields: Record<string, string | File>) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+    return SELF.fetch("https://x/api/task-logs", { method: "POST", body: fd });
+  }
+
+  it("rejects task logs with a missing, empty or literal-null run_name", async () => {
+    const base = { log_type: "command_out", task_hash: "ab/cdef12", content: new File(["hi"], "log.txt") };
+    expect((await uploadLog(base)).status).toBe(400);
+    expect((await uploadLog({ ...base, run_name: "" })).status).toBe(400);
+    expect((await uploadLog({ ...base, run_name: "null" })).status).toBe(400);
+    expect((await env.STORE.list({ prefix: "task-logs/null/" })).objects).toHaveLength(0);
+  });
+
+  it("strips NUL bytes from uploaded task logs before writing to R2", async () => {
+    const res = await uploadLog({
+      run_name: "nul-probe",
+      log_type: "command_out",
+      task_hash: "ab/cdef12",
+      content: new File(["he\x00llo\x00"], "log.txt"),
+    });
+    expect(res.status).toBe(201);
+    const obj = await env.STORE.get("task-logs/nul-probe/ab/cdef12/command_out");
+    expect(await obj!.text()).toBe("hello");
   });
 });

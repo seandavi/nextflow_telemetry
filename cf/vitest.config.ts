@@ -9,6 +9,8 @@ export default defineWorkersConfig({
         // the previous one left behind. Per-test storage rollback would undo it.
         isolatedStorage: false,
         wrangler: { configPath: "./wrangler.jsonc" },
+        // The lifecycle suite resets between narratives; production has it off.
+        miniflare: { bindings: { ALLOW_RESET: "true" } },
       },
     },
   },

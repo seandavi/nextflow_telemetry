@@ -39,6 +39,11 @@ trigger, wrapper and weblog routes open.
 
 ## Your attention
 
+0. **Production hardening deployed** (Phase 0 of #194): `POST /admin/reset` is
+   now 403 in production (use `wrangler deploy --var ALLOW_RESET:true` on a
+   staging deploy for the dev loop); CORS pinned to the dashboard and
+   `localhost:5173`; `POST /task-logs` rejects missing/`"null"` `run_name` and
+   strips NUL bytes. `just v2-reset` no longer works against production.
 1. **Rotate the v2 operator token** (GSM + `wrangler secret put API_TOKEN`).
 2. **Take #178.** Prerequisites are listed on the issue: reinstall nf-client on
    the login node from `$NF_TEL_REPO`, add `token:` to the cluster yaml,
