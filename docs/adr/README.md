@@ -52,5 +52,9 @@ other. This preserves the historical record rather than rewriting it.
 | [0001](0001-pull-mode-orchestration.md) | Pull-mode HPC orchestration | Accepted |
 | [0002](0002-run-death-classification.md) | Run death classification | Accepted |
 | [0003](0003-dispatchability-detection.md) | Dispatchability detection (pending work with no active daemon) | Accepted |
+| [0004](0004-workflow-version-vs-revision.md) | Distinguish workflow version (logical) from revision (operational) | Accepted |
+| [0005](0005-single-collection-membership-seam.md) | Single write seam for collection membership | Accepted |
+| [0006](0006-cloudflare-control-plane.md) | Replace the FastAPI + Postgres server with a Cloudflare control plane | Accepted (amended 2026-10-07; in part superseded by [0009](0009-catalog-in-postgres-control-plane-in-worker.md)) |
 | [0007](0007-readset-identity.md) | Identify processing units as readsets digested with the refget seqcol algorithm | Accepted (not yet implemented) |
 | [0008](0008-object-storage-on-r2.md) | Keep all cloud object storage on Cloudflare R2 | Accepted |
+| [0009](0009-catalog-in-postgres-control-plane-in-worker.md) | Keep the catalog in Postgres and the control plane in the Worker | Accepted |

@@ -117,6 +117,13 @@ used.
 - Follow-up decisions: unit identifiers for non-INSDC data and the cloud
   storage access layer (DRS-like or not), recorded together in a later ADR.
 
+## Conforming implementations
+
+- metacurator SPEC 170 (`src/metacurator/readset.py`) exists and reproduces the
+  same golden vectors.
+- The nextflow_telemetry implementation (`nf-client`, `cf/`, the pipeline input
+  TSV) is Phase 1 of #195. This ADR moves to plain "Accepted" when that lands.
+
 ## References
 
 - refget Sequence Collections v1.0.0 — https://ga4gh.github.io/refget/seqcols/

@@ -85,3 +85,20 @@ Object classes and one R2 bucket, in `cf/`, wire-compatible with v1:
 - `cf/README.md` (deviations, endpoint status, cost), `cf/docs/diagrams.md`
   (ERD, topology, sequences, state machines), `cf/STATUS.md`.
 - Commits 6aa1e36, e47a37a, 72ad527 on `feat/cf-control-plane`; PR #182.
+
+## Amendment 2026-10-07
+
+The decision body above stands. [0009](0009-catalog-in-postgres-control-plane-in-worker.md)
+supersedes it in part:
+
+- **Scope is the control plane, not a replacement of the FastAPI + Postgres
+  server.** Study and sample metadata, submissions, curated annotations and users
+  stay in a Postgres catalog service. The "stay on v1" and "all in the Worker"
+  framings are both closed by 0009.
+- **The historical tier (#175) is DuckDB over the R2 NDJSON, served from the
+  Python catalog service.** It is neither a container behind the Worker nor
+  DuckDB-WASM. The 501 analytical endpoints are answered there.
+- **Production invariants.** `ALLOW_RESET="false"` and a pinned `CORS_ORIGINS`
+  (deployed 2026-10-07, PR #199). A deploy that sets either otherwise is wrong.
+- **`POST /task-logs` is auth-exempt**, like `/runs/{run}/event`: the pipeline
+  `afterScript` that uploads task logs carries no token.

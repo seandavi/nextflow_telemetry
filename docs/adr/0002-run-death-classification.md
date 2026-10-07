@@ -61,3 +61,7 @@ all-`ABORTED`/zero-`FAILED` run is visibly a driver death, not a pipeline bug.
 - `src/nextflow_telemetry/routers/runs.py` (`_classify_run`, `GET /runs`).
 - seandavi/nextflow_telemetry#105 (implementation + Runs page).
 - Related pipeline-side policy: `curatedMetagenomicsNextflow` ADR-0009.
+
+## Implementation note (2026-10-07)
+
+Also implemented in `cf/src/control-do.ts` (classification) alongside the v1 services.
