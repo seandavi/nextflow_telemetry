@@ -45,9 +45,9 @@ remote commands with `source ~/.nf_tel.env`.
 | Cluster user | `seda0001_amc` | `x-seandavi` |
 | `NF_TEL_ACCOUNT` | `amc-general` | `cis240955` (ACCESS; `NF_TEL_HOME` derives from it) |
 | Partition / qos | `acpu` / `cpu-normal` (1 day); `amilan` is gone | `shared` |
-| Nextflow `-profile` | `alpine,r2` (R2 `s3://cmgd-raw`, ADR 0008) | daemon stopped since 2026-10-03; do **not** restart on `anvil,gcs` (new GCS writes violate ADR 0008). Needs Java 17+ for Nextflow >= 25.04 and `anvil,r2` first |
+| Nextflow `-profile` | `alpine,r2` (R2 `s3://cmgd-raw`, ADR 0008) | `anvil,r2` (since 2026-10-07); never `anvil,gcs` (new GCS writes violate ADR 0008) |
 | `slurm_export_none` | `true` (login env leaks to compute) | `false` |
-| Nextflow | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, `jdk/18.0.1.1`); not the 24.04 module | pinned 23.10.1 launcher in `$NF_TEL_DAEMON` (Java 11 only) |
+| Nextflow | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, `jdk/18.0.1.1`); not the 24.04 module | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, user-space Temurin 21 at `$NF_TEL_DAEMON/jdk`; modules stop at Java 11) |
 | Short test partition | `atesting`, qos `testing` (1 h) | — |
 | GCS access | `rclone gs1:` only (no gcloud/gsutil) | — |
 
