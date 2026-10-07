@@ -11,7 +11,7 @@ export default function StudyHeadline({ s, actions }: { s: StudiesState; actions
     <div>
       <SectionHeader
         title={`Studies · ${s.pipelineLabel}`}
-        sub={`${completed.toLocaleString()} samples completed / ${curated.toLocaleString()} curated samples, under the active version`}
+        sub={`${completed.toLocaleString()} samples completed${curated ? ` / ${curated.toLocaleString()} curated samples` : ''}, under the active version`}
         actions={actions}
       />
       {s.catalogFailed && <Notice>Study catalog (curatedMetagenomicDataCuration studies_status.csv) could not be loaded; showing v2 collections only.</Notice>}

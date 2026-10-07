@@ -84,7 +84,8 @@ export async function fetchCatalog(): Promise<CatalogStudy[]> {
 }
 
 // The one processing-status rule, shared by the Studies page and Overview.
-//   processed   : completed ≥ curated sample count (registered count if not in catalog), and > 0
+//   processed   : completed ≥ curated sample count, and > 0. Needs a catalog row:
+//                 without a curated count we cannot claim a study is done.
 //   in_progress : not processed, at least one sample claimed/submitted/running
 //   partial     : some completed, nothing active
 //   not_started : no v2 collection, or registered with nothing completed and
@@ -93,8 +94,7 @@ export async function fetchCatalog(): Promise<CatalogStudy[]> {
 // under an active workflow); pending-only work is not counted as active.
 export function studyStatus(nCurated: number | null, live: CohortLeaderboardRow | undefined): StudyStatus {
   if (!live || live.sample_count === 0) return 'not_started'
-  const target = nCurated ?? live.sample_count
-  if (live.samples_completed > 0 && live.samples_completed >= target) return 'processed'
+  if (nCurated != null && live.samples_completed > 0 && live.samples_completed >= nCurated) return 'processed'
   if (live.samples_running > 0) return 'in_progress'
   if (live.samples_completed > 0) return 'partial'
   return 'not_started'

@@ -15,7 +15,7 @@ assert.equal(studyStatus(3, lb({ sample_count: 3, samples_completed: 3 })), 'pro
 assert.equal(studyStatus(10, lb({ sample_count: 10, samples_completed: 4, samples_running: 2 })), 'in_progress')
 assert.equal(studyStatus(10, lb({ sample_count: 10, samples_failed: 10 })), 'not_started')
 assert.equal(studyStatus(0, lb({ sample_count: 0 })), 'not_started')
-assert.equal(studyStatus(null, lb({ sample_count: 2, samples_completed: 2 })), 'processed')
+assert.equal(studyStatus(null, lb({ sample_count: 2, samples_completed: 2 })), 'partial')
 
 const csv = 'study_name,n_samples,body_site,notes\r\nA_2020,5,feces;milk,"has, comma"\r\nB_2021,3,feces,"say ""hi"""\r\n\r\n'
 const rows = parseCsv(csv)
