@@ -26,8 +26,15 @@ const NAV: Array<{ id: NavId; label: string; icon: LucideIcon; sub: string }> = 
 ]
 
 function UserChip() {
-  const { user, loading, signIn, signOut } = useAuth()
+  const { user, loading, available, signIn, signOut } = useAuth()
   if (loading) return null
+  if (!available) {
+    return (
+      <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.5 }}>
+        Read-only. Sign-in and operator actions are not available from the dashboard until #176.
+      </div>
+    )
+  }
   if (!user) {
     return (
       <button onClick={signIn} style={{

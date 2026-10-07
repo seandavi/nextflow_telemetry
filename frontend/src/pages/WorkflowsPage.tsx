@@ -187,7 +187,7 @@ function WorkflowCard({
             {([
               ['Repository',  wf.repository_url],
               ['Revision',    wf.revision],
-              ['Profile',     wf.profile],
+              ['Profile',     wf.profile ?? '—'],
               ['Max Re-queues', String(wf.max_retries)],
               ['Registered',  fmtDate(wf.created_at)],
               ['Updated',     fmtAgo(wf.updated_at)],

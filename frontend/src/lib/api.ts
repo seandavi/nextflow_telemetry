@@ -61,6 +61,23 @@ function metricsParams(f: MetricsFilters, extra?: Record<string, string | number
 export const API_BASE = (import.meta.env.VITE_API_URL ?? '') + '/api'
 const BASE = API_BASE
 
+export class ApiError extends Error {
+  constructor(readonly status: number, message: string) { super(message) }
+}
+
+// The v2 API answers 501 for routes it knows but does not serve yet (the
+// per-task historical tier, #175). Panels render <NotAvailable /> for it
+// rather than spinning or showing zeros.
+export const NOT_AVAILABLE = 'not-available'
+export type NotAvailableValue = typeof NOT_AVAILABLE
+
+export function unless501<T>(p: Promise<T>): Promise<T | NotAvailableValue> {
+  return p.catch((e: unknown) => {
+    if (e instanceof ApiError && e.status === 501) return NOT_AVAILABLE
+    throw e
+  })
+}
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -72,7 +89,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     // (not "*"), which is what makes this combination valid.
     credentials: 'include',
   })
-  if (!res.ok) throw new Error(`${method} ${path} → ${res.status}`)
+  if (!res.ok) throw new ApiError(res.status, `${method} ${path} → ${res.status}`)
   return res.json() as Promise<T>
 }
 
@@ -150,7 +167,7 @@ export const api = {
       if (opts.workflowId) p.set('workflow_id', opts.workflowId)
       if (opts.limit) p.set('limit', String(opts.limit))
       const qs = p.toString()
-      return get<RunsListResponse>(`/runs/${qs ? `?${qs}` : ''}`)
+      return get<RunsListResponse>(`/runs${qs ? `?${qs}` : ''}`)
     },
     get: (runName: string) => get<RunDetail>(`/runs/${encodeURIComponent(runName)}`),
   },

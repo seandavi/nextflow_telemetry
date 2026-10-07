@@ -69,7 +69,7 @@ function RunDrawer({ runName, onClose }: { runName: string; onClose: () => void 
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             {Object.entries(detail.task_status_counts).length === 0 && (
-              <div style={{ fontSize: 12, color: T.muted }}>No process_completed events recorded.</div>
+              <div style={{ fontSize: 12, color: T.muted }}>No task counts reported. Per-task history is not served by the API yet (#175).</div>
             )}
             {Object.entries(detail.task_status_counts).map(([status, n]) => (
               <KPICard key={status} label={status} value={fmtNum(n)}

@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { T } from '../tokens'
 import { fmtNum, fmtDate } from '../lib/format'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
-import { api, API_BASE } from '../lib/api'
+import { api, API_BASE, unless501, NOT_AVAILABLE, type NotAvailableValue } from '../lib/api'
 import PageWrap from '../components/PageWrap'
 import Panel from '../components/Panel'
 import SectionHeader from '../components/SectionHeader'
 import Btn from '../components/Btn'
+import NotAvailable from '../components/NotAvailable'
 import type {
   CohortListItem,
   CohortLeaderboardRow,
@@ -275,7 +276,7 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
   const [workflowKey, setWorkflowKey] = useState<string>('')  // "wf_id|version" or ""
   const [summary, setSummary] = useState<CohortSummaryResponse | null>(null)
   const [selectedProcess, setSelectedProcess] = useState<string>('')
-  const [failures, setFailures] = useState<CohortFailureRow[]>([])
+  const [failures, setFailures] = useState<CohortFailureRow[] | NotAvailableValue>([])
   const [loadingFailures, setLoadingFailures] = useState(false)
 
   useEffect(() => {
@@ -328,8 +329,8 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
     if (!selectedCohort || !selectedProcess) return
     let ignore = false
     setLoadingFailures(true)
-    api.cohorts.failures(selectedCohort, selectedProcess, wfFilter)
-      .then(r => { if (!ignore) setFailures(r.rows) })
+    unless501(api.cohorts.failures(selectedCohort, selectedProcess, wfFilter).then(r => r.rows))
+      .then(rows => { if (!ignore) setFailures(rows) })
       .catch(console.error)
       .finally(() => { if (!ignore) setLoadingFailures(false) })
     return () => { ignore = true }
@@ -444,7 +445,8 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
               </div>
               {summary.failure_by_process.length === 0 ? (
                 <div style={{ fontSize: 12, color: T.muted, padding: 14 }}>
-                  No process failures recorded for this cohort/workflow.
+                  No process failures reported. Per-process failures come from per-task
+                  history, which the API does not serve yet (#175).
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -468,12 +470,14 @@ export default function CohortsPage({ pollInterval = 30_000 }: { pollInterval?: 
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
                   {selectedProcess ? `Failed tasks · ${selectedProcess}` : 'Click a process to inspect failures'}
                 </div>
-                {selectedProcess && (
+                {selectedProcess && failures !== NOT_AVAILABLE && (
                   <div style={{ fontSize: 11, color: T.muted }}>{failures.length} task{failures.length !== 1 ? 's' : ''}</div>
                 )}
               </div>
               {selectedProcess ? (
-                <FailuresTable rows={failures} loading={loadingFailures} />
+                failures === NOT_AVAILABLE
+                  ? <NotAvailable what="Failed tasks" />
+                  : <FailuresTable rows={failures} loading={loadingFailures} />
               ) : (
                 <div style={{ fontSize: 12, color: T.muted, padding: 14 }}>
                   Select a process on the left to see the failed task occurrences for this cohort.

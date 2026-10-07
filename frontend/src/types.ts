@@ -31,7 +31,7 @@ export interface WorkflowResponse {
   version: string
   repository_url: string
   revision: string
-  profile: string
+  profile?: string  // v1 only; v2 workflows carry no profile (daemons choose it)
   manifest_version: string | null
   max_retries: number
   status: 'active' | 'paused' | 'retired'

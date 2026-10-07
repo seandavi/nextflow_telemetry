@@ -3,7 +3,7 @@ import { usePoll, fmtUpdated } from '../lib/usePoll'
 import { useUrlFilters } from '../lib/useUrlFilters'
 import { T } from '../tokens'
 import { fmtNum, fmtPct, fmtDate } from '../lib/format'
-import { api, type MetricsFilters } from '../lib/api'
+import { api, unless501, NOT_AVAILABLE, type MetricsFilters, type NotAvailableValue } from '../lib/api'
 import KPICard from '../components/KPICard'
 import SectionHeader from '../components/SectionHeader'
 import DataTable from '../components/DataTable'
@@ -12,6 +12,7 @@ import Panel from '../components/Panel'
 import PageWrap from '../components/PageWrap'
 import Btn from '../components/Btn'
 import Select from '../components/Select'
+import NotAvailable from '../components/NotAvailable'
 import type {
   ProcessSummaryResponse,
   ProcessFailuresResponse,
@@ -499,7 +500,7 @@ function TasksTab({ filters }: { filters: MetricsFilters }) {
   const [processFilter, setProcessFilter] = useState('')
   const [statusFilter,  setStatusFilter]  = useState<'' | 'COMPLETED' | 'FAILED'>('')
   const [page, setPage] = useState(0)
-  const [data, setData] = useState<TasksResponse | null>(null)
+  const [data, setData] = useState<TasksResponse | NotAvailableValue | null>(null)
   const [loading, setLoading] = useState(false)
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
@@ -512,16 +513,20 @@ function TasksTab({ filters }: { filters: MetricsFilters }) {
     setLoading(true)
     setData(null)
     setExpandedId(null)
-    api.metrics.tasks(filters, {
+    unless501(api.metrics.tasks(filters, {
       process: processFilter || undefined,
       status:  statusFilter  || undefined,
       limit:   PAGE_SIZE,
       offset:  page * PAGE_SIZE,
-    })
+    }))
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [filters, processFilter, statusFilter, page])
+
+  if (data === NOT_AVAILABLE) {
+    return <Panel><SectionHeader title="Task Browser" /><NotAvailable what="Task browser" /></Panel>
+  }
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0
 
@@ -679,12 +684,12 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
   const [bucket, setBucket]   = useState<'hour' | 'day' | 'week'>('hour')
   const [workflows, setWorkflows] = useState<string[]>([])
 
-  const [summary,    setSummary]    = useState<ProcessSummaryResponse | null>(null)
-  const [failures,   setFailures]   = useState<ProcessFailuresResponse | null>(null)
-  const [retries,    setRetries]    = useState<ProcessRetriesResponse | null>(null)
-  const [resources,  setResources]  = useState<ProcessResourcesByAttemptResponse | null>(null)
-  const [signatures, setSignatures] = useState<ProcessFailureSignaturesResponse | null>(null)
-  const [timeline,   setTimeline]   = useState<ProcessTimelineResponse | null>(null)
+  const [summary,    setSummary]    = useState<ProcessSummaryResponse | NotAvailableValue | null>(null)
+  const [failures,   setFailures]   = useState<ProcessFailuresResponse | NotAvailableValue | null>(null)
+  const [retries,    setRetries]    = useState<ProcessRetriesResponse | NotAvailableValue | null>(null)
+  const [resources,  setResources]  = useState<ProcessResourcesByAttemptResponse | NotAvailableValue | null>(null)
+  const [signatures, setSignatures] = useState<ProcessFailureSignaturesResponse | NotAvailableValue | null>(null)
+  const [timeline,   setTimeline]   = useState<ProcessTimelineResponse | NotAvailableValue | null>(null)
 
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
@@ -697,12 +702,12 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
 
   useEffect(() => {
     setSummary(null); setFailures(null); setRetries(null); setResources(null); setSignatures(null); setTimeline(null)
-    api.metrics.summary(filters).then(setSummary).catch(console.error)
-    api.metrics.failures(filters).then(setFailures).catch(console.error)
-    api.metrics.retries(filters).then(setRetries).catch(console.error)
-    api.metrics.resources(filters).then(setResources).catch(console.error)
-    api.metrics.signatures(filters).then(setSignatures).catch(console.error)
-    api.metrics.timeline(filters, bucket).then(setTimeline).catch(console.error)
+    unless501(api.metrics.summary(filters)).then(setSummary).catch(console.error)
+    unless501(api.metrics.failures(filters)).then(setFailures).catch(console.error)
+    unless501(api.metrics.retries(filters)).then(setRetries).catch(console.error)
+    unless501(api.metrics.resources(filters)).then(setResources).catch(console.error)
+    unless501(api.metrics.signatures(filters)).then(setSignatures).catch(console.error)
+    unless501(api.metrics.timeline(filters, bucket)).then(setTimeline).catch(console.error)
   }, [tick, filters, bucket])
 
   const windowDesc = filters.windowHours
@@ -745,11 +750,15 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
           ? <div style={{ color: T.muted, fontSize: 14, padding: '32px 0' }}>Loading…</div>
           : (
             <>
-              {tab === 'failures'   && <FailuresTab   data={failures!}   />}
-              {tab === 'retries'    && <RetriesTab    data={retries!}    />}
-              {tab === 'resources'  && <ResourcesTab  data={resources!} summary={summary} />}
-              {tab === 'signatures' && <SignaturesTab  data={signatures!} />}
-              {tab === 'timeline'   && <TimelineTab   data={timeline!}   bucket={bucket} onBucket={setBucket} />}
+              {tab === 'failures'   && (failures === NOT_AVAILABLE ? <NotAvailable what="Failure rates" /> : <FailuresTab data={failures!} />)}
+              {tab === 'retries'    && (retries === NOT_AVAILABLE ? <NotAvailable what="Retry breakdown" /> : <RetriesTab data={retries!} />)}
+              {tab === 'resources'  && (resources === NOT_AVAILABLE
+                ? <NotAvailable what="Resource usage" />
+                : <ResourcesTab data={resources!} summary={summary === NOT_AVAILABLE ? null : summary} />)}
+              {tab === 'signatures' && (signatures === NOT_AVAILABLE ? <NotAvailable what="Failure signatures" /> : <SignaturesTab data={signatures!} />)}
+              {tab === 'timeline'   && (timeline === NOT_AVAILABLE
+                ? <NotAvailable what="Failure trend" />
+                : <TimelineTab data={timeline!} bucket={bucket} onBucket={setBucket} />)}
             </>
           )
       }

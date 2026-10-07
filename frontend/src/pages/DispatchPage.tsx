@@ -294,7 +294,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 export default function DispatchPage() {
   const [tab, setTab] = useState<Tab>('dispatch')
   const isAdmin = useRole('admin')
-  const { signIn, user } = useAuth()
+  const { signIn, user, available } = useAuth()
 
   if (!isAdmin) {
     return (
@@ -311,18 +311,26 @@ export default function DispatchPage() {
             padding: '20px 4px', maxWidth: 560,
           }}>
             <div style={{ fontSize: 14, color: T.text, fontWeight: 600 }}>
-              Admin access required
+              {available ? 'Admin access required' : 'Operator actions are not available from the dashboard'}
             </div>
-            <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
-              This page mutates dispatch state (claim batches, confirm submissions,
-              requeue, reconcile). It's available to administrators only.
-              {user ? (
-                <> You're signed in as <strong>{user.email}</strong> with role{' '}
-                  <strong>{user.role ?? 'none'}</strong> — ask an admin to grant
-                  access if you need it.</>
-              ) : null}
-            </div>
-            {!user && (
+            {!available ? (
+              <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
+                The API requires an operator bearer token for every write, and browser sign-in
+                does not exist yet (#176). Run these actions with <code>nf-client</code> and the
+                operator token until then.
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
+                This page mutates dispatch state (claim batches, confirm submissions,
+                requeue, reconcile). It's available to administrators only.
+                {user ? (
+                  <> You're signed in as <strong>{user.email}</strong> with role{' '}
+                    <strong>{user.role ?? 'none'}</strong> — ask an admin to grant
+                    access if you need it.</>
+                ) : null}
+              </div>
+            )}
+            {available && !user && (
               <div><Btn onClick={signIn}>Sign in with Google</Btn></div>
             )}
           </div>

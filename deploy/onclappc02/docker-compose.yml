@@ -65,9 +65,10 @@ services:
       context: ../..
       dockerfile: deploy/onclappc02/Dockerfile.frontend
       args:
-        # Baked into the bundle at build time. Must match the API host
-        # the frontend will talk to (CORS is enforced server-side, too).
-        VITE_API_URL: https://${API_HOST:-nf-telemetry.cancerdatasci.org}
+        # Baked into the bundle at build time: the API the dashboard reads.
+        # Separate from API_HOST, which still routes the v1 API container.
+        # The API must allow FRONTEND_HOST in its CORS origins.
+        VITE_API_URL: ${FRONTEND_API_URL:-https://nf-telemetry.seandavi.workers.dev}
     image: nf-telemetry-frontend:local
     container_name: nf_telemetry_frontend
     restart: unless-stopped

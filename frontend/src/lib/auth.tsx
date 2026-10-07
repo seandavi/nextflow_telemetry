@@ -9,6 +9,10 @@
  *
  * useRole('admin') is the gate for edit/create UI. admin implies
  * contributor, matching the backend require_role dependency.
+ *
+ * The v2 Worker has no /auth routes yet (#176): /auth/me answers 404, which
+ * sets `available` false so the UI explains why operator actions are absent
+ * instead of offering a sign-in link that leads nowhere.
  */
 import {
   createContext, useCallback, useContext, useEffect, useState,
@@ -24,6 +28,7 @@ export interface AuthUser {
 interface AuthState {
   user: AuthUser | null
   loading: boolean
+  available: boolean
   refresh: () => Promise<void>
   signIn: () => void
   signOut: () => Promise<void>
@@ -38,14 +43,18 @@ const AUTH_BASE = API_BASE.replace(/\/api$/, '')
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,    setUser]    = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [available, setAvailable] = useState(true)
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch(`${AUTH_BASE}/auth/me`, { credentials: 'include' })
       if (res.ok)        setUser(await res.json() as AuthUser)
       else if (res.status === 401) setUser(null)
+      else if (res.status === 404) setAvailable(false)
       // Other statuses (5xx, network) leave the previous state untouched —
       // a transient blip shouldn't kick the user out.
+    } catch (e) {
+      console.error('GET /auth/me failed', e)
     } finally {
       setLoading(false)
     }
@@ -63,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading, refresh, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, available, refresh, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )
