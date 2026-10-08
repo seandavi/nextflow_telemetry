@@ -875,7 +875,7 @@ export class ControlDO extends DurableObject<Env> {
         where c.status = 'pending' and w.status = 'active' and c.n > 0`,
     );
     const filters = this.all(`select workflow_id, last_seen_at from daemons`)
-      .filter((d) => now - Date.parse(d.last_seen_at as string) < 2 * 60_000)
+      .filter((d) => now - Date.parse(d.last_seen_at as string) < DAEMON_ACTIVE_MS)
       .map((d) => {
         const wf = ((d.workflow_id as string) ?? "").trim();
         return wf ? new Set(wf.split(",").map((x) => x.trim()).filter(Boolean)) : null;
@@ -1052,8 +1052,11 @@ function normalizeSrrs(acc: string): string {
 }
 
 const DAEMON_ACTIVE_MS = 2 * 60_000;
+// status is whatever the daemon last reported ("running"/"idle"); a daemon that
+// died never reports again, so past the threshold it reads "stale".
 function withActive(row: Row): Row {
-  return { ...row, is_active: Date.now() - Date.parse(row.last_seen_at as string) < DAEMON_ACTIVE_MS };
+  const is_active = Date.now() - Date.parse(row.last_seen_at as string) < DAEMON_ACTIVE_MS;
+  return { ...row, is_active, status: is_active ? row.status : "stale" };
 }
 
 const RUN_STALE_MS = 15 * 60_000;
