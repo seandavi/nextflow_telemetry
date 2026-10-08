@@ -656,4 +656,28 @@ describe("run classification", () => {
     expect(classifyRun({ status: "submitted", submitted_at: old, last_heartbeat_at: null })).toBe("queued");
     expect(classifyRun({ status: "running", submitted_at: old, last_heartbeat_at: old })).toBe("stalled");
   });
+
+  it("lists a registration's completed jobs with sample and collections for the output ETL", async () => {
+    const jobs = async (q: string) => S.JobList.parse(await (await get(`/api/workflows/${bundlePk}/jobs${q}`)).json());
+    expect((await jobs("?status=completed")).items).toEqual([]);
+
+    const run = (await (await get("/api/runs?workflow_id=cmgd_humann4a1&limit=1")).json()) as any;
+    await weblog(run.runs[0].run_name, "process_completed", {
+      trace: { tag: "pilot1", process: "MARK_COMPLETE", status: "COMPLETED" },
+    });
+    const { items } = await jobs("?status=completed");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      sample_key: "pilot1",
+      sample_id: "pilot1",
+      ncbi_accession: "SRR100001",
+      collections: ["PILOT1"],
+      status: "completed",
+    });
+    expect(items[0].completed_at).toBeTruthy();
+    // Keyset paging: nothing after the last job id; other registrations never leak in.
+    expect((await jobs(`?status=completed&after=${items[0].job_id}`)).items).toEqual([]);
+    expect((await jobs("")).items.map((j) => j.sample_key)).toEqual(["pilot1"]);
+    expect((await get("/api/workflows/999999/jobs")).status).toBe(404);
+  });
 });

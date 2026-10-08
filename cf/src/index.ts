@@ -347,6 +347,15 @@ api.get("/workflows/:pk{[0-9]+}/job-summary", describeRoute({ summary: "Job coun
   return row ? c.json(row) : notFoundWorkflow(c);
 });
 
+api.get("/workflows/:pk{[0-9]+}/jobs", describeRoute({ summary: "A registration's jobs in id order, keyset-paged (?status=&after=<job_id>&limit=)", tags: ["workflows"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.JobList) } } }, "404": { description: "Unknown workflow" } } }), async (c) => {
+  const pk = Number(c.req.param("pk"));
+  if (!(await control(c.env).getWorkflow(pk))) return notFoundWorkflow(c);
+  const limit = clamp(num(c.req.query("limit"), 1000), 1, 5000);
+  const after = Math.max(0, num(c.req.query("after"), 0));
+  const items = await control(c.env).listJobs(pk, { status: c.req.query("status") ?? null, after, limit });
+  return c.json({ items, after, limit });
+});
+
 // ====================================================================
 // task logs — blobs live in R2, never in the control plane
 // ====================================================================
