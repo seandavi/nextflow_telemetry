@@ -48,6 +48,8 @@ create table if not exists workflows (
   description      text,
   created_at       text not null,
   updated_at       text not null,
+  params           text not null default '{}', -- pipeline params JSON; output contract, fixed per version (ADR-0010)
+  collections      text,                       -- JSON array of collection_ids; null = every sample
   unique (workflow_id, version)
 );
 

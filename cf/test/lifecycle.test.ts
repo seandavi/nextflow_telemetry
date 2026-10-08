@@ -505,3 +505,64 @@ describe("failed runs", () => {
     ]);
   });
 });
+
+describe("registrations are bundles (ADR-0010)", () => {
+  const BUNDLE = {
+    ...WF,
+    workflow_id: "cmgd_humann4a1",
+    version: "2.3.0",
+    params: { humann_bundle: "humann4.0.0a1", skip_humann: false },
+    collections: ["PILOT1"],
+  };
+  let bundlePk: number;
+
+  it("adds params and collections to a workflows table created before them", async () => {
+    const stub = env.CONTROL.get(env.CONTROL.idFromName("v1"));
+    await runInDurableObject(stub, (instance: ControlDO, state) => {
+      const sql = state.storage.sql;
+      sql.exec(`alter table workflows drop column params`);
+      sql.exec(`alter table workflows drop column collections`);
+      (instance as any).addWorkflowBundleColumns();
+      (instance as any).addWorkflowBundleColumns();
+      const rows = sql.exec(`select params, collections from workflows`).toArray();
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((r) => r.params === "{}" && r.collections === null)).toBe(true);
+    });
+  });
+
+  it("round-trips params and collections, and 409s a version re-registered with different params", async () => {
+    const res = await post("/api/workflows", BUNDLE);
+    expect(res.status).toBe(201);
+    const wf = S.Workflow.parse(await res.json());
+    bundlePk = wf.id;
+    expect(wf.params).toEqual(BUNDLE.params);
+    expect(wf.collections).toEqual(["PILOT1"]);
+
+    // Key order is not a difference.
+    const same = await post("/api/workflows", { ...BUNDLE, params: { skip_humann: false, humann_bundle: "humann4.0.0a1" } });
+    expect(same.status).toBe(201);
+    const clash = await post("/api/workflows", { ...BUNDLE, params: { ...BUNDLE.params, skip_humann: true } });
+    expect(clash.status).toBe(409);
+    expect(((await (await get(`/api/workflows/${bundlePk}`)).json()) as any).params).toEqual(BUNDLE.params);
+
+    for (const bad of [{ params: { nested: { a: 1 } } }, { params: ["x"] }, { collections: "PILOT1" }, { collections: [] }]) {
+      expect((await post("/api/workflows", { ...BUNDLE, version: "bad", ...bad })).status, JSON.stringify(bad)).toBe(422);
+    }
+  });
+
+  it("reconciles a collection-scoped registration over its collections only", async () => {
+    await post("/api/samples", { sample_id: "pilot1", ncbi_accession: "SRR100001", collection: "PILOT1" });
+    await post("/api/samples", { sample_id: "other1", ncbi_accession: "SRR100002", collection: "PRJNA000009" });
+    await post("/api/admin/reconcile-jobs", {});
+    const s = await summary(bundlePk);
+    expect(s.total).toBe(1);
+    expect(s.pending).toBe(1);
+  });
+
+  it("carries the registration's params on the claimed batch", async () => {
+    const res = await post("/api/dispatch/batch", { limit: 10, workflow_id: "cmgd_humann4a1" });
+    const batch = (await res.json()) as any;
+    expect(batch.params).toEqual(BUNDLE.params);
+    expect(batch.jobs.map((j: any) => j.sample_id)).toEqual(["pilot1"]);
+  });
+});

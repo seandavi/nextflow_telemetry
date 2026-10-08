@@ -59,7 +59,13 @@ NFOVERRIDE
 cat << 'METATSV' > metadata.tsv
 {{ metadata_tsv_content }}
 METATSV
-
+{% if params_json | default('') %}
+# The registration's pipeline params (ADR-0010). Params given on the command
+# line below (--metadata_tsv, --run_name, --publish_dir) override these.
+cat << 'PARAMSJSON' > params.json
+{{ params_json }}
+PARAMSJSON
+{% endif %}
 # Results are keyed by the registered workflow, not the pipeline's manifest
 # (ADR-0008, #220): <publish_base>/<workflow_id>/<version>/<sample>/. A patch
 # revision keeps its registration's prefix, and two registrations of one tag
@@ -77,7 +83,8 @@ nf-client run-wrapper \
     -revision {{ workflow_revision }} \
     -profile {{ profile }} \
     -c nextflow_override.config \
-    --metadata_tsv metadata.tsv \
+{% if params_json | default('') %}    -params-file params.json \
+{% endif %}    --metadata_tsv metadata.tsv \
     --run_name {{ run_name }} \
 {% if publish_base | default('') %}    --publish_dir {{ publish_base }}/{{ workflow_id }}/{{ workflow_version }} \
 {% endif %}    -with-weblog {{ weblog_url }}

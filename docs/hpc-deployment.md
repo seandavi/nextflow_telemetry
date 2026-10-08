@@ -83,6 +83,19 @@ nf-client add-cmd --server $S --study ZellerG_2014 --limit 2 --reconcile
 
 Do not use `nf-client submit --dry-run` as a smoke test: fetching a batch claims it.
 
+A registration is one pipeline configuration ([ADR 0010](adr/0010-registrations-are-bundles.md)).
+`--param key=value` (repeatable) pins pipeline params, which runs receive as
+`-params-file params.json`; `--collection` (repeatable) limits the jobs to
+samples in those collections. A cluster that serves several bundles lists
+them in its client yaml:
+
+```yaml
+dispatch:
+  workflow_id:
+    - cmgd_humann3.9
+    - cmgd_humann4a1
+```
+
 ## Sample data model
 
 | Field | Content |

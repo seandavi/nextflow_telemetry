@@ -41,7 +41,19 @@ export class ControlDO extends DurableObject<Env> {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.sql.exec(SCHEMA);
+    this.addWorkflowBundleColumns();
     this.backfillJobCounts();
+  }
+
+  /**
+   * `create table if not exists` never alters a table that is already there,
+   * so objects created before ADR-0010 get the bundle columns here. Existing
+   * rows read as params '{}' and collections null (every sample).
+   */
+  private addWorkflowBundleColumns(): void {
+    const cols = new Set(this.all(`select name from pragma_table_info('workflows')`).map((r) => r.name));
+    if (!cols.has("params")) this.sql.exec(`alter table workflows add column params text not null default '{}'`);
+    if (!cols.has("collections")) this.sql.exec(`alter table workflows add column collections text`);
   }
 
   /**
@@ -215,18 +227,35 @@ export class ControlDO extends DurableObject<Env> {
     manifest_version?: string | null;
     max_retries?: number;
     description?: string | null;
-  }): Row {
+    params?: Record<string, string | number | boolean>;
+    collections?: string[] | null;
+  }): { workflow: Row; conflict: boolean } {
     const now = iso();
+    // Params are the output contract (ADR-0004, ADR-0010): a registered
+    // version keeps the params it was registered with. Sorted keys, so key
+    // order in the request is not a difference.
+    const params = JSON.stringify(
+      Object.fromEntries(Object.entries(req.params ?? {}).sort(([a], [b]) => (a < b ? -1 : 1))),
+    );
+    const existing = this.first(
+      `select * from workflows where workflow_id = ? and version = ?`,
+      req.workflow_id,
+      req.version,
+    );
+    if (existing && existing.params !== params) {
+      return { workflow: hydrateWorkflow(existing), conflict: true };
+    }
     this.run(
       `insert into workflows (workflow_id, version, repository_url, revision, manifest_version,
-                              max_retries, status, description, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+                              max_retries, status, description, created_at, updated_at, params, collections)
+       values (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
        on conflict(workflow_id, version) do update set
          repository_url   = excluded.repository_url,
          revision         = excluded.revision,
          manifest_version = excluded.manifest_version,
          max_retries      = excluded.max_retries,
          description      = excluded.description,
+         collections      = excluded.collections,
          updated_at       = excluded.updated_at`,
       req.workflow_id,
       req.version,
@@ -237,22 +266,28 @@ export class ControlDO extends DurableObject<Env> {
       req.description ?? null,
       now,
       now,
+      params,
+      req.collections?.length ? JSON.stringify(req.collections) : null,
     );
-    return this.first(
+    const row = this.first(
       `select * from workflows where workflow_id = ? and version = ?`,
       req.workflow_id,
       req.version,
     )!;
+    return { workflow: hydrateWorkflow(row), conflict: false };
   }
 
   listWorkflows(status?: string | null): Row[] {
-    return status
-      ? this.all(`select * from workflows where status = ? order by workflow_id, version`, status)
-      : this.all(`select * from workflows order by workflow_id, version`);
+    return (
+      status
+        ? this.all(`select * from workflows where status = ? order by workflow_id, version`, status)
+        : this.all(`select * from workflows order by workflow_id, version`)
+    ).map(hydrateWorkflow);
   }
 
   getWorkflow(pk: number): Row | null {
-    return this.first(`select * from workflows where id = ?`, pk) ?? null;
+    const row = this.first(`select * from workflows where id = ?`, pk);
+    return row ? hydrateWorkflow(row) : null;
   }
 
   updateWorkflowStatus(pk: number, status: string): Row | null {
@@ -303,14 +338,21 @@ export class ControlDO extends DurableObject<Env> {
   // Jobs: birth, claim, transitions
   // ==================================================================
 
-  /** Cross-product of samples × active workflows; idempotent. */
+  /**
+   * Cross-product of samples × active workflows; idempotent. A workflow with
+   * `collections` set only gets jobs for samples in those collections (ADR-0010).
+   * Narrowing collections later does not delete jobs already created.
+   */
   reconcileJobs(): number {
     const now = iso();
     return this.run(
       `insert or ignore into jobs (sample_id, workflow_pk, workflow_id, workflow_version, status, retry_count, created_at)
        select s.sample_id, w.id, w.workflow_id, w.version, 'pending', 0, ?
          from samples s cross join workflows w
-        where w.status = 'active'`,
+        where w.status = 'active'
+          and (w.collections is null or s.sample_id in (
+                select cs.sample_id from collection_samples cs
+                  join json_each(w.collections) c on c.value = cs.collection_id))`,
       now,
     );
   }
@@ -346,7 +388,7 @@ export class ControlDO extends DurableObject<Env> {
     if (!pick) return null;
 
     const rows = this.all(
-      `select j.id, j.sample_id, j.workflow_pk, w.repository_url, w.revision
+      `select j.id, j.sample_id, j.workflow_pk, w.repository_url, w.revision, w.params
          from jobs j join workflows w on j.workflow_pk = w.id
         where ${w} and j.workflow_id = ? and j.workflow_version = ?
         order by j.created_at, j.id
@@ -393,6 +435,7 @@ export class ControlDO extends DurableObject<Env> {
       workflow_pk: rows[0].workflow_pk,
       repository_url: rows[0].repository_url,
       revision: rows[0].revision,
+      params: safeJson(rows[0].params),
       jobs: rows.map((r) => ({
         sample_id: r.sample_id,
         ncbi_accession: samples.get(r.sample_id)?.ncbi_accession ?? null,
@@ -1078,6 +1121,11 @@ function safeJson(v: any): Row {
   } catch {
     return {};
   }
+}
+
+/** params and collections are JSON text in SQLite and parsed on the wire. */
+function hydrateWorkflow(row: Row): Row {
+  return { ...row, params: safeJson(row.params), collections: row.collections ? JSON.parse(row.collections) : null };
 }
 
 /** Sorted, deduplicated, ';'-joined — v1's canonical SRR form. */
