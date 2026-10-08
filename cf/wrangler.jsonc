@@ -38,10 +38,11 @@
     // var is also safe. Enable on a staging deploy with
     // `wrangler deploy --var ALLOW_RESET:true`. The test suite sets its own
     // ALLOW_RESET=true in vitest.config.ts.
-    "ALLOW_RESET": "false"
-    // CATALOG_URL: base of the catalog service's API (v1 mounts it at /api).
-    // The eight historical-tier routes proxy GETs there and answer 501 while it
-    // is unset or not answering. Set it once the catalog serves them (#211).
+    "ALLOW_RESET": "false",
+    // Base of the catalog service's API (v1 mounts it at /api). The eight
+    // historical-tier routes proxy GETs there and answer 501 when it is unset
+    // or not answering (#211).
+    "CATALOG_URL": "https://nf-telemetry.cancerdatasci.org/api"
   }
   // Secrets (wrangler secret put): API_TOKEN — when set, bearer auth is
   // enforced on every mutating route except /telemetry (Nextflow's weblog
