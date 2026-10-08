@@ -100,6 +100,7 @@ curl -s "$API/admin/stats"
   (uv-tool nf-client with its own Python 3.13) on PATH for jobs.
 - **`store_dir` must be persistent.** The template sets it from `$NF_TEL_STORE`
   and binds it at `/keep/store`, overriding the pipeline profile's hard-coded path.
-- **New pipeline revision → `nextflow pull` on each cluster** with its `NXF_HOME`;
-  otherwise runs fail fast with `Cannot find revision`.
+- **Each run clones the pipeline into `$WORKDIR/assets`** (`NXF_ASSETS`, #192), so
+  new revisions need no `nextflow pull`. Concurrent runs sharing
+  `$NXF_HOME/assets` raced on its `.git/index` lock ("Repository may be corrupted").
 - **Alpine home is ~84 % full.** Keep caches on scratch.

@@ -33,6 +33,13 @@ WORKDIR=$NF_TEL_SCRATCH/$SLURM_JOB_ID
 mkdir -p $WORKDIR $NF_TEL_LOGS $NF_TEL_STORE
 cd $WORKDIR
 
+# Per-run pipeline checkout (#192). A shared $NXF_HOME/assets checkout breaks
+# two ways: runs starting together race on its .git/index lock ("Repository
+# may be corrupted"), and a run at a new revision re-checks it out under an
+# in-flight run's tasks, which bind-mount its bin/. A fresh clone is ~4 s and
+# 1.6 MB, removed with $WORKDIR; it also makes `nextflow pull` per release moot.
+export NXF_ASSETS=$WORKDIR/assets
+
 mkdir -p tempdir
 export TMPDIR=$WORKDIR/tempdir
 export NXF_TEMP=$WORKDIR/tempdir

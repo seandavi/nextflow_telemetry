@@ -147,3 +147,22 @@ def test_submit_pbs_through_retry_helper_end_to_end() -> None:
     assert job_id == "11111.pbsserver"
     assert run_mock.call_count == 2
     assert run_mock.call_args_list[0].args[0] == ["qsub"]
+
+
+def test_slurm_template_gives_each_run_its_own_pipeline_checkout() -> None:
+    """#192: a shared $NXF_HOME/assets checkout races on .git/index when runs start together."""
+    from pathlib import Path
+
+    from nf_client.submission import render_submission_script
+
+    tmpl = Path(__file__).resolve().parents[3] / "templates" / "submit_slurm.sh.j2"
+    ctx = {
+        "mem": "8G", "cpus": 2, "time": "1:00:00", "partition": "p", "log_dir": "/l",
+        "run_name": "r1", "sample_ids": "s", "workflow_repository": "o/r",
+        "workflow_revision": "1.0", "profile": "x,r2", "server_url": "u",
+        "weblog_url": "w", "workflow_id": "wf", "workflow_version": "1",
+        "metadata_tsv_content": "",
+    }
+    script = render_submission_script(tmpl, ctx)
+    assert "export NXF_ASSETS=$WORKDIR/assets" in script
+    assert script.index("NXF_ASSETS=") < script.index("nextflow run")
