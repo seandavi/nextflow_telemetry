@@ -8,7 +8,7 @@ profile: "anvil,r2"    # R2 output (ADR 0008); needs ~/.nf_tel.r2 and Nextflow >
 continuous: true
 
 dispatch:
-  batch_size: 200
+  batch_size: 50             # smaller batches finish inside the wrapper walltime
   workflow_id: "cmgd_nextflow"
 
 submission:
