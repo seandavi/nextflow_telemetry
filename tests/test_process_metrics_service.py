@@ -9,9 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
-from sqlalchemy.ext.asyncio import create_async_engine
-
+from nextflow_telemetry.services.event_archive import EventArchive
 from nextflow_telemetry.services.process_metrics import (
     _DEFAULT_WINDOW_DAYS,
     _normalize_window,
@@ -52,33 +50,26 @@ def test_normalize_window_passes_through_when_until_supplied():
 
 
 # ---------------------------------------------------------------------------
-# Service-level integration: bare call returns window_days=7 in payload
+# Service-level: bare call returns window_days=7 in payload
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_bare_summary_call_reports_default_window_in_response(db_url):
+def _empty_service(tmp_path) -> ProcessMetricsService:
+    archive = EventArchive(source=str(tmp_path), v2_api_url="http://v2.invalid", refresh_seconds=300)
+    return ProcessMetricsService(engine=None, archive=archive)  # type: ignore[arg-type]
+
+
+async def test_bare_summary_call_reports_default_window_in_response(tmp_path):
     """Exercising one representative method end-to-end with no time args.
 
-    The empty DB has no telemetry rows so the SQL just returns zeros, but
+    The empty archive has no events so the SQL just returns zeros, but
     we don't care about the row counts — we care that the response payload
     echoes back `window_days = _DEFAULT_WINDOW_DAYS`. That's what tells a
     client whether all-time data was scanned or just the default window.
     """
-    engine = create_async_engine(db_url)
-    try:
-        svc = ProcessMetricsService(engine=engine)
-        result = await svc.summary()
-        assert result["window_days"] == _DEFAULT_WINDOW_DAYS
-    finally:
-        await engine.dispose()
+    result = await _empty_service(tmp_path).summary()
+    assert result["window_days"] == _DEFAULT_WINDOW_DAYS
 
 
-@pytest.mark.asyncio
-async def test_explicit_window_days_overrides_default(db_url):
-    engine = create_async_engine(db_url)
-    try:
-        svc = ProcessMetricsService(engine=engine)
-        result = await svc.summary(window_days=30)
-        assert result["window_days"] == 30
-    finally:
-        await engine.dispose()
+async def test_explicit_window_days_overrides_default(tmp_path):
+    result = await _empty_service(tmp_path).summary(window_days=30)
+    assert result["window_days"] == 30

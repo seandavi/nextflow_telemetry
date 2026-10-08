@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ..services.cohort import CohortService
+from ..services.process_metrics import ProcessMetricsService
 
 
 class CohortListItem(BaseModel):
@@ -101,7 +102,7 @@ class CohortFailuresResponse(BaseModel):
     rows: list[CohortFailureRow]
 
 
-def create_cohorts_router(engine: AsyncEngine) -> APIRouter:
+def create_cohorts_router(engine: AsyncEngine, process_metrics: ProcessMetricsService) -> APIRouter:
     router = APIRouter(prefix="/cohorts", tags=["cohorts"])
     svc = CohortService(engine=engine)
 
@@ -165,7 +166,8 @@ def create_cohorts_router(engine: AsyncEngine) -> APIRouter:
         description=(
             "Returns up to `limit` failed `process_completed` events for the given "
             "process within the cohort, newest first. `task_hash` joins to "
-            "`/task-logs/{run_name}/{task_hash}` for the log viewer."
+            "`/task-logs/{run_name}/{task_hash}` for the log viewer. Reads the v2 "
+            "event archive; cohort membership and active versions come from v2."
         ),
     )
     async def get_failures(
@@ -176,13 +178,13 @@ def create_cohorts_router(engine: AsyncEngine) -> APIRouter:
         all_workflows: Annotated[bool, Query(description="Include failures across ALL workflow versions instead of just the active one.")] = False,
         limit: Annotated[int, Query(ge=1, le=1000, description="Max rows.")] = 200,
     ) -> CohortFailuresResponse:
-        # Match /summary's behaviour: 404 on unknown cohort, not 200 + empty rows.
-        if not await svc.cohort_exists(collection_id):
-            raise HTTPException(status_code=404, detail=f"Cohort '{collection_id}' not found.")
-        rows = await svc.failures_for_process(
+        rows = await process_metrics.cohort_failures(
             collection_id, process, workflow_id, workflow_version,
             limit=limit, include_all_workflows=all_workflows,
         )
+        # Match /summary's behaviour: 404 on unknown cohort, not 200 + empty rows.
+        if rows is None:
+            raise HTTPException(status_code=404, detail=f"Cohort '{collection_id}' not found.")
         return CohortFailuresResponse(
             collection_id=collection_id,
             process=process,
