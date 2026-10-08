@@ -420,7 +420,7 @@ api.get("/cohorts/:id/summary", describeRoute({ summary: "Job status breakdown f
   return row ? c.json(row) : c.json({ detail: `Cohort '${c.req.param("id")}' not found.` }, 404);
 });
 
-api.get("/cohorts/:id/failures", describeRoute({ summary: "Historical tier: returns 501 until a query tier exists over the R2 event archive (#175)", tags: ["cohorts"], responses: { "501": { description: "OK" } } }), (c) => historicalTier(c));
+api.get("/cohorts/:id/failures", describeRoute({ summary: "Historical tier: failed tasks for a (cohort, process), proxied to the catalog service; 501 when it is not configured or not answering", tags: ["cohorts"], responses: { "200": { description: "Proxied from CATALOG_URL" }, "501": { description: "Catalog not configured or not answering" } } }), (c) => historicalTier(c));
 
 // ====================================================================
 // metrics
@@ -434,11 +434,11 @@ api.get("/metrics/processes/running", describeRoute({ summary: "In-flight proces
   return c.json({ generated_at_utc: new Date().toISOString(), active_nf_runs: active, ...live });
 });
 
-// The analytical endpoints need per-task history, which now lives as NDJSON on
-// R2 rather than in a queryable table. Explicit 501 beats a silently empty
-// response — see cf/README.md "historical tier".
+// The analytical endpoints need per-task history, which lives as NDJSON on R2
+// and is queried by the catalog service. Explicit 501 beats a silently empty
+// response when it is not there — see cf/README.md "historical tier".
 for (const p of ["summary", "retries", "resources-by-attempt", "failures", "failure-signatures", "tasks", "timeline"]) {
-  api.get(`/metrics/processes/${p}`, describeRoute({ summary: `Historical tier (${p}): 501 until a query tier exists over the R2 event archive (#175)`, tags: ["metrics"], responses: { "501": { description: "Not built yet" } } }), (c) => historicalTier(c));
+  api.get(`/metrics/processes/${p}`, describeRoute({ summary: `Historical tier (${p}): proxied to the catalog service; 501 when it is not configured or not answering`, tags: ["metrics"], responses: { "200": { description: "Proxied from CATALOG_URL" }, "501": { description: "Catalog not configured or not answering" } } }), (c) => historicalTier(c));
 }
 
 // ====================================================================
@@ -653,12 +653,37 @@ function notFoundWorkflow(c: any) {
   return c.json({ detail: `Workflow ${c.req.param("pk")} not found` }, 404);
 }
 
-function historicalTier(c: any) {
+/**
+ * The historical tier is DuckDB over the R2 event archive in the catalog
+ * service (ADR-0009, #211). Proxy the GET there when CATALOG_URL is set. Unset,
+ * unreachable, 404 (catalog without these routes) or 5xx all answer the same
+ * 501 as before, so nothing changes until the catalog serves them.
+ */
+async function historicalTier(c: any) {
+  const base: string | undefined = c.env.CATALOG_URL;
+  if (base) {
+    const { pathname, search } = new URL(c.req.url);
+    const target = base.replace(/\/$/, "") + pathname.replace(/^\/api(?=\/)/, "") + search;
+    try {
+      const res = await fetch(target, {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (res.status !== 404 && res.status < 500) {
+        return new Response(res.body, {
+          status: res.status,
+          headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
+        });
+      }
+    } catch {
+      /* unreachable or timed out: fall through to 501 */
+    }
+  }
   return c.json(
     {
       detail:
-        "Historical metrics are served from the telemetry event archive on R2, " +
-        "which has no query tier yet. See cf/README.md.",
+        "Historical metrics are served by the catalog service from the telemetry " +
+        "event archive on R2, which is not reachable from here. See cf/README.md.",
     },
     501,
   );

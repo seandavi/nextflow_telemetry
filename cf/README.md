@@ -190,18 +190,20 @@ no-op on an already-closed run.
 | `/admin/{reconcile-jobs,reset-running,close-run,requeue-dead-letter,dispatchability,stats}` | full |
 | `/metrics/processes/running` | full (live counters in SinkDO) |
 | `/dispatch/requeue-expired`, `/admin/expire-stale-runs`, `/admin/heartbeat-watchdog` | **deprecated no-ops** — expiry is a per-run timer now. v1-shaped success bodies + `Deprecation: true`. |
-| `/metrics/processes/{summary,retries,resources-by-attempt,failures,failure-signatures,tasks,timeline}`, `/cohorts/{id}/failures` | **501** — historical tier, see below |
+| `/metrics/processes/{summary,retries,resources-by-attempt,failures,failure-signatures,tasks,timeline}`, `/cohorts/{id}/failures` | **proxied** to the catalog service when `CATALOG_URL` is set, else **501** — historical tier, see below |
 | `/submissions*`, `/curated*`, `/auth/*` | **not built** — see below |
 
 ### Historical tier
 
 The seven analytical endpoints and the cohort failure drill-down all read
-per-task history, which is now NDJSON on R2 rather than a Postgres table. They
-return 501 rather than an empty result, so a broken dashboard panel is
-unambiguous. Building it is a separate, smaller job once events have
-accumulated: a read-only DuckDB over the `telemetry/events/` prefix (Container),
-or DuckDB-WASM in the browser reading R2 directly. The response shapes are fixed
-by `src/nextflow_telemetry/models.py` either way.
+per-task history, which is now NDJSON on R2 rather than a Postgres table. The
+catalog service (the Python app, ADR-0009) answers them with DuckDB over the
+`telemetry/events/` prefix, in v1's response shapes (`src/nextflow_telemetry/models.py`);
+see `services/event_archive.py`. The Worker proxies these GETs, path and query
+string, to the `CATALOG_URL` var (the catalog's API base, e.g.
+`https://nf-telemetry.cancerdatasci.org/api`). While the var is unset, or the
+catalog is unreachable or answers 404 or 5xx, the routes return 501 rather than
+an empty result, so a broken dashboard panel is unambiguous.
 
 `nf-client` commands that hit the unbuilt routes (`add-study`, anything under
 `submissions`, the curated endpoints, Google OAuth) still need v1. Everything the

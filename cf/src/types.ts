@@ -16,6 +16,8 @@ export interface Env {
   API_TOKEN?: string;
   /** Must be exactly "true" for POST /admin/reset to do anything. */
   ALLOW_RESET?: string;
+  /** Catalog service API base (e.g. https://host/api); the historical tier proxies there. */
+  CATALOG_URL?: string;
 }
 
 /**

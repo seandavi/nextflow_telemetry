@@ -39,6 +39,9 @@
     // `wrangler deploy --var ALLOW_RESET:true`. The test suite sets its own
     // ALLOW_RESET=true in vitest.config.ts.
     "ALLOW_RESET": "false"
+    // CATALOG_URL: base of the catalog service's API (v1 mounts it at /api).
+    // The eight historical-tier routes proxy GETs there and answer 501 while it
+    // is unset or not answering. Set it once the catalog serves them (#211).
   }
   // Secrets (wrangler secret put): API_TOKEN — when set, bearer auth is
   // enforced on every mutating route except /telemetry (Nextflow's weblog
