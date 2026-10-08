@@ -135,11 +135,11 @@ Tracker: **#94**. Rollout: ship API with enforcement **off**, roll daemons, then
   cheap insurance. Arguably belongs in the near-term tier.
 - **#18** pre-populate pipeline DBs in `store_dir` before running.
 - **#46** command-line API client.
+- **#86** client-side disk buffer + retry (parking-lot; only if we see event loss).
 
-### CLOSED — Not Planned
+### Closed
 - **#48** Temporal investigation — solves orchestration, not the visibility gap we
   have; re-introduces heavy stateful infra.
-- **#86** client-side disk buffer + retry — only if we see event loss; not planned.
 - **#87** off-cluster orchestrator (SSH push mode) — preserve pull-mode semantics.
 
 ## Architecture deepening (design review, 2026-07-10)
