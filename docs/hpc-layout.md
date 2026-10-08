@@ -109,6 +109,23 @@ for u in seandavi/curatedmetagenomics:metaphlan4.2.2 quay.io/biocontainers/kma:1
 done'
 ```
 
+### Run directories and cleanup
+
+Everything a run writes lives under `$NF_TEL_SCRATCH/<slurm job id>/` (launch dir,
+Nextflow `work/`, temp, the per-run pipeline clone). The batch script removes it on
+every exit it sees: success, failure, `scancel`, and walltime (SLURM sends USR1 ten
+minutes early via `--signal=B:USR1@600`). The login-node watchdog sweeps directories
+whose job is no longer in `squeue` (node loss, `kill -9`), skipping anything less than
+an hour old and anything not named by a job id.
+
+| Variable (in `~/.nf_tel.env`) | Default | Effect |
+|---|---|---|
+| `NF_TEL_KEEP_FAILED` | unset | `1`: keep a failed run's directory (marked `.keep_failed`) for debugging |
+| `NF_TEL_KEEP_FAILED_HOURS` | `48` | the watchdog deletes kept directories after this long |
+
+Task logs and the run's `.nextflow.log`/wrapper output are uploaded to v2, so a
+failure is diagnosable without the directory.
+
 Housekeeping still open:
 
 - Alpine scratch root holds ~200 `nxf-*`, `build-temp-*`, `bundle-temp-*` dirs

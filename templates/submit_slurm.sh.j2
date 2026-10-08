@@ -7,6 +7,7 @@
 {% endif %}{% if qos | default('') %}#SBATCH --qos={{ qos }}
 {% endif %}#SBATCH --job-name={{ run_name }}
 #SBATCH --output={{ log_dir }}/slurm-%j.out
+#SBATCH --signal=B:USR1@600
 
 # One template for every SLURM cluster. Cluster differences live in
 # ~/.nf_tel.env (paths, NF_TEL_MODULES, PATH) and in the client yaml
@@ -32,6 +33,25 @@ export NXF_SINGULARITY_CACHEDIR=$NF_TEL_SIF_CACHE
 WORKDIR=$NF_TEL_SCRATCH/$SLURM_JOB_ID
 mkdir -p $WORKDIR $NF_TEL_LOGS $NF_TEL_STORE
 cd $WORKDIR
+
+# The run directory is removed on every exit this script sees: success, failure,
+# scancel (TERM) and walltime (USR1 10 min ahead via --signal, so a large work/
+# has time to go). Hard kills (node loss, kill -9) are swept by the login-node
+# watchdog. NF_TEL_KEEP_FAILED=1 keeps a failed run's directory; the watchdog
+# deletes it after NF_TEL_KEEP_FAILED_HOURS (default 48).
+NF_EXIT=1
+cleanup() {
+  trap - EXIT
+  echo "Nextflow exited with code $NF_EXIT"
+  cp "$WORKDIR/.nextflow.log" "$NF_TEL_LOGS/nextflow-${SLURM_JOB_ID}.log" 2>/dev/null || true
+  if [ "$NF_EXIT" -ne 0 ] && [ -n "${NF_TEL_KEEP_FAILED:-}" ]; then
+    touch "$WORKDIR/.keep_failed"
+    echo "Keeping $WORKDIR (NF_TEL_KEEP_FAILED)"
+  else
+    cd / && rm -rf "$WORKDIR"
+  fi
+}
+trap cleanup EXIT
 
 # Per-run pipeline checkout (#192). A shared $NXF_HOME/assets checkout breaks
 # two ways: runs starting together race on its .git/index lock ("Repository
@@ -78,7 +98,17 @@ PARAMSJSON
 # run-wrapper emits run-lifecycle telemetry (wrapper_started / heartbeat /
 # wrapper_exited) and uploads .nextflow.log on exit. wrapper_exited closes the
 # run server-side, so no separate close-run call is needed. Telemetry failures
-# are swallowed; the wrapper propagates nextflow's exit code.
+# are swallowed; the wrapper propagates nextflow's exit code. It runs in the
+# background so a signal interrupts `wait` (bash defers traps while a foreground
+# child runs); the handler forwards TERM, which the wrapper passes to nextflow.
+on_signal() {
+  echo "Signal received; stopping nextflow"
+  kill -TERM "$WRAPPER_PID" 2>/dev/null
+  wait "$WRAPPER_PID"
+  NF_EXIT=143
+  exit 143
+}
+trap on_signal TERM USR1
 nf-client run-wrapper \
   --run-name {{ run_name }} \
   --telemetry-url {{ server_url }} \
@@ -92,11 +122,8 @@ nf-client run-wrapper \
 {% endif %}    --metadata_tsv metadata.tsv \
     --run_name {{ run_name }} \
 {% if publish_base | default('') %}    --publish_dir {{ publish_base }}/{{ workflow_id }}/{{ workflow_version }} \
-{% endif %}    -with-weblog {{ weblog_url }}
-
+{% endif %}    -with-weblog {{ weblog_url }} &
+WRAPPER_PID=$!
+wait "$WRAPPER_PID"
 NF_EXIT=$?
-echo "Nextflow exited with code $NF_EXIT"
-cp .nextflow.log $NF_TEL_LOGS/nextflow-${SLURM_JOB_ID}.log 2>/dev/null || true
-rm -rf $WORKDIR
-
 exit $NF_EXIT
