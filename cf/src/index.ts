@@ -113,7 +113,12 @@ api.post("/telemetry", describeRoute({ summary: "Nextflow weblog event (unauthen
     // dashboards move in real time.
     await ctl.completeSample(runName, sampleId);
   } else if (event === "completed") {
-    await ctl.closeRun(runName, "completed", null);
+    // Nextflow sends `completed` for failed runs too; success and the reason
+    // are in metadata.workflow.
+    const wf = body.metadata?.workflow;
+    const failed = wf?.success === false;
+    const why = failed ? String(wf?.errorMessage ?? wf?.errorReport ?? "nextflow reported success=false").slice(0, 1000) : null;
+    await ctl.closeRun(runName, failed ? "failed" : "completed", why);
     await runDo(c.env, runName).finalize();
   }
 
