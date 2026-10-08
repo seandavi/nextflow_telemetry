@@ -62,6 +62,13 @@ tmux new-session -d -s nf "$NF_TEL_REPO/config/nf_tel_daemon.sh"
 tail -n 20 $NF_TEL_DAEMON/daemon.log
 ```
 
+**Watchdog (#240).** Each login node's crontab runs `config/nf_tel_watchdog.sh`
+(`@reboot` and every 10 min): if no `nf-client daemon` process exists it starts the
+tmux session above and logs to `$NF_TEL_DAEMON/watchdog.log`. A reboot or crash
+costs at most ~10 min. Install/inspect with `crontab -l`; the crontab lives on that
+login node only (login-ci4, login07), so reinstall it if the daemon moves nodes.
+To stop the daemon on purpose, comment out the crontab lines first.
+
 Confirm from a fresh connection that the process survived, not just the log:
 `tmux ls; pgrep -af '^/.*nf-client daemon'`.
 
