@@ -358,16 +358,21 @@ api.post("/task-logs", describeRoute({ summary: "Upload one task log file (multi
 api.get("/task-logs/:run_name/:task_hash{.+}", describeRoute({ summary: "Task logs for one work-dir hash (ab/cdef12 form)", tags: ["task-logs"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.TaskLogs) } } } } }), async (c) => {
   const runName = c.req.param("run_name");
   const taskHash = c.req.param("task_hash");
-  const listed = await c.env.STORE.list({ prefix: `task-logs/${runName}/${taskHash}/` });
+  // v1 filed the run's .nextflow.log and wrapper output under the sentinel hash
+  // "nextflow_log"; v2 keeps them under nextflow-logs/ (POST /runs/:run/event).
+  const runLogs = taskHash === "nextflow_log";
+  const prefix = runLogs ? `nextflow-logs/${runName}/` : `task-logs/${runName}/${taskHash}/`;
+  const listed = await c.env.STORE.list({ prefix });
   const logs = [];
   for (const o of listed.objects.sort((a, b) => a.key.localeCompare(b.key))) {
     const obj = await c.env.STORE.get(o.key);
     if (!obj) continue;
+    const name = o.key.split("/").pop()!;
     logs.push({
       id: keyId(o.key),
       run_name: runName,
       task_hash: taskHash,
-      log_type: o.key.split("/").pop(),
+      log_type: runLogs ? name.replace(/\.log$/, "_log") : name,
       content: await obj.text(),
       uploaded_at: obj.customMetadata?.uploaded_at ?? obj.uploaded.toISOString(),
     });
