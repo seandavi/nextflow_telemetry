@@ -30,7 +30,7 @@ Source of truth: `docs/hpc-layout.md` (variables, files) and
 |---|---|
 | Paths, `NF_TEL_ACCOUNT`, `NF_TEL_MODULES` | `~/.nf_tel.env` ← `config/nf_tel.env.<cluster>` |
 | v2 bearer token | `~/.nf_tel.secrets` (600) ← GSM `cdsci-nf-telemetry-v2-api-token` |
-| GitHub token | `~/.nf_tel.github` (600) ← GSM `cdsci-github-actions-read-token` as `export GITHUB_TOKEN=…`; sourced by the submit template so per-run pipeline clones aren't rate-limited (60/h unauthenticated) |
+| GitHub token | `~/.nf_tel.github` (600) ← GSM `cmgd-nextflow-github-token` as `export GITHUB_TOKEN=…`; sourced by the submit template so per-run pipeline clones aren't rate-limited (60/h unauthenticated) |
 | R2 keys (`-profile r2`) | `~/.nf_tel.r2` (600) ← GSM `cdsci-r2-*`; sourced by the submit template, which refuses r2 runs without it |
 | Client yaml | `$NF_TEL_CONFIG` ← `config/client-<cluster>.yaml.example` (uses `${NF_TEL_*}`) |
 | Submit template | `$NF_TEL_REPO/templates/submit_slurm.sh.j2` (one for all SLURM clusters) |
