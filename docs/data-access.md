@@ -249,9 +249,9 @@ sample's HUMAnN table is a separate download, listed in the HUMAnN datasets'
 bucket), `url`, `bytes` and `rows`. Values are HUMAnN's unnormalized output in
 the bundle's units.
 
-The download base is `https://cmgd-raw.cancerdatasci.org`, which goes live when
-the monode change that makes `cmgd-raw` public is applied. Until then `url` is
-`null` and only `key` is set.
+The download base is `https://cmgd-raw.cancerdatasci.org` (public read, no
+listing). `url` is the base joined with `key`; a release built without the base
+configured carries `url: null` and only `key`.
 
 ```sql
 SELECT study_name, sample_key, bytes, rows, url

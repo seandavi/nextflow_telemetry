@@ -43,7 +43,7 @@ SYNC_REMOTE = os.environ.get("ETL_PUBLIC_REMOTE", "r2:cmgd-public")
 CMGD_DATA_LICENSE = "CC0-1.0"
 # Public HTTPS base of cmgd-raw for gene-family download URLs. No default: until
 # it is set, genefamilies/index.json carries object keys and url = null.
-# Production: https://cmgd-raw.cancerdatasci.org (live once monode applies it).
+# Production: https://cmgd-raw.cancerdatasci.org (public since 2026-10-08, monode#53).
 RAW_PUBLIC_BASE_URL = os.environ.get("ETL_RAW_PUBLIC_BASE_URL")
 LAKE_SCHEMA = "cmgd"
 GENEFAMILY_FILES_TABLE = "humann_genefamilies_files"

@@ -147,7 +147,7 @@ view: [`data-access.md`](./data-access.md).
 |---|---|---|
 | `ETL_PUBLISH_ROOT` | `/data/cmgd/publish` | local release store (`--out`) |
 | `ETL_PUBLIC_REMOTE` | `r2:cmgd-public` | rclone destination for `--sync` (`--remote`) |
-| `ETL_RAW_PUBLIC_BASE_URL` | unset | gene-family download base; production value `https://cmgd-raw.cancerdatasci.org` (live once monode applies it). Unset: `url` is null in `genefamilies/index.json` |
+| `ETL_RAW_PUBLIC_BASE_URL` | unset | gene-family download base; production value `https://cmgd-raw.cancerdatasci.org` (live since 2026-10-08, monode#53). Unset: `url` is null in `genefamilies/index.json` |
 
 The lake connection is `cdsci.lake.lake_connect(read_only=True)`, configured by
 cdsci-lake's own `CU_OPENALEX_*` settings (the producer setup from #234).

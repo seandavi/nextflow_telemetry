@@ -15,7 +15,7 @@ Three decisions the layout rests on:
 | Bucket          | Visibility           | Purpose                                        | Lifecycle                            |
 |-----------------|----------------------|------------------------------------------------|--------------------------------------|
 | `cdsci-lake`    | private (read via catalog) | Shared parquet/Iceberg for **all** projects | `ducklake vacuum` only — no bucket TTL |
-| `cmgd-raw`      | private for now (public-read planned at `https://cmgd-raw.cancerdatasci.org`, not live yet) | cmgd Nextflow `publishDir` outputs | hot → cold archive by workflow semver |
+| `cmgd-raw`      | public-read at `https://cmgd-raw.cancerdatasci.org` (no listing; monode#53) | cmgd Nextflow `publishDir` outputs | hot → cold archive by workflow semver |
 | `cmgd-public`   | public-read          | Curated cmgd artifacts (the stable URLs)       | durable; no expire                    |
 | `cdsci-backups` | Object Lock, write-only token | Postgres dumps + lake snapshots       | retention policy retained             |
 
