@@ -474,3 +474,19 @@ describe("production hardening", () => {
     expect(await obj!.text()).toBe("hello");
   });
 });
+
+describe("failed runs", () => {
+  it("closes a run as failed, with the reason, when nextflow reports success=false", async () => {
+    await post("/api/workflows", { ...WF, workflow_id: "failwf" });
+    await post("/api/samples", { sample_id: "sampleF", ncbi_accession: "SRR000009", collection: "PRJNA000009" });
+    await post("/api/admin/reconcile-jobs", {});
+    const batch = (await (await post("/api/dispatch/batch", { limit: 10, workflow_id: "failwf" })).json()) as any;
+    await weblog(batch.run_name, "started");
+    await weblog(batch.run_name, "completed", {
+      metadata: { workflow: { success: false, errorMessage: null, errorReport: "Failed to pull singularity image" } },
+    });
+    const run = (await (await get(`/api/runs/${batch.run_name}`)).json()) as any;
+    expect(run.status).toBe("failed");
+    expect(run.slurm_reason).toBe("Failed to pull singularity image");
+  });
+});
