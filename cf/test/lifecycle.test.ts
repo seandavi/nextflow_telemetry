@@ -239,6 +239,16 @@ describe("wire compatibility", () => {
     expect(got.logs[0].log_type).toBe("command_err");
   });
 
+  it("serves a run's nextflow and wrapper logs under v1's nextflow_log sentinel", async () => {
+    await env.STORE.put("nextflow-logs/r-logs/nextflow.log", "nf says hi");
+    await env.STORE.put("nextflow-logs/r-logs/wrapper_output.log", "OOM");
+    const got = (await (await get("/api/task-logs/r-logs/nextflow_log")).json()) as any;
+    expect(got.logs.map((l: any) => [l.log_type, l.content])).toEqual([
+      ["nextflow_log", "nf says hi"],
+      ["wrapper_output_log", "OOM"],
+    ]);
+  });
+
   it("registers daemons and reports undispatchable work", async () => {
     await SELF.fetch("https://x/api/daemons/heartbeat", {
       method: "PUT",
