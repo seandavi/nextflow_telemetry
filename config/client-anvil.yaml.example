@@ -9,7 +9,7 @@ continuous: true
 
 dispatch:
   batch_size: 50             # smaller batches finish inside the wrapper walltime
-  workflow_id: "cmgd_nextflow"
+  workflow_id: "cmgd_nextflow,cmgd_mpa4.2"   # comma-separated or YAML list (ADR-0010)
 
 submission:
   mode: slurm
