@@ -5,6 +5,12 @@
 > (telemetry plumbing, dedicated + frozen DuckLake, no orchestrator). This doc is the staged build with a
 > **concrete acceptance check per phase** — each phase is independently shippable and "done" means the check passes.
 > Target pipeline version: **`cmgd_nextflow` 2.2.1** (the active version). Runs on **onclappc02** (same host as the API + Postgres).
+>
+> **Update (#228):** the backlog now comes from the v2 control plane (completed jobs per registration,
+> `GET /api/workflows/{pk}/jobs`), not v1 `jobs`; sources are R2 `cmgd-raw/<workflow_id>/<version>/<key>/`
+> with the legacy GCS base for 2.2.1; specs cover the 2.3.0 bundle registrations (ADR-0010). Operating
+> it — provisioning, env, the systemd timer — is in [`etl-runbook.md`](./etl-runbook.md). The SQL
+> below is the original v1 shape, kept for the record.
 
 ## Target picture
 

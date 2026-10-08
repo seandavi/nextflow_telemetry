@@ -1,0 +1,4 @@
+name	taxonomy_id	taxonomy_lvl	kraken_assigned_reads	added_reads	new_est_reads	fraction_total_reads
+Vibrio cholerae	666	S	108190	158526	266716	0.84793
+Vibrio metoecus	1481663	S	58	17	75	0.00024
+Vibrio mimicus	674	S	58	10	68	0.00022

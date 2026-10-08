@@ -1,0 +1,12 @@
+#mpa_vJan25_CHOCOPhlAnSGB_202503
+#/usr/local/bin/metaphlan --input_type mapout --index mpa_vJan25_CHOCOPhlAnSGB_202503 --db_dir metaphlan -t rel_ab_w_read_stats --nproc 16 -o marker_rel_ab_w_read_stats.tsv /dev/fd/63
+#443042 reads processed
+#SampleID	Metaphlan_Analysis
+#Estimated reads mapped to known clades: 398125
+#clade_name	clade_taxid	relative_abundance	coverage	estimated_number_of_reads_from_the_clade
+UNCLASSIFIED	-1	10.13832	-	44917
+k__Bacteria	2	89.8616835424181	0.08452442822863504	398125
+k__Bacteria|p__Pseudomonadota	2|1224	88.12874590614435	0.08289441407590599	367561
+k__Bacteria|p__Fusobacteriota	2|32066	1.4138028533412181	0.0013298276517116118	8844
+k__Bacteria|p__Pseudomonadota|c__Gammaproteobacteria|o__Vibrionales|f__Vibrionaceae|g__Vibrio|s__Vibrio_cholerae|t__SGB9862	2|1224|1236|135623|641|662|666|	87.1345431979361	0.08195926081447066	325532
+k__Bacteria|p__Fusobacteriota|c__Fusobacteriia|o__Fusobacteriales|f__Fusobacteriaceae|g__Fusobacterium|s__Fusobacterium_mortiferum|t__SGB6031	2|32066|203490|203491|203492|848|850|	1.4138028533412181	0.0013298276517116118	8844

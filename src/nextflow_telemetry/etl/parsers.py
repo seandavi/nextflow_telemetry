@@ -8,7 +8,8 @@ inheritance — a genuinely new file shape is one new function.
 Grounded in 2.2.1 output (July 2026): metaphlan uses ``|``-delimited clade
 lineages with a matching taxid lineage; bracken is a normal-header TSV whose
 ``fraction_total_reads`` is a 0–1 fraction; card_kma.res is a ``#``-header TSV
-with whitespace-padded numerics.
+with whitespace-padded numerics. HUMAnN tables (3.9 and 4.0.0a1) are grounded
+in the Alpine pilot outputs (pipeline #88/#98, October 2026).
 """
 from __future__ import annotations
 
@@ -155,6 +156,34 @@ def parse_marker_presence(raw: bytes) -> Iterator[dict]:
             yield {"marker_name": f[0]}
 
 
+def _humann(raw: bytes, feature: str, value: str) -> Iterator[dict]:
+    """A HUMAnN output table: one ``#`` header row, then
+    ``<feature>[|<stratum>]<TAB><value>``. Community totals have no stratum
+    (``None``); ``UNMAPPED``/``UNINTEGRATED``/``UNGROUPED`` stay as features.
+    Units are the bundle's (3.9 RPK-based, 4.0.0a1 adjusted CPM), which is why
+    the HUMAnN tables carry ``humann_bundle``."""
+    for f in _rows(raw):
+        if len(f) < 2:
+            continue
+        v = _as_float(f[1])
+        if v is None:
+            continue
+        feat, _, stratum = f[0].partition("|")
+        yield {feature: feat, "stratum": stratum or None, value: v}
+
+
+def parse_humann_genefamilies(raw: bytes) -> Iterator[dict]:
+    return _humann(raw, "gene_family", "abundance")
+
+
+def parse_humann_pathabundance(raw: bytes) -> Iterator[dict]:
+    return _humann(raw, "pathway", "abundance")
+
+
+def parse_humann_pathcoverage(raw: bytes) -> Iterator[dict]:
+    return _humann(raw, "pathway", "coverage")
+
+
 def parse_qc(raw: bytes) -> Iterator[dict]:
     """manifest.json → one qc_metrics row (per sample, no data_type)."""
     d = json.loads(raw)
@@ -168,7 +197,9 @@ def parse_qc(raw: bytes) -> Iterator[dict]:
         "bases_decontaminated": dec.get("number_bases"),
         "reads_surviving_fraction": ra.get("reads_surviving_fraction"),
         "bases_surviving_fraction": ra.get("bases_surviving_fraction"),
-        "metaphlan_index": params.get("metaphlan_index"),
+        "metaphlan_index": params.get("metaphlan_index"),      # 2.2.x
+        "metaphlan_profile": params.get("metaphlan_profile"),  # 2.3.0+ (pipeline ADR-0018)
+        "humann_bundle": params.get("humann_bundle"),
         "pipeline_version": prov.get("pipeline_version"),
         "git_commit": prov.get("git_commit"),
         "run_ids": ";".join(prov.get("input_ids", []) or []),

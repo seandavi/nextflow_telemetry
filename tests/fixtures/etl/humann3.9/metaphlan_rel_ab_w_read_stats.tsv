@@ -1,0 +1,10 @@
+#mpa_vJun23_CHOCOPhlAnSGB_202307
+#/usr/local/bin/metaphlan --input_type fastq --index mpa_vJun23_CHOCOPhlAnSGB_202307 --bowtie2db metaphlan --nproc 16 -t rel_ab_w_read_stats -o metaphlan_rel_ab_w_read_stats.tsv out.fastq
+#15980456 reads processed
+#Average read length 98.2968638066398
+#SampleID	Metaphlan_Analysis
+#estimated_reads_mapped_to_known_clades:5567316
+#clade_name	clade_taxid	relative_abundance	coverage	estimated_number_of_reads_from_the_clade
+k__Bacteria	2	100.0	2.17251	5567316
+k__Bacteria|p__Actinobacteria	2|201174	88.97884	1.93307	4642800
+k__Bacteria|p__Actinobacteria|c__Actinomycetia|o__Bifidobacteriales|f__Bifidobacteriaceae|g__Bifidobacterium|s__Bifidobacterium_longum|t__SGB17248	2|201174|1760|85004|31953|1678|216816|	85.66399	1.86106	4481881

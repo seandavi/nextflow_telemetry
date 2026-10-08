@@ -1,0 +1,11 @@
+# Runs nf-etl.service every 15 minutes (docs/etl-runbook.md). A tick is a
+# no-op unless a registration's backlog crosses the threshold or ages out.
+[Unit]
+Description=cMD output-catalog ETL tick, every 15 min
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target
