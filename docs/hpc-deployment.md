@@ -37,7 +37,7 @@ gcloud secrets versions access latest --secret=cdsci-nf-telemetry-v2-api-token -
   | ssh <cluster> 'umask 077; cat > ~/.nf_tel.secrets'
 g() { gcloud secrets versions access latest --secret=$1 --project=cdsci-infra; }
 # GitHub token for Nextflow's per-run pipeline clones (unauthenticated API: 60/h per cluster IP)
-g cdsci-github-actions-read-token | sed 's/^/export GITHUB_TOKEN=/' | ssh <cluster> 'umask 077; cat > ~/.nf_tel.github'
+g cmgd-nextflow-github-token | sed 's/^/export GITHUB_TOKEN=/' | ssh <cluster> 'umask 077; cat > ~/.nf_tel.github'
 printf 'export R2_ACCOUNT_ID=%s\nexport R2_ACCESS_KEY_ID=%s\nexport R2_SECRET_ACCESS_KEY=%s\n' \
   "$(g cdsci-r2-account-id)" "$(g cdsci-r2-access-key-id)" "$(g cdsci-r2-secret-access-key)" \
   | ssh <cluster> 'umask 077; cat > ~/.nf_tel.r2'
