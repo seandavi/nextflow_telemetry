@@ -78,6 +78,13 @@ source ~/.nf_tel.env && cd $NF_TEL_REPO && git pull --ff-only
 uv tool install --force --python 3.13 $NF_TEL_REPO/packages/nf_client   # Alpine: UV_CACHE_DIR=/scratch/alpine/$USER/uv_cache
 ```
 
+If `--force` fails with `failed to remove directory …/uv/tools/nf-client/lib:
+Directory not empty`, a running run-wrapper holds files open (Anvil GPFS). The
+failed install has already deleted the `nf-client` entry point, so the daemon
+and any wrapper that starts next will fail with `nf-client: not found`. Rename the
+old tool dir (the running wrapper keeps its open files) and install again:
+`mv ~/.local/share/uv/tools/nf-client ~/.local/share/uv/tools/nf-client.old-$(date +%s)`.
+
 ## Validate before starting
 
 Render the template and run `sbatch --test-only` on it. Do not use
