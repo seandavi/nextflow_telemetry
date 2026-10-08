@@ -415,37 +415,3 @@ def test_summary_completion_scoped_to_active_version(integration_client, db_url,
     assert body_all["job_status_counts"]["completed"] == 6
     assert body_all["samples_completed"] == 4  # all four completed under 1.0.0
     assert body_all["completion_pct"] == 100.0
-
-
-# ---------------------------------------------------------------------------
-# /cohorts/{id}/failures (drill-down)
-# ---------------------------------------------------------------------------
-
-def test_failures_404_for_unknown_cohort(integration_client):
-    """Match /summary semantics — unknown cohort is 404, not 200 with empty rows."""
-    client, _ = integration_client
-    resp = client.get("/api/cohorts/does-not-exist-cohort/failures?process=FETCH_READS")
-    assert resp.status_code == 404
-
-
-def test_failures_returns_per_task_rows_with_task_hash(integration_client, db_url, cohort_data):
-    client, _ = integration_client
-    tag = cohort_data
-    cid = f"COHORT-{tag}"
-    wf = f"wf-{tag}"
-    samples = [f"S-{tag}-{i}" for i in range(2)]
-    _seed_cohort(db_url, collection_id=cid, sample_ids=samples)
-
-    _seed_telemetry_failure(db_url, sample_id=samples[0], process="FETCH_READS", workflow_id=wf, run_name=f"run-{tag}-1", task_hash="aa/000001")
-    _seed_telemetry_failure(db_url, sample_id=samples[1], process="FETCH_READS", workflow_id=wf, run_name=f"run-{tag}-2", task_hash="bb/000002")
-    _seed_telemetry_failure(db_url, sample_id=samples[0], process="KNEADDATA",   workflow_id=wf, run_name=f"run-{tag}-1", task_hash="cc/000003")
-
-    resp = client.get(f"/api/cohorts/{cid}/failures?process=FETCH_READS&workflow_id={wf}")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["process"] == "FETCH_READS"
-    assert len(body["rows"]) == 2
-    hashes = {r["task_hash"] for r in body["rows"]}
-    assert hashes == {"aa/000001", "bb/000002"}
-    sample_set = {r["sample_id"] for r in body["rows"]}
-    assert sample_set == set(samples)

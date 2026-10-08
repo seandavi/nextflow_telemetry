@@ -31,6 +31,10 @@ trap 'rm -f "$tmp"' EXIT
     echo "OAUTH_CLIENT_SECRET=$(get cancerdatasci-oauth-client-secret)"
     echo "SESSION_SECRET=$(get cmgd-api-session-secret)"
     echo "OPERATOR_TOKEN=$(get cmgd-api-operator-token)"
+    # Historical metrics tier: DuckDB reads the v2 event archive on R2.
+    echo "R2_ACCOUNT_ID=$(get cdsci-r2-account-id)"
+    echo "R2_ACCESS_KEY_ID=$(get cdsci-r2-access-key-id)"
+    echo "R2_SECRET_ACCESS_KEY=$(get cdsci-r2-secret-access-key)"
 } > "$tmp"
 
 chmod 600 "$tmp"

@@ -4,13 +4,11 @@ A "cohort" is a collection — the existing collections / collection_samples
 tables already provide a many-to-many sample grouping, so the cohort summary
 view layers on top without new schema.
 
-This service answers two questions:
-
-1. *How is the cohort doing for a given workflow?* — total samples, job-status
-   breakdown, completion percentage, and which Nextflow processes are
-   producing the most failures.
-2. *Which specific samples failed at a given process?* — drill-down for the
-   click-through-to-inspect flow on the cohort summary page.
+This service answers *how is the cohort doing for a given workflow?* — total
+samples, job-status breakdown, completion percentage, and which Nextflow
+processes are producing the most failures. The per-process drill-down
+(``/cohorts/{id}/failures``) reads the v2 event archive instead; see
+``ProcessMetricsService.cohort_failures``.
 """
 from __future__ import annotations
 
@@ -262,65 +260,3 @@ class CohortService:
             "failure_by_process": [dict(r) for r in failure_rows],
             "generated_at_utc": datetime.now(timezone.utc),
         }
-
-    async def cohort_exists(self, collection_id: str) -> bool:
-        async with self.engine.connect() as conn:
-            row = (
-                await conn.execute(
-                    text("SELECT 1 FROM collections WHERE collection_id = :cid"),
-                    {"cid": collection_id},
-                )
-            ).first()
-            return row is not None
-
-    async def failures_for_process(
-        self,
-        collection_id: str,
-        process: str,
-        workflow_id: str | None,
-        workflow_version: str | None,
-        limit: int = 200,
-        include_all_workflows: bool = False,
-    ) -> list[dict]:
-        """Return failed task occurrences for a given (cohort, process).
-
-        One row per process_completed FAILED/ABORTED event. Includes task_hash
-        so the UI can link straight to the existing log viewer. Caller is
-        responsible for checking that the cohort exists (use cohort_exists)
-        — this method returns an empty list for unknown cohorts.
-
-        Scoped to the active workflow version by default, matching summary().
-        """
-        params: dict = {"cid": collection_id, "process": process, "limit": limit}
-        if workflow_id:
-            params["workflow_id"] = workflow_id
-        if workflow_version:
-            params["workflow_version"] = workflow_version
-        wf_filter = self._workflow_scope(
-            "t", workflow_id, workflow_version, include_all_workflows
-        )
-
-        sql = text(
-            f"""
-            SELECT t.id AS telemetry_id,
-                   t.sample_id,
-                   t.run_name,
-                   t.utc_time,
-                   t.trace->>'name'   AS task_name,
-                   t.trace->>'hash'   AS task_hash,
-                   t.trace->>'status' AS status,
-                   t.trace->>'exit'   AS exit_code,
-                   coalesce(nullif(t.trace->>'attempt',''),'0')::int AS attempt
-            FROM telemetry t
-            JOIN collection_samples cs ON cs.sample_id = t.sample_id
-            WHERE cs.collection_id = :cid
-              AND t.event = 'process_completed'
-              AND t.trace->>'status' IN ('FAILED', 'ABORTED')
-              AND t.trace->>'process' = :process
-              {wf_filter}
-            ORDER BY t.utc_time DESC
-            LIMIT :limit
-            """
-        )
-        async with self.engine.connect() as conn:
-            return [dict(r) for r in (await conn.execute(sql, params)).mappings()]

@@ -41,6 +41,18 @@ class Settings:
     # the frontend origin in prod; "/" works in dev when the SPA is
     # proxied through the same origin.
     FRONTEND_URL: str
+    # Historical metrics tier: DuckDB over v2's NDJSON event archive.
+    # EVENTS_ARCHIVE_URL is the directory holding the dt=YYYY-MM-DD partitions;
+    # a local path works for tests. The R2_* keys (cdsci-r2-* in GCP SM) are
+    # needed only for r2:// URLs.
+    EVENTS_ARCHIVE_URL: str
+    EVENTS_ARCHIVE_REFRESH_SECONDS: float
+    R2_ACCOUNT_ID: str
+    R2_ACCESS_KEY_ID: str
+    R2_SECRET_ACCESS_KEY: str
+    # v2 control-plane API (the Worker): run → workflow attribution and
+    # collection membership for the historical tier.
+    V2_API_URL: str
 
 settings = Settings(
     SQLALCHEMY_URI=_normalize_sqlalchemy_uri(
@@ -56,4 +68,10 @@ settings = Settings(
     OPERATOR_TOKEN=os.environ.get("OPERATOR_TOKEN", ""),
     SESSION_COOKIE_DOMAIN=os.environ.get("SESSION_COOKIE_DOMAIN", ""),
     FRONTEND_URL=os.environ.get("FRONTEND_URL", "/"),
+    EVENTS_ARCHIVE_URL=os.environ.get("EVENTS_ARCHIVE_URL", "r2://nf-telemetry/telemetry/events"),
+    EVENTS_ARCHIVE_REFRESH_SECONDS=float(os.environ.get("EVENTS_ARCHIVE_REFRESH_SECONDS", "300")),
+    R2_ACCOUNT_ID=os.environ.get("R2_ACCOUNT_ID", ""),
+    R2_ACCESS_KEY_ID=os.environ.get("R2_ACCESS_KEY_ID", ""),
+    R2_SECRET_ACCESS_KEY=os.environ.get("R2_SECRET_ACCESS_KEY", ""),
+    V2_API_URL=os.environ.get("V2_API_URL", "https://nf-telemetry.seandavi.workers.dev/api"),
 )

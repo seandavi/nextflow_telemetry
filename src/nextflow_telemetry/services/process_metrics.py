@@ -7,6 +7,10 @@ from typing import Any, Literal
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+from starlette.concurrency import run_in_threadpool
+
+from . import v2_api
+from .event_archive import EventArchive
 
 
 _DEFAULT_WINDOW_DAYS = 7
@@ -39,7 +43,11 @@ def _normalize_window(
 
 @dataclass
 class ProcessMetricsService:
+    """Process analytics. Everything but ``running()`` reads the v2 event
+    archive through DuckDB; ``running()`` is v1's live view over Postgres."""
+
     engine: AsyncEngine
+    archive: EventArchive
 
     def _filter_clause(
         self,
@@ -65,37 +73,37 @@ class ProcessMetricsService:
         if window_days is not None:
             if window_days < 1:
                 raise ValueError("window_days must be >= 1")
-            clauses.append(f"{a}.utc_time >= now() - make_interval(days => :window_days)")
+            clauses.append(f"{a}.utc_time >= now() - to_days($window_days)")
             params["window_days"] = window_days
 
         if window_hours is not None:
             if window_hours < 1:
                 raise ValueError("window_hours must be >= 1")
-            clauses.append(f"{a}.utc_time >= now() - make_interval(hours => :window_hours)")
+            clauses.append(f"{a}.utc_time >= now() - to_hours($window_hours)")
             params["window_hours"] = window_hours
 
         if since is not None:
-            clauses.append(f"{a}.utc_time >= :since")
+            clauses.append(f"{a}.utc_time >= $since")
             params["since"] = since
 
         if until is not None:
-            clauses.append(f"{a}.utc_time <= :until")
+            clauses.append(f"{a}.utc_time <= $until")
             params["until"] = until
 
         if workflow_id is not None:
-            clauses.append(f"{a}.workflow_id = :workflow_id")
+            clauses.append(f"{a}.workflow_id = $workflow_id")
             params["workflow_id"] = workflow_id
 
         if workflow_version is not None:
-            clauses.append(f"{a}.workflow_version = :workflow_version")
+            clauses.append(f"{a}.workflow_version = $workflow_version")
             params["workflow_version"] = workflow_version
 
         if run_name is not None:
-            clauses.append(f"{a}.run_name = :run_name")
+            clauses.append(f"{a}.run_name = $run_name")
             params["run_name"] = run_name
 
         if sample_id is not None:
-            clauses.append(f"{a}.sample_id = :sample_id")
+            clauses.append(f"{a}.sample_id = $sample_id")
             params["sample_id"] = sample_id
 
         fragment = (" and " + " and ".join(clauses)) if clauses else ""
@@ -139,7 +147,7 @@ class ProcessMetricsService:
         )
         params = {**params, "min_samples": min_samples, "limit": limit}
 
-        cards_sql = text(
+        cards_sql = (
             f"""
             with x as (
               select
@@ -164,20 +172,20 @@ class ProcessMetricsService:
                  {fc2}) as distinct_processes,
               count(*) filter (where status = 'COMPLETED') as success_rows,
               count(*) filter (where status in ('FAILED', 'ABORTED')) as failure_rows,
-              coalesce(round(100.0 * count(*) filter (where status in ('FAILED', 'ABORTED'))::numeric / nullif(count(*), 0), 2), 0) as failure_pct,
+              coalesce(round(100.0 * count(*) filter (where status in ('FAILED', 'ABORTED')) / nullif(count(*), 0), 2), 0) as failure_pct,
               count(*) filter (where attempt > 1) as retried_rows,
-              coalesce(round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2), 0) as retry_pct,
-              coalesce(round(100.0 * count(*) filter (where attempt > 1 and status = 'COMPLETED')::numeric /
+              coalesce(round(100.0 * count(*) filter (where attempt > 1) / nullif(count(*), 0), 2), 0) as retry_pct,
+              coalesce(round(100.0 * count(*) filter (where attempt > 1 and status = 'COMPLETED') /
                     nullif(count(*) filter (where attempt > 1), 0), 2), 0) as retry_success_pct,
               coalesce(round(100.0 * avg(peak_rss / nullif(requested_memory_bytes, 0))
-                    filter (where peak_rss is not null and requested_memory_bytes is not null and requested_memory_bytes > 0)::numeric, 2), 0)
+                    filter (where peak_rss is not null and requested_memory_bytes is not null and requested_memory_bytes > 0), 2), 0)
                 as memory_efficiency_pct,
               max(utc_time) as latest_process_completed_utc
             from x
             """
         )
 
-        top_failures_sql = text(
+        top_failures_sql = (
             f"""
             with x as (
               select
@@ -191,16 +199,16 @@ class ProcessMetricsService:
               process,
               count(*) as total_completed,
               count(*) filter (where status in ('FAILED', 'ABORTED')) as failed,
-              round(100.0 * count(*) filter (where status in ('FAILED', 'ABORTED'))::numeric / nullif(count(*), 0), 2) as failure_pct
+              round(100.0 * count(*) filter (where status in ('FAILED', 'ABORTED')) / nullif(count(*), 0), 2) as failure_pct
             from x
             group by process
-            having count(*) >= :min_samples
+            having count(*) >= $min_samples
             order by failed desc, failure_pct desc, total_completed desc
-            limit :limit
+            limit $limit
             """
         )
 
-        top_retries_sql = text(
+        top_retries_sql = (
             f"""
             with x as (
               select
@@ -215,18 +223,18 @@ class ProcessMetricsService:
               process,
               count(*) as total_completed,
               count(*) filter (where attempt > 1) as retried,
-              round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2) as retried_pct,
+              round(100.0 * count(*) filter (where attempt > 1) / nullif(count(*), 0), 2) as retried_pct,
               count(*) filter (where attempt > 1 and status = 'COMPLETED') as retried_success,
               count(*) filter (where attempt > 1 and status in ('FAILED', 'ABORTED')) as retried_failed
             from x
             group by process
-            having count(*) >= :min_samples
+            having count(*) >= $min_samples
             order by retried desc, retried_pct desc, total_completed desc
-            limit :limit
+            limit $limit
             """
         )
 
-        top_exit_codes_sql = text(
+        top_exit_codes_sql = (
             f"""
             select
               coalesce(t.exit_code, '<null>') as exit_code,
@@ -236,12 +244,12 @@ class ProcessMetricsService:
               {fc}
             group by exit_code
             order by failures desc, exit_code
-            limit :limit
+            limit $limit
             """
         )
 
         # Uses raw telemetry table to get breakdown of all event types in flight/submitted
-        event_mix_sql = text(
+        event_mix_sql = (
             f"""
             select t.event, count(*) as rows
             from telemetry t
@@ -252,12 +260,11 @@ class ProcessMetricsService:
             """
         )
 
-        async with self.engine.connect() as conn:
-            cards = dict((await conn.execute(cards_sql, params)).mappings().one())
-            top_failures = [dict(row) for row in (await conn.execute(top_failures_sql, params)).mappings().all()]
-            top_retries = [dict(row) for row in (await conn.execute(top_retries_sql, params)).mappings().all()]
-            top_exit_codes = [dict(row) for row in (await conn.execute(top_exit_codes_sql, params)).mappings().all()]
-            event_mix = [dict(row) for row in (await conn.execute(event_mix_sql, params)).mappings().all()]
+        cards = (await self.archive.fetch(cards_sql, params))[0]
+        top_failures = await self.archive.fetch(top_failures_sql, params)
+        top_retries = await self.archive.fetch(top_retries_sql, params)
+        top_exit_codes = await self.archive.fetch(top_exit_codes_sql, params)
+        event_mix = await self.archive.fetch(event_mix_sql, params)
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -300,7 +307,7 @@ class ProcessMetricsService:
         )
         params = {**params, "min_samples": min_samples, "limit": limit}
 
-        summary_sql = text(
+        summary_sql = (
             f"""
             with x as (
               select
@@ -313,16 +320,16 @@ class ProcessMetricsService:
             select
               count(*) as process_completed_rows,
               count(*) filter (where attempt > 1) as retried_rows,
-              coalesce(round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2), 0) as retried_pct,
+              coalesce(round(100.0 * count(*) filter (where attempt > 1) / nullif(count(*), 0), 2), 0) as retried_pct,
               count(*) filter (where attempt > 1 and status = 'COMPLETED') as retry_success_rows,
               count(*) filter (where attempt > 1 and status in ('FAILED', 'ABORTED')) as retry_failure_rows,
-              coalesce(round(100.0 * count(*) filter (where attempt > 1 and status = 'COMPLETED')::numeric /
+              coalesce(round(100.0 * count(*) filter (where attempt > 1 and status = 'COMPLETED') /
                     nullif(count(*) filter (where attempt > 1), 0), 2), 0) as retry_success_pct
             from x
             """
         )
 
-        by_process_sql = text(
+        by_process_sql = (
             f"""
             with x as (
               select
@@ -337,19 +344,19 @@ class ProcessMetricsService:
               process,
               count(*) as total_completed,
               count(*) filter (where attempt > 1) as retried,
-              round(100.0 * count(*) filter (where attempt > 1)::numeric / nullif(count(*), 0), 2) as retried_pct,
+              round(100.0 * count(*) filter (where attempt > 1) / nullif(count(*), 0), 2) as retried_pct,
               count(*) filter (where attempt > 1 and status = 'COMPLETED') as retried_success,
               count(*) filter (where attempt > 1 and status in ('FAILED', 'ABORTED')) as retried_failed,
               max(attempt) as max_attempt
             from x
             group by process
-            having count(*) >= :min_samples
+            having count(*) >= $min_samples
             order by retried desc, retried_pct desc, total_completed desc
-            limit :limit
+            limit $limit
             """
         )
 
-        by_attempt_sql = text(
+        by_attempt_sql = (
             f"""
             select
               t.attempt,
@@ -364,10 +371,9 @@ class ProcessMetricsService:
             """
         )
 
-        async with self.engine.connect() as conn:
-            summary = dict((await conn.execute(summary_sql, params)).mappings().one())
-            by_process = [dict(row) for row in (await conn.execute(by_process_sql, params)).mappings().all()]
-            by_attempt = [dict(row) for row in (await conn.execute(by_attempt_sql, params)).mappings().all()]
+        summary = (await self.archive.fetch(summary_sql, params))[0]
+        by_process = await self.archive.fetch(by_process_sql, params)
+        by_attempt = await self.archive.fetch(by_attempt_sql, params)
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -408,7 +414,7 @@ class ProcessMetricsService:
         )
         params = {**params, "min_samples": min_samples, "limit": limit}
 
-        sql = text(
+        sql = (
             f"""
             with x as (
               select
@@ -433,29 +439,28 @@ class ProcessMetricsService:
               count(*) as rows,
               count(*) filter (where status = 'COMPLETED') as success,
               count(*) filter (where status in ('FAILED', 'ABORTED')) as failed,
-              round(avg(requested_cpus)::numeric, 2) as avg_requested_cpus,
-              round((avg(requested_memory_bytes) / (1024*1024*1024))::numeric, 2) as avg_requested_memory_gb,
-              round((avg(requested_time_ms) / (1000*60))::numeric, 2) as avg_requested_time_min,
-              round(avg(pct_cpu)::numeric, 2) as avg_pct_cpu,
-              round(percentile_cont(0.95) within group (order by pct_cpu)::numeric, 2) as p95_pct_cpu,
-              round((avg(pct_cpu / nullif(requested_cpus * 100, 0)) * 100)::numeric, 2) as avg_cpu_efficiency_pct,
-              round(avg(pct_mem)::numeric, 2) as avg_pct_mem,
-              round(percentile_cont(0.95) within group (order by pct_mem)::numeric, 2) as p95_pct_mem,
-              round((avg(peak_rss / nullif(requested_memory_bytes, 0)) * 100)::numeric, 2) as avg_memory_efficiency_pct,
-              round((avg(peak_rss) / (1024*1024*1024))::numeric, 2) as avg_peak_rss_gb,
-              round((percentile_cont(0.95) within group (order by peak_rss) / (1024*1024*1024))::numeric, 2) as p95_peak_rss_gb,
-              round((avg(read_bytes) / (1024*1024*1024))::numeric, 2) as avg_read_gb,
-              round((avg(write_bytes) / (1024*1024*1024))::numeric, 2) as avg_write_gb
+              round(avg(requested_cpus), 2) as avg_requested_cpus,
+              round((avg(requested_memory_bytes) / (1024*1024*1024)), 2) as avg_requested_memory_gb,
+              round((avg(requested_time_ms) / (1000*60)), 2) as avg_requested_time_min,
+              round(avg(pct_cpu), 2) as avg_pct_cpu,
+              round(percentile_cont(0.95) within group (order by pct_cpu), 2) as p95_pct_cpu,
+              round((avg(pct_cpu / nullif(requested_cpus * 100, 0)) * 100), 2) as avg_cpu_efficiency_pct,
+              round(avg(pct_mem), 2) as avg_pct_mem,
+              round(percentile_cont(0.95) within group (order by pct_mem), 2) as p95_pct_mem,
+              round((avg(peak_rss / nullif(requested_memory_bytes, 0)) * 100), 2) as avg_memory_efficiency_pct,
+              round((avg(peak_rss) / (1024*1024*1024)), 2) as avg_peak_rss_gb,
+              round((percentile_cont(0.95) within group (order by peak_rss) / (1024*1024*1024)), 2) as p95_peak_rss_gb,
+              round((avg(read_bytes) / (1024*1024*1024)), 2) as avg_read_gb,
+              round((avg(write_bytes) / (1024*1024*1024)), 2) as avg_write_gb
             from x
             group by process, attempt
-            having count(*) >= :min_samples
+            having count(*) >= $min_samples
             order by rows desc, process, attempt
-            limit :limit
+            limit $limit
             """
         )
 
-        async with self.engine.connect() as conn:
-            rows = [dict(row) for row in (await conn.execute(sql, params)).mappings().all()]
+        rows = await self.archive.fetch(sql, params)
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -494,7 +499,7 @@ class ProcessMetricsService:
         )
         params = {**params, "min_samples": min_samples, "limit": limit}
 
-        sql = text(
+        sql = (
             f"""
             with x as (
               select
@@ -514,7 +519,7 @@ class ProcessMetricsService:
                 count(*) filter (where status in ('FAILED', 'ABORTED')) as failed
               from x
               group by process
-              having count(*) >= :min_samples
+              having count(*) >= $min_samples
             ),
             fail_exit as (
               select
@@ -545,19 +550,18 @@ class ProcessMetricsService:
               g.total_completed,
               g.success,
               g.failed,
-              round(100.0 * g.failed::numeric / nullif(g.total_completed, 0), 2) as failure_pct,
+              round(100.0 * g.failed / nullif(g.total_completed, 0), 2) as failure_pct,
               f.exit_code as modal_failure_exit_code,
               a.error_action as modal_error_action
             from grouped g
             left join fail_exit f on f.process = g.process and f.rn = 1
             left join fail_action a on a.process = g.process and a.rn = 1
             order by g.failed desc, failure_pct desc, g.total_completed desc
-            limit :limit
+            limit $limit
             """
         )
 
-        async with self.engine.connect() as conn:
-            rows = [dict(row) for row in (await conn.execute(sql, params)).mappings().all()]
+        rows = await self.archive.fetch(sql, params)
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -593,7 +597,7 @@ class ProcessMetricsService:
         )
         params = {**params, "limit": limit}
 
-        sql = text(
+        sql = (
             f"""
             select
               t.process,
@@ -605,12 +609,11 @@ class ProcessMetricsService:
               {fc}
             group by t.process, exit_code, error_action
             order by failures desc, t.process, exit_code
-            limit :limit
+            limit $limit
             """
         )
 
-        async with self.engine.connect() as conn:
-            rows = [dict(row) for row in (await conn.execute(sql, params)).mappings().all()]
+        rows = await self.archive.fetch(sql, params)
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -646,18 +649,18 @@ class ProcessMetricsService:
 
         process_clause = ""
         if process is not None:
-            process_clause = "and t.process = :process"
+            process_clause = "and t.process = $process"
             params["process"] = process
 
-        sql = text(
+        sql = (
             f"""
             select
-              date_trunc(:bucket, t.utc_time) as bucket_start,
+              date_trunc($bucket, t.utc_time) as bucket_start,
               count(*) as total,
               count(*) filter (where t.status = 'COMPLETED') as success,
               count(*) filter (where t.status in ('FAILED','ABORTED')) as failed,
               coalesce(round(
-                100.0 * count(*) filter (where t.status in ('FAILED','ABORTED'))::numeric
+                100.0 * count(*) filter (where t.status in ('FAILED','ABORTED'))
                 / nullif(count(*), 0), 2
               ), 0) as failure_pct
             from task_executions t
@@ -669,8 +672,7 @@ class ProcessMetricsService:
             """
         )
 
-        async with self.engine.connect() as conn:
-            rows = [dict(row) for row in (await conn.execute(sql, params)).mappings().all()]
+        rows = await self.archive.fetch(sql, params)
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -773,13 +775,13 @@ class ProcessMetricsService:
 
         extra_clauses = ""
         if process is not None:
-            extra_clauses += " and t.process = :process"
+            extra_clauses += " and t.process = $process"
             params["process"] = process
         if status is not None:
-            extra_clauses += " and t.status = :status"
+            extra_clauses += " and t.status = $status"
             params["status"] = status
 
-        sql = text(
+        sql = (
             f"""
             select
               t.telemetry_id,
@@ -810,12 +812,11 @@ class ProcessMetricsService:
               {fc}
               {extra_clauses}
             order by t.utc_time desc
-            limit :limit offset :offset
+            limit $limit offset $offset
             """
         )
 
-        async with self.engine.connect() as conn:
-            result = (await conn.execute(sql, params)).mappings().all()
+        result = await self.archive.fetch(sql, params)
 
         total = result[0]["total_count"] if result else 0
         rows = []
@@ -832,3 +833,61 @@ class ProcessMetricsService:
             "offset": offset,
             "rows": rows,
         }
+
+    async def cohort_failures(
+        self,
+        collection_id: str,
+        process: str,
+        workflow_id: str | None,
+        workflow_version: str | None,
+        limit: int = 200,
+        include_all_workflows: bool = False,
+    ) -> list[dict[str, Any]] | None:
+        """Failed tasks of one process within a collection, newest first.
+
+        None when v2 has no such collection. Scoped like v1's
+        ``CohortService``: an explicit workflow_id/workflow_version wins, else
+        ``include_all_workflows`` drops scoping, else only active versions.
+        """
+        url = self.archive.v2_api_url
+        samples = await run_in_threadpool(v2_api.collection_samples, url, collection_id)
+        if samples is None:
+            return None
+        if not samples:
+            return []
+        params: dict[str, Any] = {"samples": samples, "process": process, "limit": limit}
+        scope = ""
+        if workflow_id or workflow_version:
+            if workflow_id:
+                scope += " and t.workflow_id = $workflow_id"
+                params["workflow_id"] = workflow_id
+            if workflow_version:
+                scope += " and t.workflow_version = $workflow_version"
+                params["workflow_version"] = workflow_version
+        elif not include_all_workflows:
+            active = await run_in_threadpool(v2_api.active_workflows, url)
+            if not active:
+                return []
+            scope = " and list_contains($active, [t.workflow_id, t.workflow_version])"
+            params["active"] = [list(w) for w in active]
+
+        sql = f"""
+            select
+              t.telemetry_id,
+              t.sample_id,
+              t.run_name,
+              t.utc_time,
+              t.name as task_name,
+              t.task_hash,
+              t.status,
+              t.exit_code,
+              t.attempt
+            from task_executions t
+            where list_contains($samples, t.sample_id)
+              and t.status in ('FAILED', 'ABORTED')
+              and t.process = $process
+              {scope}
+            order by t.utc_time desc
+            limit $limit
+        """
+        return await self.archive.fetch(sql, params)

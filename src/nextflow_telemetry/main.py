@@ -25,6 +25,7 @@ from .routers.samples import create_samples_router
 from .routers.submissions import create_submissions_router
 from .routers.task_logs import create_task_logs_router
 from .routers.workflows import create_workflows_router
+from .services.event_archive import EventArchive
 from .services.process_metrics import ProcessMetricsService
 from .services.telemetry import TelemetryService
 
@@ -163,7 +164,15 @@ async def access_log_middleware(
             extra["error"] = str(error)
         logger.log(level, "http.request", extra=extra, exc_info=error if error else None)
 
-process_metrics_service = ProcessMetricsService(engine=engine)
+event_archive = EventArchive(
+    source=settings.EVENTS_ARCHIVE_URL,
+    v2_api_url=settings.V2_API_URL,
+    refresh_seconds=settings.EVENTS_ARCHIVE_REFRESH_SECONDS,
+    r2_account_id=settings.R2_ACCOUNT_ID,
+    r2_access_key_id=settings.R2_ACCESS_KEY_ID,
+    r2_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+)
+process_metrics_service = ProcessMetricsService(engine=engine, archive=event_archive)
 telemetry_service = TelemetryService(engine=engine)
 
 app.include_router(create_process_metrics_router(process_metrics_service), prefix="/api")
@@ -175,7 +184,7 @@ app.include_router(create_task_logs_router(engine), prefix="/api")
 app.include_router(create_daemons_router(engine), prefix="/api")
 app.include_router(create_curated_router(engine), prefix="/api")
 app.include_router(create_runs_router(engine), prefix="/api")
-app.include_router(create_cohorts_router(engine), prefix="/api")
+app.include_router(create_cohorts_router(engine, process_metrics_service), prefix="/api")
 app.include_router(create_submissions_router(engine), prefix="/api")
 # /auth/* lives at root (not under /api) so the OAuth redirect URI is a
 # tidy origin-relative path that fits naturally into Google's allowed-redirect
