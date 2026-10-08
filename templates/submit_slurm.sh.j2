@@ -20,6 +20,10 @@ export GOOGLE_APPLICATION_CREDENTIALS=$NF_TEL_CREDS
 # R2 S3 keys for -profile r2 (ADR 0008): ~/.nf_tel.r2, mode 600, exports
 # R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY from GSM cdsci-r2-*.
 [ -r ~/.nf_tel.r2 ] && source ~/.nf_tel.r2
+# GITHUB_TOKEN for Nextflow's per-run pipeline clone (#204): unauthenticated
+# GitHub API calls are capped at 60/h per (shared, NATed) cluster address.
+# ~/.nf_tel.github, mode 600, `export GITHUB_TOKEN=...` from GSM.
+[ -r ~/.nf_tel.github ] && source ~/.nf_tel.github
 {% if 'r2' in profile.split(',') %}if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ]; then
   echo "profile {{ profile }} needs R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (~/.nf_tel.r2); not starting" >&2
   exit 2
