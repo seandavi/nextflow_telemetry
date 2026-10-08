@@ -267,7 +267,12 @@ export class ControlDO extends DurableObject<Env> {
       now,
       now,
       params,
-      req.collections?.length ? JSON.stringify(req.collections) : null,
+      // Omitted collections keep the registration's scope: re-registering a
+      // pilot without them must not silently widen it to every sample. An
+      // explicit null or [] means all samples.
+      req.collections === undefined
+        ? (existing?.collections ?? null)
+        : req.collections?.length ? JSON.stringify(req.collections) : null,
     );
     const row = this.first(
       `select * from workflows where workflow_id = ? and version = ?`,

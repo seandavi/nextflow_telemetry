@@ -541,6 +541,9 @@ describe("registrations are bundles (ADR-0010)", () => {
     // Key order is not a difference.
     const same = await post("/api/workflows", { ...BUNDLE, params: { skip_humann: false, humann_bundle: "humann4.0.0a1" } });
     expect(same.status).toBe(201);
+    // Re-registering without collections keeps the pilot scope (no silent widening).
+    const { collections: _omit, ...noScope } = BUNDLE;
+    expect(((await (await post("/api/workflows", noScope)).json()) as any).collections).toEqual(["PILOT1"]);
     const clash = await post("/api/workflows", { ...BUNDLE, params: { ...BUNDLE.params, skip_humann: true } });
     expect(clash.status).toBe(409);
     expect(((await (await get(`/api/workflows/${bundlePk}`)).json()) as any).params).toEqual(BUNDLE.params);

@@ -67,8 +67,8 @@ nf-client register-workflow --server $S --id cmgd_humann4a1 --version 2.3.0 \
 numbers, because Groovy reads the string `"false"` as true. Every other value
 stays a string, so `4.0` is not turned into a float.
 
-A daemon serves several bundles by listing them as a YAML list in
-`dispatch.workflow_id`; see [`hpc-deployment.md`](../hpc-deployment.md).
+A daemon serves several bundles by listing them in `dispatch.workflow_id`
+(a YAML list or a comma-separated string); see [`hpc-deployment.md`](../hpc-deployment.md).
 
 ## Alternatives considered
 
@@ -89,9 +89,10 @@ A daemon serves several bundles by listing them as a YAML list in
 - Re-registering an existing version must repeat its params exactly. Omitted
   params mean `{}`, which is refused if the version was registered with
   params. Use `PATCH /workflows/{pk}/revision` for hotfixes (ADR-0004).
-- Re-registering replaces `collections`, and omitting it means every sample.
+- Re-registering without `collections` keeps the existing scope, so a pilot
+  cannot be widened by accident; an explicit `null` widens it to every sample.
   Narrowing the collections does not delete jobs already created; reset or
-  retire them by hand.
+  retire them explicitly.
 - Existing Durable Object storage gets the new columns at startup
   (`params` `'{}'`, `collections` null), so earlier registrations behave as
   before.
