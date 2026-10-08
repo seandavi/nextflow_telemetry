@@ -60,6 +60,10 @@ cat << 'METATSV' > metadata.tsv
 {{ metadata_tsv_content }}
 METATSV
 
+# Results are keyed by the registered workflow, not the pipeline's manifest
+# (ADR-0008, #220): <publish_base>/<workflow_id>/<version>/<sample>/. A patch
+# revision keeps its registration's prefix, and two registrations of one tag
+# with different bundles never share one.
 # run-wrapper emits run-lifecycle telemetry (wrapper_started / heartbeat /
 # wrapper_exited) and uploads .nextflow.log on exit. wrapper_exited closes the
 # run server-side, so no separate close-run call is needed. Telemetry failures
@@ -75,7 +79,8 @@ nf-client run-wrapper \
     -c nextflow_override.config \
     --metadata_tsv metadata.tsv \
     --run_name {{ run_name }} \
-    -with-weblog {{ weblog_url }}
+{% if publish_base | default('') %}    --publish_dir {{ publish_base }}/{{ workflow_id }}/{{ workflow_version }} \
+{% endif %}    -with-weblog {{ weblog_url }}
 
 NF_EXIT=$?
 echo "Nextflow exited with code $NF_EXIT"

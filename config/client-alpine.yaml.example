@@ -25,3 +25,4 @@ submission:
     qos: "cpu-normal"        # cpu-long allows 7 days
     account: "${NF_TEL_ACCOUNT}"
     log_dir: "${NF_TEL_LOGS}"
+    publish_base: "s3://cmgd-raw"   # must match the r2 profile; results go to <base>/<workflow_id>/<version>/ (#220)

@@ -166,3 +166,22 @@ def test_slurm_template_gives_each_run_its_own_pipeline_checkout() -> None:
     script = render_submission_script(tmpl, ctx)
     assert "export NXF_ASSETS=$WORKDIR/assets" in script
     assert script.index("NXF_ASSETS=") < script.index("nextflow run")
+
+
+def test_slurm_template_publishes_under_the_registered_workflow() -> None:
+    """#220: the pipeline's manifest version splits one registration and merges bundles."""
+    from pathlib import Path
+
+    from nf_client.submission import render_submission_script
+
+    tmpl = Path(__file__).resolve().parents[3] / "templates" / "submit_slurm.sh.j2"
+    ctx = {
+        "mem": "8G", "cpus": 2, "time": "1:00:00", "partition": "p", "log_dir": "/l",
+        "run_name": "r1", "sample_ids": "s", "workflow_repository": "o/r",
+        "workflow_revision": "2.2.3", "profile": "x,r2", "server_url": "u",
+        "weblog_url": "w", "workflow_id": "cmgd_nextflow", "workflow_version": "2.2.1",
+        "metadata_tsv_content": "",
+    }
+    assert "--publish_dir" not in render_submission_script(tmpl, ctx)
+    script = render_submission_script(tmpl, {**ctx, "publish_base": "s3://cmgd-raw"})
+    assert "--publish_dir s3://cmgd-raw/cmgd_nextflow/2.2.1 \\" in script
