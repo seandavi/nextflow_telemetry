@@ -254,7 +254,7 @@ polling it hard.
 
 ## Tunables
 
-`wrangler.jsonc` vars: `CLAIM_TTL_MINUTES` (5), `SUBMIT_BACKSTOP_HOURS` (48),
+`wrangler.jsonc` vars: `CLAIM_TTL_MINUTES` (5), `SUBMIT_BACKSTOP_HOURS` (168; code default 48),
 `LIVENESS_MINUTES` (10), `CORS_ORIGINS`. Secret `API_TOKEN` — when set, bearer
 auth is required on every mutating route except `/telemetry`, which must stay
 open because Nextflow's weblog reporter cannot send headers.
