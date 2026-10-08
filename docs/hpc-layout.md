@@ -96,6 +96,19 @@ and check `sbatch --test-only` with the rendered script before starting the daem
 | nextflow | 25.10.8 launcher at `$NF_TEL_DAEMON/nextflow` (Java 18 module); the 24.04 module is not used | 25.10.8 launcher at `$NF_TEL_DAEMON/nextflow` (Temurin 21 at `$NF_TEL_DAEMON/jdk`) |
 | partitions | `acpu` (1 day) with qos `cpu-normal`; `cpu-long` for 7 days. `amilan` is gone. | `shared` |
 
+Scratch purges empty `$NF_TEL_SIF_CACHE`. A run that finds it cold builds each
+image inside its wrapper job, and `mksquashfs` on the 1.6 GB MetaPhlAn image needs
+more than 4G (#208). After a purge, refill the cache in one job instead of in
+every run's wrapper (Anvil shown; the image list is the pipeline's `container` lines):
+
+```bash
+sbatch -A $NF_TEL_ACCOUNT -p shared -c4 --mem=16G -t 2:00:00 -J sif-prepull --wrap '
+cd $NF_TEL_SIF_CACHE
+for u in seandavi/curatedmetagenomics:metaphlan4.2.2 quay.io/biocontainers/kma:1.6.13--h118bc1c_0 staphb/bracken:2.9 staphb/kraken2:2.1.3; do
+  n=$(echo $u | sed "s#[/:]#-#g").img; [ -s $n ] || { singularity pull --name $n.tmp docker://$u && mv $n.tmp $n; }
+done'
+```
+
 Housekeeping still open:
 
 - Alpine scratch root holds ~200 `nxf-*`, `build-temp-*`, `bundle-temp-*` dirs
