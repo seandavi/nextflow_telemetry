@@ -7,9 +7,8 @@ untrusted trust boundary.
 A spec's ``subpath`` is relative to the branch dir (``full_data``/``rarefied_data``)
 when ``branched`` is True, or to the sample root otherwise. ``tags`` are columns
 the engine sets on every row of the spec (they override the common columns).
-``defer=True`` marks the big tables (markers, HUMAnN gene families) — spec'd for
-completeness but skipped by the default ingest until the marker-store decision
-is made.
+An ``indexed`` spec isn't loaded: the object gets one index row (key, size,
+sha256, parsed row count) instead, which is how HUMAnN gene families are handled (#228).
 """
 from __future__ import annotations
 
@@ -26,7 +25,7 @@ class OutputSpec:
     parser: Callable[[bytes], Iterator[dict]]
     tags: dict = field(default_factory=dict)
     branched: bool = True
-    defer: bool = False
+    indexed: bool = False
 
 
 # Outputs every registration so far publishes: the main MetaPhlAn pass, bracken,
@@ -53,14 +52,13 @@ CORE: list[OutputSpec] = [
     OutputSpec(
         "manifest.json", "qc_metrics", parsers.parse_qc, branched=False,
     ),
-    # Deferred — markers are ~89% of all rows; not on the low-latency path.
     OutputSpec(
         "metaphlan_markers/marker_abundance.tsv.gz",
-        "marker_abundance", parsers.parse_marker_abundance, defer=True,
+        "marker_abundance", parsers.parse_marker_abundance,
     ),
     OutputSpec(
         "metaphlan_markers/marker_presence.tsv.gz",
-        "marker_presence", parsers.parse_marker_presence, defer=True,
+        "marker_presence", parsers.parse_marker_presence,
     ),
 ]
 
@@ -70,16 +68,17 @@ def humann(bundle: str, metaphlan_profile: str, genefamilies: str, pathabundance
     """A HUMAnN bundle's outputs under ``humann/<bundle>/`` (pipeline ADR-0016/0018):
     the bundle's own MetaPhlAn profile and the unnormalized tables, full-depth
     reads only. File names are HUMAnN's native ones, which differ by release.
-    Gene families are 120k–1.7M rows/sample in the pilot (#88/#98), so they are
-    deferred like the markers; pathways are ~0.4k–8k."""
+    Gene families are 120k–1.7M rows/sample in the pilot (#88/#98), so they stay
+    per-sample files in cmgd-raw and are only indexed (#228); pathways are
+    ~0.4k–8k rows and go into the lake."""
     d = f"humann/{bundle}"
     tags = {"data_type": "full_data", "humann_bundle": bundle}
     specs = [
         OutputSpec(f"{d}/metaphlan/metaphlan_rel_ab_w_read_stats.tsv", "taxonomic_profile_metaphlan",
                    parsers.parse_metaphlan_profile, branched=False,
                    tags={**tags, "metaphlan_profile": metaphlan_profile}),
-        OutputSpec(f"{d}/{genefamilies}", "humann_genefamilies", parsers.parse_humann_genefamilies,
-                   branched=False, defer=True, tags=tags),
+        OutputSpec(f"{d}/{genefamilies}", "humann_genefamilies_files",
+                   parsers.parse_humann_genefamilies, branched=False, tags=tags, indexed=True),
         OutputSpec(f"{d}/{pathabundance}", "humann_pathabundance", parsers.parse_humann_pathabundance,
                    branched=False, tags=tags),
     ]

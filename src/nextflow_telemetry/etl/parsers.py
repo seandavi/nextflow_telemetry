@@ -136,8 +136,7 @@ def parse_resistome(raw: bytes) -> Iterator[dict]:
 
 
 def parse_marker_abundance(raw: bytes) -> Iterator[dict]:
-    """metaphlan marker_abundance → (marker_name, value). Deferred from the
-    default ingest (markers are ~89% of all rows)."""
+    """metaphlan marker_abundance → (marker_name, value)."""
     for f in _rows(raw):
         if len(f) < 2:
             continue
@@ -150,7 +149,7 @@ def parse_marker_abundance(raw: bytes) -> Iterator[dict]:
 def parse_marker_presence(raw: bytes) -> Iterator[dict]:
     """metaphlan marker_presence → membership. Degenerate as published (every
     listed marker is present), so the boolean value is dropped — presence is
-    encoded by row existence. Deferred from the default ingest."""
+    encoded by row existence."""
     for f in _rows(raw):
         if f and f[0]:
             yield {"marker_name": f[0]}
