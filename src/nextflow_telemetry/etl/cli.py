@@ -10,6 +10,8 @@ every registration with an OutputSpec is processed, narrowed by ``--workflow`` /
   nf-etl ingest  [--limit N] [--batch-size 500]     ingest pending completed samples
   nf-etl tick    [--threshold 500]                  ingest iff backlog >= threshold or age fallback
   nf-etl volumes                                    measured sizes + extrapolations (markdown)
+  nf-etl publish --registration W/V [--out DIR]     build a public release into the local store
+  nf-etl publish --registration W/V --sync          upload the built dataset to r2:cmgd-public
 """
 from __future__ import annotations
 
@@ -21,7 +23,7 @@ from datetime import UTC, datetime
 import httpx
 from cdsci.lake import ops  # type: ignore[import-untyped]
 
-from . import engine, lake, source, v2
+from . import engine, lake, publish, source, v2
 from .specs import BRANCHES, SPECS
 
 
@@ -116,6 +118,24 @@ def cmd_volumes(a) -> None:
         con.close()
 
 
+def cmd_publish(a) -> None:
+    """Build one public release of a registration (ADR-0011), or with --sync upload
+    the already-built local dataset. Building never touches the bucket."""
+    workflow_id, version = publish.parse_registration(a.registration)
+    if a.sync:
+        publish.sync(a.out, publish.dataset_id(workflow_id, version), a.remote, dry_run=a.dry_run)
+        return
+    from cdsci.lake import lake_connect  # type: ignore[import-untyped]
+
+    con = lake_connect(read_only=True)
+    try:
+        m = publish.publish(con, workflow_id, version, a.out)
+    finally:
+        con.close()
+    rows = {t.name: t.row_count for t in m.tables}
+    print(f"{m.dataset} {m.release} -> {a.out}/{m.dataset}/{m.release}: {json.dumps(rows)}")
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="nf-etl", description="cMD output-catalog ETL")
     p.add_argument("--workflow", default=None, help="registration workflow_id (default: all with a spec)")
@@ -135,10 +155,17 @@ def main(argv: list[str] | None = None) -> None:
     pr = sub.add_parser("parse")
     pr.add_argument("--sample", required=True)
     sub.add_parser("volumes")
+    pub = sub.add_parser("publish", help="public release of one registration (docs/data-access.md)")
+    pub.add_argument("--registration", required=True, help="<workflow_id>/<version>")
+    pub.add_argument("--out", default=publish.PUBLISH_ROOT, help="local release store")
+    pub.add_argument("--sync", action="store_true",
+                     help="upload the already-built local dataset to --remote (no build)")
+    pub.add_argument("--remote", default=publish.SYNC_REMOTE)
+    pub.add_argument("--dry-run", action="store_true", help="with --sync: print the rclone commands")
 
     a = p.parse_args(argv)
     {"status": cmd_status, "ingest": cmd_ingest, "tick": cmd_tick, "parse": cmd_parse,
-     "volumes": cmd_volumes}[a.cmd](a)
+     "volumes": cmd_volumes, "publish": cmd_publish}[a.cmd](a)
 
 
 if __name__ == "__main__":
