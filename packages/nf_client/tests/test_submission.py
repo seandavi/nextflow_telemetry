@@ -273,4 +273,62 @@ def test_slurm_template_keeps_task_dirs_under_the_run_dir() -> None:
     script = render_submission_script(tmpl, ctx)
     override = script.split("cat << NFOVERRIDE > nextflow_override.config", 1)[1].split("NFOVERRIDE", 1)[0]
     assert "workDir = 'work'" in override
-    assert "rm -rf $WORKDIR" in script
+    assert "trap cleanup EXIT" in script
+
+
+def _run_rendered(tmp_path, wrapper_body: str, env_extra: dict, signal_after: float | None = None):
+    """Render the real template, stub nf-client, run the batch script under bash."""
+    import os
+    import signal as sig
+    import subprocess
+    import time
+    from pathlib import Path
+
+    from nf_client.submission import render_submission_script
+
+    home, scratch, logs, bindir = (tmp_path / d for d in ("home", "scratch", "logs", "bin"))
+    for d in (home, scratch, logs, bindir):
+        d.mkdir()
+    (home / ".nf_tel.env").write_text(
+        f"export NF_TEL_SCRATCH={scratch} NF_TEL_LOGS={logs} NF_TEL_STORE={tmp_path}/store "
+        f"NF_TEL_SIF_CACHE={tmp_path}/sif NF_TEL_NXF_HOME={tmp_path}/nxf NF_TEL_MODULES=\n")
+    (bindir / "nf-client").write_text("#!/bin/bash\n" + wrapper_body)
+    (bindir / "nf-client").chmod(0o755)
+    tmpl = Path(__file__).resolve().parents[3] / "templates" / "submit_slurm.sh.j2"
+    ctx = {"mem": "1G", "cpus": 1, "time": "1:00:00", "partition": "p", "log_dir": str(logs),
+           "run_name": "r1", "sample_ids": "s", "workflow_repository": "o/r",
+           "workflow_revision": "1.0", "profile": "local", "server_url": "u",
+           "weblog_url": "w", "workflow_id": "wf", "workflow_version": "1",
+           "metadata_tsv_content": ""}
+    script = tmp_path / "job.sh"
+    script.write_text(render_submission_script(tmpl, ctx))
+    env = {"HOME": str(home), "PATH": f"{bindir}:/usr/bin:/bin", "SLURM_JOB_ID": "4242", **env_extra}
+    p = subprocess.Popen(["bash", str(script)], env=env, cwd=tmp_path,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if signal_after is not None:
+        time.sleep(signal_after)
+        os.kill(p.pid, sig.SIGUSR1)
+    out, _ = p.communicate(timeout=30)
+    return p.returncode, out, scratch / "4242"
+
+
+def test_run_dir_removed_on_success(tmp_path) -> None:
+    rc, out, rundir = _run_rendered(tmp_path, "mkdir -p work/ab; echo x > work/ab/f; exit 0\n", {})
+    assert rc == 0 and not rundir.exists(), out
+
+
+def test_failed_run_dir_kept_only_with_keep_failed(tmp_path) -> None:
+    rc, out, rundir = _run_rendered(tmp_path, "exit 3\n", {"NF_TEL_KEEP_FAILED": "1"})
+    assert rc == 3 and (rundir / ".keep_failed").exists(), out
+    (tmp_path / "plain").mkdir()
+    rc, out, rundir2 = _run_rendered(tmp_path / "plain", "exit 3\n", {})
+    assert rc == 3 and not rundir2.exists(), out
+
+
+def test_walltime_signal_stops_wrapper_and_cleans_up(tmp_path) -> None:
+    # The stub records the TERM forwarded by the batch script, then exits like the wrapper would.
+    body = "trap 'echo got-term > $NF_TEL_SCRATCH/../term_seen; exit 143' TERM\nsleep 20 & wait\n"
+    rc, out, rundir = _run_rendered(tmp_path, body, {}, signal_after=1.5)
+    assert rc == 143, out
+    assert (tmp_path / "term_seen").exists(), out
+    assert not rundir.exists(), out
