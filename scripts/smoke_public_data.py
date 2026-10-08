@@ -40,15 +40,27 @@ def snippets(text: str) -> list[tuple[str, str]]:
 
 def localize(text: str, base: str) -> str:
     """Point the doc at ``base`` and at each dataset's current release."""
+    return published(text, base)[0]
+
+
+def published(text: str, base: str) -> tuple[str, set[str]]:
+    """``localize`` plus the doc's datasets that have no release yet (latest.json 404s)."""
     text = text.replace(PUBLIC_BASE, base.rstrip("/"))
+    missing: set[str] = set()
     for dataset in sorted(set(re.findall(rf"/([\w.]+-[\d.]+)/{re.escape(DOC_RELEASE)}\b", text))):
         # Cloudflare rejects urllib's default User-Agent on cancerdatasci.org.
         req = urllib.request.Request(f"{base.rstrip('/')}/{dataset}/latest.json",
                                      headers={"User-Agent": "cmgd-smoke-public-data"})
-        with urllib.request.urlopen(req) as r:
-            release = json.load(r)["release"]
+        try:
+            with urllib.request.urlopen(req) as r:
+                release = json.load(r)["release"]
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+            missing.add(dataset)  # documented but not published yet: its snippets are skipped
+            continue
         text = text.replace(f"/{dataset}/{DOC_RELEASE}", f"/{dataset}/{release}")
-    return text
+    return text, missing
 
 
 def r_missing() -> str | None:
@@ -60,10 +72,15 @@ def r_missing() -> str | None:
     return None if r.returncode == 0 else f"R packages missing ({', '.join(R_PACKAGES)}): {r.stderr.strip()[-300:]}"
 
 
-def run(text: str, langs: tuple[str, ...], workdir: Path) -> list[tuple[str, int, str | None]]:
-    """Run the doc's snippets; returns (lang, n, error or None) per snippet/group."""
+def run(text: str, langs: tuple[str, ...], workdir: Path,
+        skip: set[str] = frozenset()) -> list[tuple[str, int, str | None]]:  # type: ignore[assignment]
+    """Run the doc's snippets; returns (lang, n, error or None) per snippet/group.
+
+    Snippets naming a dataset in ``skip`` (not published yet) are left out.
+    """
     results: list[tuple[str, int, str | None]] = []
-    blocks = snippets(text)
+    blocks = [(lang, code) for lang, code in snippets(text)
+              if not any(d in code for d in skip)]
     with contextlib.chdir(workdir):
         con = duckdb.connect()
         ns: dict = {"__name__": "__doc__"}
@@ -105,12 +122,14 @@ def main(argv: list[str] | None = None) -> int:
         else:
             langs += ("r",)
     try:
-        text = localize(DOC.read_text(), a.base)
+        text, missing = published(DOC.read_text(), a.base)
     except urllib.error.URLError as e:
         print(f"FAIL resolving the current releases (latest.json) under {a.base}: {e}")
         return 1
     with tempfile.TemporaryDirectory() as tmp:
-        results = run(text, langs, Path(tmp))
+        results = run(text, langs, Path(tmp), skip=missing)
+    for d in sorted(missing):
+        print(f"skip {d}: not published yet (no latest.json)")
     for lang, n, err in results:
         print(f"{'FAIL' if err else 'ok  '} {lang} #{n}" + (f"\n{err}" if err else ""))
     return 1 if any(err for *_, err in results) else 0
