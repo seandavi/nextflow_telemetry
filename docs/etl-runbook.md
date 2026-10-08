@@ -145,7 +145,7 @@ view: [`data-access.md`](./data-access.md).
 
 | variable | default | used for |
 |---|---|---|
-| `ETL_PUBLISH_ROOT` | `/data/cmgd/publish` | local release store (`--out`) |
+| `ETL_PUBLISH_ROOT` | `/data/cmgd/publish` | local release store (`--out`). On onclappc02 `/data/cmgd` is not writable by the service user; production uses `/data/davsean/cmgd/publish` (first release built there 2026-10-08) |
 | `ETL_PUBLIC_REMOTE` | `r2:cmgd-public` | rclone destination for `--sync` (`--remote`) |
 | `ETL_RAW_PUBLIC_BASE_URL` | unset | gene-family download base; production value `https://cmgd-raw.cancerdatasci.org` (live since 2026-10-08, monode#53). Unset: `url` is null in `genefamilies/<study>.json` |
 

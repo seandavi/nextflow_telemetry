@@ -108,9 +108,9 @@ than using `avg`:
 ```sql
 SELECT clade_name,
        sum(relative_abundance) / (SELECT count(*) FROM cmgd.qc_metrics
-                                  WHERE study_name = 'ArtachoA_2021') AS mean_percent
+                                  WHERE study_name = 'ZellerG_2014') AS mean_percent
 FROM cmgd.taxonomic_profile_metaphlan
-WHERE study_name = 'ArtachoA_2021' AND rank = 'species'
+WHERE study_name = 'ZellerG_2014' AND rank = 'species'
   AND data_type = 'full_data' AND humann_bundle IS NULL
 GROUP BY clade_name
 ORDER BY mean_percent DESC
@@ -158,7 +158,7 @@ rows = con.execute(
     "FROM cmgd.taxonomic_profile_metaphlan "
     "WHERE study_name = ? AND rank = 'species' AND data_type = 'full_data' "
     "AND humann_bundle IS NULL",
-    ["ArtachoA_2021"],
+    ["ZellerG_2014"],
 ).fetchall()
 print(len(rows), "species rows")
 ```
@@ -189,7 +189,7 @@ dbExecute(con, sprintf(
   "ATTACH '%s/catalog.ducklake' AS cmgd (TYPE DUCKLAKE, DATA_PATH '%s/', OVERRIDE_DATA_PATH, READ_ONLY)",
   url, url))
 
-study <- "ArtachoA_2021"
+study <- "ZellerG_2014"
 long <- dbGetQuery(con, "
   SELECT sample_key, clade_name, relative_abundance
   FROM cmgd.taxonomic_profile_metaphlan
@@ -231,8 +231,8 @@ URL), `size` and `sha256`; `file_descriptions` says what each file holds.
 ```bash
 REL=https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/2026-10-08
 curl -sSf "$REL/studies/index.json" -o studies-index.json
-curl -sSfO "$REL/studies/ArtachoA_2021/metaphlan_species.tsv.gz"
-curl -sSfO "$REL/studies/ArtachoA_2021/qc.tsv"
+curl -sSfO "$REL/studies/ZellerG_2014/metaphlan_species.tsv.gz"
+curl -sSfO "$REL/studies/ZellerG_2014/qc.tsv"
 ```
 
 In R, read the downloaded matrix with
@@ -241,9 +241,9 @@ In Python:
 
 ```python
 studies = fetch_json(f"{url}/studies/index.json")["studies"]
-artacho = next(s for s in studies if s["study_name"] == "ArtachoA_2021")
-print(artacho["n_samples"], "samples:", [f["name"] for f in artacho["files"]])
-species = con.read_csv(f"{url}/studies/ArtachoA_2021/metaphlan_species.tsv.gz", sep="\t")
+zeller = next(s for s in studies if s["study_name"] == "ZellerG_2014")
+print(zeller["n_samples"], "samples:", [f["name"] for f in zeller["files"]])
+species = con.read_csv(f"{url}/studies/ZellerG_2014/metaphlan_species.tsv.gz", sep="\t")
 print(species.shape)
 ```
 
