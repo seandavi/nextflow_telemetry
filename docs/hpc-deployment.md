@@ -64,9 +64,9 @@ on every batch.
 
 - The reference store at `$NF_TEL_STORE` should be populated before running more
   than one batch at a time, or concurrent runs download the same databases.
-- After registering a new pipeline revision, refresh the cached asset on each
-  cluster (`nextflow pull seandavi/curatedMetagenomicsNextflow -r <rev>` with the
-  cluster's `NXF_HOME`). `nextflow run` does not fetch new tags on its own.
+- No per-release `nextflow pull`: every run clones the pipeline at its revision
+  into `$WORKDIR/assets` (`NXF_ASSETS`, #192), so a new tag needs nothing on the
+  clusters. `$NXF_HOME/assets` is no longer used by dispatched runs.
 
 ## Loading work
 
