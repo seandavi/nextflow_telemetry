@@ -47,7 +47,12 @@ export NXF_TEMP=$WORKDIR/tempdir
 # Per-sample tasks run as SLURM jobs on the same account/partition as this
 # wrapper. store_dir and its bind come from NF_TEL_STORE so the reference DBs
 # follow the allocation rather than the path hard-coded in the pipeline profile.
+# workDir is run-local (./work under $WORKDIR), so `rm -rf $WORKDIR` below also
+# removes the task directories. A site profile pointing workDir at shared
+# scratch (anvil.config) leaked them: 4.8 TB on Anvil by 2026-10-08. Disk-limited
+# clusters (Bridges-2) depend on this.
 cat << NFOVERRIDE > nextflow_override.config
+workDir = 'work'
 process.executor = 'slurm'
 process.clusterOptions = '--partition {{ partition }}{% if account | default('') %} --account {{ account }}{% endif %}{% if qos | default('') %} --qos={{ qos }}{% endif %} --output=$NF_TEL_LOGS/nf-%j.out'
 process.queueSize = 200

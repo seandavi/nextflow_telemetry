@@ -254,3 +254,23 @@ def test_register_workflow_param_types() -> None:
     assert _parse_param("expr=a=b") == ("expr", "a=b")
     with pytest.raises(typer.BadParameter):
         _parse_param("novalue")
+
+
+def test_slurm_template_keeps_task_dirs_under_the_run_dir() -> None:
+    """workDir must be run-local so the end-of-run rm -rf $WORKDIR cleans task dirs."""
+    from pathlib import Path
+
+    from nf_client.submission import render_submission_script
+
+    tmpl = Path(__file__).resolve().parents[3] / "templates" / "submit_slurm.sh.j2"
+    ctx = {
+        "mem": "8G", "cpus": 2, "time": "1:00:00", "partition": "p", "log_dir": "/l",
+        "run_name": "r1", "sample_ids": "s", "workflow_repository": "o/r",
+        "workflow_revision": "1.0", "profile": "anvil,r2", "server_url": "u",
+        "weblog_url": "w", "workflow_id": "wf", "workflow_version": "1",
+        "metadata_tsv_content": "",
+    }
+    script = render_submission_script(tmpl, ctx)
+    override = script.split("cat << NFOVERRIDE > nextflow_override.config", 1)[1].split("NFOVERRIDE", 1)[0]
+    assert "workDir = 'work'" in override
+    assert "rm -rf $WORKDIR" in script
