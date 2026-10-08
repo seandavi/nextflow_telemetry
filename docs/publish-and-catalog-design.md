@@ -1,5 +1,7 @@
 # Publish & catalog design
 
+> **Superseded in part by [ADR 0011](adr/0011-results-storage-and-publication.md) (2026-10-08):** results live in the shared lake (`lake.cmgd.*`), and the public artifact is a versioned `publish_release` dataset per registration on `cmgd-public`, not a frozen copy of a dedicated cmgd lake. `nf-etl freeze` is gone.
+
 > Status: **draft** — supersedes the experimental [`curatedMetagenomicDataETL`](https://github.com/seandavi/curatedMetagenomicDataETL) approach. Read alongside [`sample-metadata-design.md`](./sample-metadata-design.md): that doc is about sample *inputs* and harmonization; this one is about pipeline *outputs* and the analytical catalog. For how published files become catalog *tables* (the file→table ETL, analytical schema, and taxonomy harmonization), see [`output-catalog-etl-design.md`](./output-catalog-etl-design.md).
 
 ## Framing

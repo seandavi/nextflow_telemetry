@@ -15,7 +15,7 @@ Three decisions the layout rests on:
 | Bucket          | Visibility           | Purpose                                        | Lifecycle                            |
 |-----------------|----------------------|------------------------------------------------|--------------------------------------|
 | `cdsci-lake`    | private (read via catalog) | Shared parquet/Iceberg for **all** projects | `ducklake vacuum` only — no bucket TTL |
-| `cmgd-raw`      | public-read          | cmgd Nextflow `publishDir` outputs             | hot → cold archive by workflow semver |
+| `cmgd-raw`      | public-read at `https://cmgd-raw.cancerdatasci.org` (no listing; monode#53) | cmgd Nextflow `publishDir` outputs | hot → cold archive by workflow semver |
 | `cmgd-public`   | public-read          | Curated cmgd artifacts (the stable URLs)       | durable; no expire                    |
 | `cdsci-backups` | Object Lock, write-only token | Postgres dumps + lake snapshots       | retention policy retained             |
 
@@ -35,7 +35,12 @@ cmgd-raw/<workflow_id>/<workflow_semver>/<sample_id>/[<branch>/]<step_name>/...
 
 ### `cmgd-public`
 
-Curated public-facing artifacts. Path layout TBD per artifact (parquet products, TSV summaries, web-facing JSON). The URL stability promise is here, not on `cmgd-raw`.
+Curated public-facing artifacts, served at `https://cmgd-public.cancerdatasci.org` (monode#52). The URL stability promise is here, not on `cmgd-raw`. Layout: one dataset per registration, versioned releases built by `nf-etl publish` ([ADR 0011](adr/0011-results-storage-and-publication.md), consumer view in [`data-access.md`](./data-access.md)):
+
+```
+cmgd-public/<workflow_id>-<version>/{latest.json,releases.json}
+cmgd-public/<workflow_id>-<version>/<release>/{manifest.json,catalog.ducklake,tables/,studies/,genefamilies/}
+```
 
 ### `cdsci-lake`
 
@@ -85,7 +90,7 @@ Each project's API user gets `USAGE` on `cdsci_lake_catalog` plus `CREATE/INSERT
 
 ## Discovery & file browsing
 
-R2's public-read mode is **HTTPS GET on known URLs only**. There is no anonymous S3 LIST, no anonymous S3-protocol access of any kind, and R2 does not auto-generate bucket index pages. Public-read on `cmgd-raw` and `cmgd-public` therefore solves *fetch* but not *discovery*. We solve discovery in the application layer.
+R2's public-read mode is **HTTPS GET on known URLs only**. There is no anonymous S3 LIST, no anonymous S3-protocol access of any kind, and R2 does not auto-generate bucket index pages. Public-read on `cmgd-public` (and on `cmgd-raw`, once it is public) therefore solves *fetch* but not *discovery*. We solve discovery in the application layer.
 
 **Primary mechanism — the artifacts catalog as the browser backend.** Issue #93's `artifacts` table is the source of truth for what has been published. The telemetry API exposes a browse endpoint (`GET /api/published?workflow=...&sample=...&prefix=...`) backed by a Postgres index lookup, returning JSON. A thin HTML view of the same data gives operators and external readers a navigable file tree. Cost is flat regardless of bucket size — no R2 LIST traffic on each browse.
 
