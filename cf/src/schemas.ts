@@ -135,6 +135,23 @@ export const Workflow = z.looseObject({
 export const JobStatus = z.enum(["pending", "claimed", "submitted", "running", "completed", "failed"]);
 export const RunStatus = z.enum(["claimed", "submitted", "running", "completed", "expired", "failed"]);
 
+export const JobListItem = z.looseObject({
+  job_id: z.number().int(),
+  sample_key: z.string().describe("The id the job was dispatched and published under"),
+  status: z.string(),
+  completed_at: iso.nullable(),
+  sample_id: z.string().nullable(),
+  readset_id: z.string().nullable(),
+  ncbi_accession: z.string().nullable(),
+  collections: z.array(z.string()),
+});
+
+export const JobList = z.object({
+  items: z.array(JobListItem),
+  after: z.number().int(),
+  limit: z.number().int(),
+});
+
 export const JobSummary = z.object({
   workflow_pk: z.number().int(),
   workflow_id: z.string(),

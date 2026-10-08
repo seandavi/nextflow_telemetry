@@ -1,0 +1,16 @@
+# systemd *user* unit: one `nf-etl tick` (docs/etl-runbook.md). Triggered by
+# nf-etl.timer. Reuses the API's deploy/onclappc02/.env for SQLALCHEMY_URI,
+# rewritten to 127.0.0.1 because pg_main only resolves inside docker.
+[Unit]
+Description=cMD output-catalog ETL tick
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Documents/git/nextflow_telemetry
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=ETL_LAKE_CATALOG_PG_DB=cmgd_lake
+# ETL_LAKE_DATA_PATH (and optionally NF_TELEMETRY_URL) live here.
+EnvironmentFile=%h/.config/nf-etl/env
+ExecStart=/bin/bash -c 'set -a; . deploy/onclappc02/.env; set +a; export SQLALCHEMY_URI="$${SQLALCHEMY_URI/@pg_main:/@127.0.0.1:}"; exec uv run --frozen nf-etl tick'

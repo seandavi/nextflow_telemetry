@@ -1,34 +1,47 @@
 """Reads published outputs from object storage via rclone.
 
-We never LIST — every path is reconstructed from ``(workflow, version, sample_id)``.
-rclone reuses the already-configured ``gs1:`` remote on onclappc02, so there's no
-new credential wiring. ``ETL_SOURCE_BASE`` overrides the remote+prefix (e.g. for a
-test double); default is the cMDv4 GCS publish base.
+We never LIST — every path is reconstructed from ``(workflow_id, version,
+sample_key)``. Outputs publish to ``<base>/<workflow_id>/<version>/<sample_key>/``
+(ADR-0008, #220). The default base is R2 ``r2:cmgd-raw`` (``ETL_SOURCE_BASE``
+overrides it); ``cmgd_nextflow 2.2.1`` also has a legacy GCS base, tried after
+R2. rclone reuses the ``r2:`` and ``gs1:`` remotes already configured on
+onclappc02, so there's no new credential wiring.
 """
 from __future__ import annotations
 
 import os
 import subprocess
 
-# rclone remote + publish_base_dir. The workflow derives <base>/<name>/<version>/<sample>.
-SOURCE_BASE = os.environ.get("ETL_SOURCE_BASE", "gs1:cmgd-data/results/cMDv4")
+SOURCE_BASE = os.environ.get("ETL_SOURCE_BASE", "r2:cmgd-raw")
+# Pre-R2 publish bases, tried in order after SOURCE_BASE (ADR-0008: GCS gets no
+# new writes and is deleted once the v2 re-run replaces it).
+LEGACY_BASES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("cmgd_nextflow", "2.2.1"): ("gs1:cmgd-data/results/cMDv4",),
+}
 
 
-def sample_prefix(workflow: str, version: str, sample_id: str) -> str:
-    return f"{SOURCE_BASE}/{workflow}/{version}/{sample_id}"
-
-
-def is_published(workflow: str, version: str, sample_id: str) -> bool:
-    """MARK_COMPLETE existence gate — the sentinel is the last object written, so
-    its presence means the full output set is durably there. Cheap stat, never LIST."""
-    path = f"{sample_prefix(workflow, version, sample_id)}/MARK_COMPLETE"
+def _exists(path: str) -> bool:
     r = subprocess.run(["rclone", "lsf", path], capture_output=True, text=True)
     return r.returncode == 0 and bool(r.stdout.strip())
 
 
+def _cat(path: str) -> bytes | None:
+    r = subprocess.run(["rclone", "cat", path], capture_output=True)
+    return r.stdout if r.returncode == 0 and r.stdout else None
+
+
+def locate(workflow_id: str, version: str, sample_key: str) -> str | None:
+    """The sample's publish prefix, or None if it isn't published yet.
+
+    MARK_COMPLETE is the last object the pipeline writes, so its presence means
+    the full output set is durably there. One stat per base, never a LIST."""
+    for base in (SOURCE_BASE, *LEGACY_BASES.get((workflow_id, version), ())):
+        prefix = f"{base}/{workflow_id}/{version}/{sample_key}"
+        if _exists(f"{prefix}/MARK_COMPLETE"):
+            return prefix
+    return None
+
+
 def fetch(prefix: str, subpath: str) -> bytes | None:
     """Fetch one object's bytes; None if it's absent (a tolerated skipped branch/step)."""
-    r = subprocess.run(["rclone", "cat", f"{prefix}/{subpath}"], capture_output=True)
-    if r.returncode != 0 or not r.stdout:
-        return None
-    return r.stdout
+    return _cat(f"{prefix}/{subpath}")

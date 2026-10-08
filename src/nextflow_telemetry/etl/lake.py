@@ -12,10 +12,11 @@ plus DuckLake-managed parquet, not a loose parquet dump. Two catalog backends:
 - **DuckDB file** (``ETL_LAKE_CATALOG``) — single-writer fallback for dev/tests.
 
 Data (parquet) lands at ``ETL_LAKE_DATA_PATH`` — a local dir for dev/tests, or
-``s3://cmgd-data/lake/`` (Cloudflare R2) in prod. When the data path is ``s3://``,
+an R2 ``s3://`` prefix in prod (docs/etl-runbook.md). When the data path is ``s3://``,
 R2 credentials are read from the rclone ``[r2]`` config (never printed) and
-installed as a DuckDB secret. Partitioning (workflow/version/method/data_type) is
-a follow-up; correctness of ingest doesn't depend on it.
+installed as a DuckDB secret. Tables are sorted by (study, sample, feature);
+partitioning (workflow_id/version/data_type) is a follow-up — correctness of
+ingest doesn't depend on it.
 """
 from __future__ import annotations
 
@@ -41,13 +42,22 @@ def _pg_catalog_dsn(db: str) -> str:
     user, pw, host, port = m.groups()
     return f"postgres:dbname={db} host={host} port={port} user={user} password={pw}"
 
-_ID = {"sample_id": "VARCHAR", "study_name": "VARCHAR", "run_ids": "VARCHAR",
-       "workflow": "VARCHAR", "version": "VARCHAR"}
+# Common columns. sample_key is the id the registration published under (its
+# output folder name); sample_id is the md5 content address (None for RS-keyed
+# registrations, ADR-0007) and readset_id the RS. id once known.
+_ID = {"sample_key": "VARCHAR", "sample_id": "VARCHAR", "readset_id": "VARCHAR",
+       "study_name": "VARCHAR", "run_ids": "VARCHAR",
+       "workflow_id": "VARCHAR", "version": "VARCHAR"}
 _BRANCH = {"data_type": "VARCHAR"}
+_HUMANN = {**_ID, **_BRANCH, "humann_bundle": "VARCHAR"}
 
 SCHEMAS: dict[str, dict[str, str]] = {
     # Separate per-method profiles — one value interpretation per table.
-    "taxonomic_profile_metaphlan": {**_ID, **_BRANCH, "clade_name": "VARCHAR", "rank": "VARCHAR",
+    # metaphlan_profile names the MetaPhlAn pass (pipeline ADR-0018): the main
+    # pass, or a HUMAnN bundle's own pass (then humann_bundle is set).
+    "taxonomic_profile_metaphlan": {**_ID, **_BRANCH, "metaphlan_profile": "VARCHAR",
+                          "humann_bundle": "VARCHAR",
+                          "clade_name": "VARCHAR", "rank": "VARCHAR",
                           "ncbi_taxid": "INTEGER", "sgb_id": "VARCHAR",
                           "relative_abundance": "DOUBLE",  # metaphlan percent (native)
                           "coverage": "DOUBLE", "estimated_reads": "BIGINT"},
@@ -60,9 +70,29 @@ SCHEMAS: dict[str, dict[str, str]] = {
     "qc_metrics": {**_ID, "reads_raw": "BIGINT", "reads_decontaminated": "BIGINT",
                    "bases_raw": "BIGINT", "bases_decontaminated": "BIGINT",
                    "reads_surviving_fraction": "DOUBLE", "bases_surviving_fraction": "DOUBLE",
-                   "metaphlan_index": "VARCHAR", "pipeline_version": "VARCHAR", "git_commit": "VARCHAR"},
+                   "metaphlan_index": "VARCHAR", "metaphlan_profile": "VARCHAR",
+                   "humann_bundle": "VARCHAR",
+                   "pipeline_version": "VARCHAR", "git_commit": "VARCHAR"},
     "marker_abundance": {**_ID, **_BRANCH, "marker_name": "VARCHAR", "value": "DOUBLE"},
     "marker_presence": {**_ID, **_BRANCH, "marker_name": "VARCHAR"},
+    # HUMAnN, unnormalized, stratum None = community total.
+    "humann_genefamilies": {**_HUMANN, "gene_family": "VARCHAR", "stratum": "VARCHAR",
+                            "abundance": "DOUBLE"},
+    "humann_pathabundance": {**_HUMANN, "pathway": "VARCHAR", "stratum": "VARCHAR",
+                             "abundance": "DOUBLE"},
+    "humann_pathcoverage": {**_HUMANN, "pathway": "VARCHAR", "stratum": "VARCHAR",
+                            "coverage": "DOUBLE"},
+}
+
+# Sort within files by (study, sample, feature) so a study/sample subset is a
+# range read (docs/research/results-storage-and-access.md). Needs DuckLake 1.0
+# (DuckDB >= 1.5.2). Feature keys are the native strings; integer keys against
+# dimension tables are a later step.
+_FEATURE = {
+    "taxonomic_profile_metaphlan": "clade_name", "taxonomic_profile_bracken": "clade_name",
+    "resistome": "gene", "marker_abundance": "marker_name", "marker_presence": "marker_name",
+    "humann_genefamilies": "gene_family", "humann_pathabundance": "pathway",
+    "humann_pathcoverage": "pathway",
 }
 
 
@@ -102,22 +132,28 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
 
 
 def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
+    existing = {r[0] for r in con.execute(
+        "SELECT table_name FROM duckdb_tables() WHERE database_name = 'lake'").fetchall()}
     for table, cols in SCHEMAS.items():
+        if table in existing:
+            continue
         coldefs = ", ".join(f"{c} {t}" for c, t in cols.items())
-        con.execute(f"CREATE TABLE IF NOT EXISTS lake.{table} ({coldefs})")
+        con.execute(f"CREATE TABLE lake.{table} ({coldefs})")
+        sort = ", ".join(c for c in ("study_name", "sample_key", _FEATURE.get(table)) if c)
+        con.execute(f"ALTER TABLE lake.{table} SET SORTED BY ({sort})")
 
 
-def replace_sample(con: duckdb.DuckDBPyConnection, table: str, sample_id: str,
-                   workflow: str, version: str, rows: list[dict]) -> int:
-    """Idempotent write: delete this sample's rows *for this (workflow, version)*,
-    then insert. Scoping the delete by the full key means re-ingesting one version
-    never touches another version's rows for the same sample. Explicit column list
+def replace_sample(con: duckdb.DuckDBPyConnection, table: str, sample_key: str,
+                   workflow_id: str, version: str, rows: list[dict]) -> int:
+    """Idempotent write: delete this sample's rows *for this registration*
+    (workflow_id, version), then insert. Scoping the delete by the full key means
+    re-ingesting one registration never touches another's rows for the same sample. Explicit column list
     so inserts don't depend on physical column order. Returns rows written; caller
     wraps a whole sample's tables in one transaction."""
     cols = list(SCHEMAS[table])
     con.execute(
-        f"DELETE FROM lake.{table} WHERE sample_id = ? AND workflow = ? AND version = ?",
-        [sample_id, workflow, version],
+        f"DELETE FROM lake.{table} WHERE sample_key = ? AND workflow_id = ? AND version = ?",
+        [sample_key, workflow_id, version],
     )
     if not rows:
         return 0

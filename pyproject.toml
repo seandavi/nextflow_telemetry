@@ -19,7 +19,7 @@ dependencies = [
     "authlib>=1.3.0,<2.0.0",
     "itsdangerous>=2.2.0,<3.0.0", # Starlette SessionMiddleware cookie signing
     "httpx>=0.27.0,<0.28.0",      # authlib runtime; pinned to match dev httpx
-    "duckdb>=1.0.0,<2.0.0",       # historical metrics tier + output-catalog ETL
+    "duckdb>=1.5.2,<2.0.0",       # historical metrics tier + output-catalog ETL (DuckLake 1.0 sorted tables)
 ]
 
 [project.scripts]

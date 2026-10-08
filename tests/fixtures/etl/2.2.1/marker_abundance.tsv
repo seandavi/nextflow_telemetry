@@ -1,0 +1,6 @@
+#mpa_vJan25_CHOCOPhlAnSGB_202503
+#/usr/local/bin/metaphlan --input_type mapout --index mpa_vJan25_CHOCOPhlAnSGB_202503 --db_dir metaphlan --nproc 16 -t marker_ab_table -o marker_abundance.tsv /dev/fd/63
+#443042 reads processed
+#SampleID	Metaphlan_Analysis
+UniClust90_GCFHOAII01520|1__9|SGB1478	1.7980826379540922e-06
+UniClust90_IONLCHPE01156|1__10|SGB1478	1.6061566812427796e-06
