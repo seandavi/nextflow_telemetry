@@ -219,6 +219,31 @@ dispatch daemon and run wrapper touch is here.
 - Collection membership rows are the truth, never a `metadata.cohort` key (ADR-0005).
 - Run classification (`active` / `stalled` / `wrapper-failed` / `ended-no-log` / …) ported verbatim.
 
+## Sample keys: md5 and readset ids (ADR-0007)
+
+Every sample has two ids: the md5 `sample_id` the client registers it under,
+and a `readset_id` (`RS.…`, [ADR-0007](../docs/adr/0007-readset-identity.md))
+that ControlDO computes from the stored run list (`src/readset.ts`). Rows that
+predate the column are backfilled at startup. `readset_id` is null when the run
+list holds anything other than SRR/ERR/DRR run accessions.
+
+The cutover is per registration: `workflows.sample_key` names the id the
+pipeline is handed as the `sample_id` column of `metadata.tsv`, which becomes
+`meta.sample`, the output folder and the `MARK_COMPLETE` tag.
+
+- Registrations that existed before ADR-0007 (`cmgd_nextflow 2.2.1`) read
+  `sample_id`: their batches carry md5 ids and their output folders do not move.
+- Every registration created since reads `readset_id`. It is set on insert and
+  never changed by re-registering, because it names the output folders.
+
+Jobs, `collection_samples` and `dead_letter` stay keyed by the md5 id for both,
+so cohorts, the leaderboard and job summaries join as before. The key is
+translated in two places: `claimBatch` swaps in the readset id for a
+readset-keyed registration, and `completeSample` accepts a `MARK_COMPLETE` tag
+in either form. A readset-keyed registration gets one job per readset (two md5
+ids can name the same run set) and none for a sample without one.
+`GET /samples/{id}` and `?search=` take either id.
+
 ## Cost shape
 
 Durable Objects bill rows read ($0.001/M after 25B/month), rows written ($1/M

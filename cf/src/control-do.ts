@@ -18,6 +18,7 @@
  * the claim path already scopes every query to one workflow version.
  */
 import { DurableObject } from "cloudflare:workers";
+import { readsetIdForRuns } from "./readset";
 import { SCHEMA } from "./schema";
 import type { Env } from "./types";
 import { gzip, ndjson, uuidv7 } from "./util";
@@ -43,6 +44,36 @@ export class ControlDO extends DurableObject<Env> {
     this.sql.exec(SCHEMA);
     this.addWorkflowBundleColumns();
     this.backfillJobCounts();
+    // Digests are async (Web Crypto); hold every request until the migration is in.
+    ctx.blockConcurrencyWhile(() => this.addReadsetIds());
+  }
+
+  /**
+   * ADR-0007 migration. Samples get `readset_id`, computed from their stored
+   * run list. Workflows get `sample_key`, the id the pipeline is handed:
+   * registrations that predate it read 'sample_id' (the md5) and keep their
+   * output folders; registerWorkflow creates new ones as 'readset_id'.
+   * The backfill computes every digest first, then adds the column and fills
+   * it in one synchronous block, so it lands whole or not at all.
+   */
+  private async addReadsetIds(): Promise<void> {
+    if (!this.columns("workflows").has("sample_key")) {
+      this.sql.exec(`alter table workflows add column sample_key text not null default 'sample_id'`);
+    }
+    if (!this.columns("samples").has("readset_id")) {
+      const rows = this.all(`select id, ncbi_accession from samples`);
+      const ids: (string | null)[] = [];
+      for (const r of rows) ids.push(await readsetIdForRuns(r.ncbi_accession ?? ""));
+      this.sql.exec(`alter table samples add column readset_id text`);
+      rows.forEach((r, i) => this.sql.exec(`update samples set readset_id = ? where id = ?`, ids[i], r.id));
+    }
+    // Not unique: two md5 ids can name the same run set (the md5 hashes the
+    // client's string, the readset the server's canonical list).
+    this.sql.exec(`create index if not exists samples_readset on samples (readset_id)`);
+  }
+
+  private columns(table: string): Set<string> {
+    return new Set(this.all(`select name from pragma_table_info(?)`, table).map((r) => r.name));
   }
 
   /**
@@ -51,7 +82,7 @@ export class ControlDO extends DurableObject<Env> {
    * rows read as params '{}' and collections null (every sample).
    */
   private addWorkflowBundleColumns(): void {
-    const cols = new Set(this.all(`select name from pragma_table_info('workflows')`).map((r) => r.name));
+    const cols = this.columns("workflows");
     if (!cols.has("params")) this.sql.exec(`alter table workflows add column params text not null default '{}'`);
     if (!cols.has("collections")) this.sql.exec(`alter table workflows add column collections text`);
   }
@@ -89,7 +120,7 @@ export class ControlDO extends DurableObject<Env> {
   // Samples
   // ==================================================================
 
-  registerSample(req: {
+  async registerSample(req: {
     sample_id: string;
     ncbi_accession: string;
     biosample_id?: string | null;
@@ -97,20 +128,24 @@ export class ControlDO extends DurableObject<Env> {
     // sends TypeScript into an infinite serializable-type expansion.
     metadata?: Record<string, unknown> | null;
     collection?: string | null;
-  }): Row {
-    const now = iso();
+  }): Promise<Row> {
     // Canonical form: sorted + deduplicated SRR set, matching v1's
     // parse_srrs/normalisation so sample identity stays content-addressed.
     const acc = normalizeSrrs(req.ncbi_accession);
+    // The only await, before any SQL: the writes below stay one atomic block.
+    const readsetId = await readsetIdForRuns(acc);
+    const now = iso();
     this.run(
-      `insert into samples (sample_id, ncbi_accession, biosample_id, metadata, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?)
+      `insert into samples (sample_id, readset_id, ncbi_accession, biosample_id, metadata, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?)
        on conflict(sample_id) do update set
+         readset_id     = excluded.readset_id,
          ncbi_accession = excluded.ncbi_accession,
          biosample_id   = excluded.biosample_id,
          metadata       = excluded.metadata,
          updated_at     = excluded.updated_at`,
       req.sample_id,
+      readsetId,
       acc,
       req.biosample_id ?? null,
       JSON.stringify(req.metadata ?? {}),
@@ -144,8 +179,10 @@ export class ControlDO extends DurableObject<Env> {
     );
   }
 
-  getSample(sampleId: string): Row | null {
-    const row = this.first(`select * from samples where sample_id = ?`, sampleId);
+  /** By either id: the md5 `sample_id` or the readset id (ADR-0007). */
+  getSample(id: string): Row | null {
+    const col = id.startsWith("RS.") ? "readset_id" : "sample_id";
+    const row = this.first(`select * from samples where ${col} = ? order by id limit 1`, id);
     return row ? this.hydrateSample(row) : null;
   }
 
@@ -176,8 +213,8 @@ export class ControlDO extends DurableObject<Env> {
       args.push(opts.collection);
     }
     if (opts.search) {
-      where.push("s.sample_id like ?");
-      args.push(`%${opts.search}%`);
+      where.push("(s.sample_id like ? or s.readset_id like ?)");
+      args.push(`%${opts.search}%`, `%${opts.search}%`);
     }
     const w = where.length ? `where ${where.join(" and ")}` : "";
     const total = this.first(`select count(*) as n from ${from} ${w}`, ...args)!.n as number;
@@ -203,6 +240,7 @@ export class ControlDO extends DurableObject<Env> {
     return {
       id: row.id,
       sample_id: row.sample_id,
+      readset_id: row.readset_id,
       ncbi_accession: row.ncbi_accession,
       biosample_id: row.biosample_id,
       metadata: safeJson(row.metadata),
@@ -246,9 +284,13 @@ export class ControlDO extends DurableObject<Env> {
       return { workflow: hydrateWorkflow(existing), conflict: true };
     }
     this.run(
+      // New registrations are readset-keyed (ADR-0007). sample_key is never
+      // updated on conflict: it names the output folders, so an existing
+      // registration keeps the key it was created with.
       `insert into workflows (workflow_id, version, repository_url, revision, manifest_version,
-                              max_retries, status, description, created_at, updated_at, params, collections)
-       values (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+                              max_retries, status, description, created_at, updated_at, params, collections,
+                              sample_key)
+       values (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, 'readset_id')
        on conflict(workflow_id, version) do update set
          repository_url   = excluded.repository_url,
          revision         = excluded.revision,
@@ -347,6 +389,15 @@ export class ControlDO extends DurableObject<Env> {
    * Cross-product of samples × active workflows; idempotent. A workflow with
    * `collections` set only gets jobs for samples in those collections (ADR-0010).
    * Narrowing collections later does not delete jobs already created.
+   *
+   * Jobs stay keyed by the md5 `sample_id` for every registration, so
+   * collections, cohorts and the leaderboard join as before. A readset-keyed
+   * registration gets one job per readset (the earliest sample row carrying
+   * it), and none for a sample without one.
+   *
+   * ponytail: if that earliest row is outside a scoped registration's
+   * collections while a duplicate is inside, the readset gets no job. Pick
+   * the earliest row within scope if duplicate run sets ever show up.
    */
   reconcileJobs(): number {
     const now = iso();
@@ -357,7 +408,9 @@ export class ControlDO extends DurableObject<Env> {
         where w.status = 'active'
           and (w.collections is null or s.sample_id in (
                 select cs.sample_id from collection_samples cs
-                  join json_each(w.collections) c on c.value = cs.collection_id))`,
+                  join json_each(w.collections) c on c.value = cs.collection_id))
+          and (w.sample_key = 'sample_id'
+               or s.id = (select min(s2.id) from samples s2 where s2.readset_id = s.readset_id))`,
       now,
     );
   }
@@ -393,7 +446,7 @@ export class ControlDO extends DurableObject<Env> {
     if (!pick) return null;
 
     const rows = this.all(
-      `select j.id, j.sample_id, j.workflow_pk, w.repository_url, w.revision, w.params
+      `select j.id, j.sample_id, j.workflow_pk, w.repository_url, w.revision, w.params, w.sample_key
          from jobs j join workflows w on j.workflow_pk = w.id
         where ${w} and j.workflow_id = ? and j.workflow_version = ?
         order by j.created_at, j.id
@@ -426,7 +479,7 @@ export class ControlDO extends DurableObject<Env> {
 
     const samples = new Map(
       this.all(
-        `select sample_id, ncbi_accession, metadata from samples where sample_id in (${rows
+        `select sample_id, readset_id, ncbi_accession, metadata from samples where sample_id in (${rows
           .map(() => "?")
           .join(",")})`,
         ...rows.map((r) => r.sample_id),
@@ -441,8 +494,10 @@ export class ControlDO extends DurableObject<Env> {
       repository_url: rows[0].repository_url,
       revision: rows[0].revision,
       params: safeJson(rows[0].params),
+      // `sample_id` is the key the pipeline gets (metadata.tsv -> meta.sample
+      // -> output folder -> MARK_COMPLETE tag): the registration's sample_key.
       jobs: rows.map((r) => ({
-        sample_id: r.sample_id,
+        sample_id: r.sample_key === "readset_id" ? samples.get(r.sample_id)?.readset_id : r.sample_id,
         ncbi_accession: samples.get(r.sample_id)?.ncbi_accession ?? null,
         metadata: safeJson(samples.get(r.sample_id)?.metadata),
       })),
@@ -481,14 +536,20 @@ export class ControlDO extends DurableObject<Env> {
     );
   }
 
-  /** MARK_COMPLETE sentinel. Never flips an already-terminal job. */
-  completeSample(runName: string, sampleId: string): number {
+  /**
+   * MARK_COMPLETE sentinel. Never flips an already-terminal job. The tag is
+   * whichever key the run was handed, md5 or readset id; the two forms never
+   * collide, and the run scopes the match to its own jobs.
+   */
+  completeSample(runName: string, tag: string): number {
     return this.run(
       `update jobs set status = 'completed', completed_at = ?
-        where run_name = ? and sample_id = ? and status not in ('completed', 'failed')`,
+        where run_name = ? and status not in ('completed', 'failed')
+          and (sample_id = ? or sample_id in (select sample_id from samples where readset_id = ?))`,
       iso(),
       runName,
-      sampleId,
+      tag,
+      tag,
     );
   }
 

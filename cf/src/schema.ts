@@ -13,6 +13,7 @@ create table if not exists samples (
   id             integer primary key autoincrement,
   sample_id      text not null unique,
   ncbi_accession text,
+  readset_id     text, -- ADR-0007, from ncbi_accession; null if it holds a non-run entry. Indexed in ControlDO.addReadsetIds
   biosample_id   text,
   metadata       text,
   created_at     text not null,
@@ -50,6 +51,7 @@ create table if not exists workflows (
   updated_at       text not null,
   params           text not null default '{}', -- pipeline params JSON; output contract, fixed per version (ADR-0010)
   collections      text,                       -- JSON array of collection_ids; null = every sample
+  sample_key       text not null default 'sample_id', -- id handed to the pipeline: 'sample_id' (md5) or 'readset_id' (ADR-0007)
   unique (workflow_id, version)
 );
 

@@ -119,6 +119,13 @@ Content-addressed `sample_id` stays the identity and the universal join key. No 
 context on the sample row. (SRA-derivable columns from `sample-metadata-design.md` are
 orthogonal and can land independently.)
 
+**Update (#227):** samples also carry a `readset_id`
+([ADR-0007](adr/0007-readset-identity.md)), a seqcol digest of the same run set. It is
+what registrations created since #227 hand the pipeline, so their outputs are keyed by
+it; the md5 `sample_id` remains the join key for jobs and collection membership, and
+lookups accept either. Everything in this doc still holds with "sample" read as "run
+set". See `cf/README.md` ("Sample keys").
+
 ### Study — one entity, one membership table
 Generalize `collections` into the canonical study entity (keep the table name to avoid
 churn, or rename to `studies` — cosmetic). `collection_samples` is the **single source
@@ -189,7 +196,8 @@ Non-destructive, staged; each step independently shippable and reversible:
 
 ## What this design explicitly does NOT do
 
-- Does **not** change `sample_id` (content-addressing stays).
+- Does **not** change `sample_id` (content-addressing stays; #227 adds `readset_id`
+  alongside it).
 - Does **not** pull publications, vocabularies, or provenance into the telemetry DB —
   that boundary from `sample-metadata-design.md` is unchanged.
 - Does **not** couple dispatch/reconcile to study identity beyond what already exists.

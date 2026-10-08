@@ -12,6 +12,7 @@ import { createExecutionContext, env, runDurableObjectAlarm, runInDurableObject,
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ControlDO } from "../src/control-do";
 import worker, { authExempt, resetAllowed } from "../src/index";
+import { readsetIdForRuns } from "../src/readset";
 import * as S from "../src/schemas";
 
 const WF = {
@@ -566,6 +567,84 @@ describe("registrations are bundles (ADR-0010)", () => {
     const res = await post("/api/dispatch/batch", { limit: 10, workflow_id: "cmgd_humann4a1" });
     const batch = (await res.json()) as any;
     expect(batch.params).toEqual(BUNDLE.params);
-    expect(batch.jobs.map((j: any) => j.sample_id)).toEqual(["pilot1"]);
+    expect(batch.jobs.map((j: any) => j.sample_id)).toEqual([await readsetIdForRuns("SRR100001")]);
+  });
+});
+
+describe("readset ids (ADR-0007)", () => {
+  const RS_WF = { ...WF, workflow_id: "cmgd_rs", version: "3.0.0", collections: ["RSPILOT"] };
+
+  it("backfills readset ids and marks every existing registration md5-keyed, idempotently", async () => {
+    // The suite reset the corpus above; this is the pre-ADR-0007 state.
+    await post("/api/workflows", WF);
+    await post("/api/samples", { sample_id: "sampleA", ncbi_accession: "SRR000001" });
+    const stub = env.CONTROL.get(env.CONTROL.idFromName("v1"));
+    await runInDurableObject(stub, async (instance: ControlDO, state) => {
+      const sql = state.storage.sql;
+      sql.exec(`drop index samples_readset`);
+      sql.exec(`alter table samples drop column readset_id`);
+      sql.exec(`alter table workflows drop column sample_key`);
+      await (instance as any).addReadsetIds();
+      await (instance as any).addReadsetIds();
+      const a = sql.exec(`select readset_id from samples where sample_id = 'sampleA'`).one();
+      expect(a.readset_id).toBe("RS.29BkNp8wxCWwuhVe3luQxYtv97BwdwjF"); // ADR-0007 golden: SRR000001
+      expect(sql.exec(`select count(*) as n from samples where readset_id is null`).one().n).toBe(0);
+      const keys = sql.exec(`select distinct sample_key from workflows`).toArray().map((r) => r.sample_key);
+      expect(keys).toEqual(["sample_id"]);
+    });
+    // Re-registering a pre-existing version keeps its key, and so its output folders.
+    const wf = (await (await post("/api/workflows", WF)).json()) as any;
+    expect(wf.sample_key).toBe("sample_id");
+  });
+
+  it("looks a sample up by either id", async () => {
+    const byMd5 = (await (await get("/api/samples/sampleA")).json()) as any;
+    expect(byMd5.readset_id).toBe("RS.29BkNp8wxCWwuhVe3luQxYtv97BwdwjF");
+    const byRs = (await (await get("/api/samples/RS.29BkNp8wxCWwuhVe3luQxYtv97BwdwjF")).json()) as any;
+    expect(byRs.sample_id).toBe("sampleA");
+    const found = (await (await get("/api/samples?search=29BkNp8wx")).json()) as any;
+    expect(found.items.map((s: any) => s.sample_id)).toEqual(["sampleA"]);
+  });
+
+  it("hands a readset-keyed registration's pipeline readset ids, one job per readset", async () => {
+    const wf = (await (await post("/api/workflows", RS_WF)).json()) as any;
+    expect(wf.sample_key).toBe("readset_id");
+    // Two md5 ids for one run set (client strings differ, canonical lists don't),
+    // and a row with a placeholder that has no readset.
+    await post("/api/samples", { sample_id: "rsA", ncbi_accession: "SRR200002;SRR200001", collection: "RSPILOT" });
+    await post("/api/samples", { sample_id: "rsA-dup", ncbi_accession: "SRR200001,SRR200002", collection: "RSPILOT" });
+    await post("/api/samples", { sample_id: "rsB", ncbi_accession: "n/a;SRR200003", collection: "RSPILOT" });
+    await post("/api/admin/reconcile-jobs", {});
+    expect((await summary(wf.id)).total).toBe(1);
+
+    const batch = (await (await post("/api/dispatch/batch", { limit: 10, workflow_id: "cmgd_rs" })).json()) as any;
+    const rs = await readsetIdForRuns("SRR200001;SRR200002");
+    expect(batch.jobs).toEqual([{ sample_id: rs, ncbi_accession: "SRR200001;SRR200002", metadata: {} }]);
+
+    await weblog(batch.run_name, "started");
+    await weblog(batch.run_name, "process_completed", {
+      trace: { tag: rs, process: "cmgd:MARK_COMPLETE", status: "COMPLETED" },
+    });
+    expect((await summary(wf.id)).completed).toBe(1);
+    // The leaderboard still joins jobs to collections through the md5 key.
+    const board = (await (await get("/api/cohorts/leaderboard")).json()) as any[];
+    expect(board.find((c) => c.collection_id === "RSPILOT").samples_completed).toBeGreaterThanOrEqual(1);
+  });
+
+  it("leaves an md5-keyed registration unchanged: md5 in the batch, md5 MARK_COMPLETE", async () => {
+    await post("/api/samples", { sample_id: "md5only", ncbi_accession: "SRR300001" });
+    await post("/api/admin/reconcile-jobs", {});
+    const batch = (await (await post("/api/dispatch/batch", { limit: 50, workflow_id: "cmgd" })).json()) as any;
+    const ids = batch.jobs.map((j: any) => j.sample_id);
+    // Every sample, as its md5 id: the duplicate run set and the readset-less row included.
+    expect(ids).toContain("md5only");
+    expect(ids).toEqual(expect.arrayContaining(["rsA", "rsA-dup", "rsB"]));
+    expect(ids.some((id: string) => id.startsWith("RS."))).toBe(false);
+    await weblog(batch.run_name, "started");
+    await weblog(batch.run_name, "process_completed", {
+      trace: { tag: "md5only", process: "cmgd:MARK_COMPLETE", status: "COMPLETED" },
+    });
+    const run = (await (await get(`/api/runs/${batch.run_name}`)).json()) as any;
+    expect(run.job_status_counts.completed).toBe(1);
   });
 });

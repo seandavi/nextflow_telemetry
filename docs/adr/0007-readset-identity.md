@@ -1,6 +1,6 @@
 # 0007. Identify processing units as readsets digested with the refget seqcol algorithm
 
-- **Status:** Accepted (not yet implemented)
+- **Status:** Accepted (implemented 2026-10-07, #227)
 - **Date:** 2026-10-03
 - **Deciders:** Sean Davis
 
@@ -121,8 +121,27 @@ used.
 
 - metacurator SPEC 170 (`src/metacurator/readset.py`) exists and reproduces the
   same golden vectors.
-- The nextflow_telemetry implementation (`nf-client`, `cf/`, the pipeline input
-  TSV) is Phase 1 of #195. This ADR moves to plain "Accepted" when that lands.
+- nextflow_telemetry (#227, Phase 1 of #195): `cf/src/readset.ts` and
+  `nf_client/readset.py`, pinned by these vectors and the seqcol examples.
+
+## Implementation
+
+The clean cutover above became a per-registration one, because
+`cmgd_nextflow 2.2.1` had runs in flight on md5 ids when this landed.
+
+- ControlDO computes `samples.readset_id` from the stored run list at
+  registration and backfilled existing rows. It is null when the run list holds
+  anything other than run accessions.
+- `workflows.sample_key` is the id the pipeline is handed as `sample_id` in
+  `metadata.tsv`, and so the output folder name and the `MARK_COMPLETE` tag.
+  Registrations that existed before #227 read `sample_id` (md5) and keep their
+  folders. Every registration created since, starting with the 2.3.0 bundles
+  ([0010](0010-registrations-are-bundles.md)), reads `readset_id`. No pipeline
+  change was needed.
+- Jobs and collection membership stay keyed by the md5 id; the claimed batch
+  and `MARK_COMPLETE` matching translate. Lookups take either id.
+- The md5 helpers in `srr.py` stay while md5-keyed registrations are active.
+  See `cf/README.md` ("Sample keys").
 
 ## References
 
