@@ -489,4 +489,19 @@ describe("failed runs", () => {
     expect(run.status).toBe("failed");
     expect(run.slurm_reason).toBe("Failed to pull singularity image");
   });
+
+  it("counts task outcomes per run and lists the failed ones", async () => {
+    await post("/api/samples", { sample_id: "sampleG", ncbi_accession: "SRR000010", collection: "PRJNA000009" });
+    await post("/api/admin/reconcile-jobs", {});
+    const batch = (await (await post("/api/dispatch/batch", { limit: 10, workflow_id: "failwf" })).json()) as any;
+    await weblog(batch.run_name, "started");
+    const t = { tag: "sampleG", process: "cmgd:kneaddata", hash: "ab/cdef12" };
+    await weblog(batch.run_name, "process_completed", { trace: { ...t, status: "FAILED", exit: 137, attempt: 1, error_action: "RETRY" } });
+    await weblog(batch.run_name, "process_completed", { trace: { ...t, status: "COMPLETED", exit: 0, attempt: 2 } });
+    const run = (await (await get(`/api/runs/${batch.run_name}`)).json()) as any;
+    expect(run.task_status_counts).toEqual({ FAILED: 1, COMPLETED: 1 });
+    expect(run.failed_tasks).toEqual([
+      { process: "cmgd:kneaddata", sample_id: "sampleG", exit_code: "137", task_hash: "ab/cdef12", attempt: 1, error_action: "RETRY" },
+    ]);
+  });
 });

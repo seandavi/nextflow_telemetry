@@ -669,11 +669,43 @@ export class ControlDO extends DurableObject<Env> {
       ...row,
       classification: classifyRun(row),
       job_status_counts: jobCounts,
-      // task_status_counts / failed_tasks came from the telemetry table in v1;
-      // that history now lives in R2 (historical tier, not yet built).
-      task_status_counts: {},
-      failed_tasks: [],
+      task_status_counts: Object.fromEntries(
+        this.all(`select status, n from run_task_counts where run_name = ?`, runName).map((r) => [r.status, r.n]),
+      ),
+      failed_tasks: this.all(
+        `select process, sample_id, exit_code, task_hash, attempt, error_action
+           from run_failed_tasks where run_name = ? order by utc_time desc`,
+        runName,
+      ),
     };
+  }
+
+  /** Weblog process_completed: count the outcome; keep non-COMPLETED tasks for triage. */
+  recordTask(runName: string, sampleId: string | null, trace: Row): void {
+    const status = String(trace.status ?? "unknown");
+    this.run(
+      `insert into run_task_counts (run_name, status, n) values (?, ?, 1)
+       on conflict (run_name, status) do update set n = n + 1`,
+      runName,
+      status,
+    );
+    if (status === "COMPLETED") return;
+    // ponytail: capped per run so a crash-looping process can't grow the DO;
+    // the full list is in the R2 archive.
+    const kept = this.first(`select count(*) as n from run_failed_tasks where run_name = ?`, runName)!.n as number;
+    if (kept >= RUN_FAILED_TASKS_MAX) return;
+    this.run(
+      `insert into run_failed_tasks (run_name, process, sample_id, exit_code, task_hash, attempt, error_action, utc_time)
+       values (?, ?, ?, ?, ?, ?, ?, ?)`,
+      runName,
+      String(trace.process ?? "unknown"),
+      sampleId,
+      trace.exit == null ? null : String(trace.exit),
+      trace.hash ?? null,
+      trace.attempt ?? null,
+      trace.error_action ?? null,
+      iso(),
+    );
   }
 
   // ==================================================================
@@ -992,6 +1024,8 @@ export class ControlDO extends DurableObject<Env> {
       "samples",
       "workflows",
       "daemons",
+      "run_task_counts",
+      "run_failed_tasks",
     ];
     const cleared: Row = {};
     for (const t of tables) {
@@ -1060,6 +1094,7 @@ function withActive(row: Row): Row {
 }
 
 const RUN_STALE_MS = 15 * 60_000;
+const RUN_FAILED_TASKS_MAX = 200;
 
 /**
  * Derived run state. Ported verbatim from v1 routers/runs.py `_classify_run`

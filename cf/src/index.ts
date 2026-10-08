@@ -112,7 +112,9 @@ api.post("/telemetry", describeRoute({ summary: "Nextflow weblog event (unauthen
     // Marked complete the moment the sentinel lands, not at run close, so
     // dashboards move in real time.
     await ctl.completeSample(runName, sampleId);
-  } else if (event === "completed") {
+  }
+  if (event === "process_completed" && trace) await ctl.recordTask(runName, sampleId, trace);
+  if (event === "completed") {
     // Nextflow sends `completed` for failed runs too; success and the reason
     // are in metadata.workflow.
     const wf = body.metadata?.workflow;

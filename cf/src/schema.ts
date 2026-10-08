@@ -156,4 +156,24 @@ create table if not exists daemons (
   last_seen_at        text,
   started_at          text
 );
+
+-- Live per-run task outcomes for GET /runs/:run (v1's task_status_counts /
+-- failed_tasks). Full task history is the R2 archive; this is the triage view.
+create table if not exists run_task_counts (
+  run_name text not null,
+  status   text not null,
+  n        integer not null,
+  primary key (run_name, status)
+);
+create table if not exists run_failed_tasks (
+  run_name     text not null,
+  process      text not null,
+  sample_id    text,
+  exit_code    text,
+  task_hash    text,
+  attempt      integer,
+  error_action text,
+  utc_time     text not null
+);
+create index if not exists run_failed_tasks_run on run_failed_tasks (run_name);
 `;
