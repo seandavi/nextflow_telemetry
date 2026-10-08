@@ -185,3 +185,72 @@ def test_slurm_template_publishes_under_the_registered_workflow() -> None:
     assert "--publish_dir" not in render_submission_script(tmpl, ctx)
     script = render_submission_script(tmpl, {**ctx, "publish_base": "s3://cmgd-raw"})
     assert "--publish_dir s3://cmgd-raw/cmgd_nextflow/2.2.1 \\" in script
+
+
+def test_slurm_template_passes_registration_params_as_a_params_file() -> None:
+    """#222: a registration's params reach Nextflow via -params-file; orchestrator params stay on the CLI."""
+    import json
+    from pathlib import Path
+
+    from nf_client.config import ClientConfig
+    from nf_client.models import DispatchBatchResponse
+    from nf_client.submission import build_submission_context, render_submission_script
+
+    tmpl = Path(__file__).resolve().parents[3] / "templates" / "submit_slurm.sh.j2"
+    batch = DispatchBatchResponse.model_validate({
+        "run_name": "r1", "workflow_id": "cmgd_humann4a1", "workflow_version": "2.3.0",
+        "workflow_pk": 1, "repository_url": "o/r", "revision": "2.3.0",
+        "params": {"humann_bundle": "humann4.0.0a1", "skip_humann": False},
+        "jobs": [{"sample_id": "s1", "ncbi_accession": "SRR1"}],
+    })
+    cfg = ClientConfig.model_validate({
+        "server_url": "u", "weblog_url": "w",
+        "submission": {"mode": "slurm", "defaults": {
+            "mem": "8G", "cpus": 2, "time": "1:00:00", "partition": "p", "log_dir": "/l",
+            "publish_base": "s3://cmgd-raw",
+        }},
+    })
+    script = render_submission_script(tmpl, build_submission_context(batch, cfg, ["s1"]))
+
+    body = script.split("cat << 'PARAMSJSON' > params.json\n", 1)[1].split("\nPARAMSJSON\n", 1)[0]
+    # A JSON boolean, not the string "false", which Groovy reads as true.
+    assert json.loads(body) == {"humann_bundle": "humann4.0.0a1", "skip_humann": False}
+    run = script[script.index("nextflow run"):]
+    assert "    -params-file params.json \\" in run
+    for owned in ("--metadata_tsv metadata.tsv", "--run_name r1", "--publish_dir s3://cmgd-raw/cmgd_humann4a1/2.3.0"):
+        assert owned in run
+
+    plain = render_submission_script(
+        tmpl, build_submission_context(batch.model_copy(update={"params": {}}), cfg, ["s1"])
+    )
+    assert "params.json" not in plain
+
+
+def test_local_command_puts_registration_params_before_orchestrator_params() -> None:
+    from nf_client.models import DispatchBatchResponse
+    from nf_client.submission import build_nextflow_command
+
+    batch = DispatchBatchResponse.model_validate({
+        "run_name": "r1", "workflow_id": "wf", "workflow_version": "1", "workflow_pk": 1,
+        "repository_url": "o/r", "revision": "main",
+        "params": {"skip_humann": True, "run_name": "x"}, "jobs": [{"sample_id": "s1"}],
+    })
+    cmd = build_nextflow_command(batch=batch, profile="p", weblog_url="w")
+    assert cmd[cmd.index("--skip_humann") + 1] == "true"
+    # Nextflow keeps the last value of a repeated param, so the orchestrator's --run_name wins.
+    assert cmd.index("--run_name") < cmd.index("--sample_ids") < len(cmd) - 1 - cmd[::-1].index("--run_name")
+
+
+def test_register_workflow_param_types() -> None:
+    import typer
+
+    from nf_client.cli import _parse_param
+
+    assert _parse_param("skip_humann=false") == ("skip_humann", False)
+    assert _parse_param("threads=8") == ("threads", 8)
+    assert _parse_param("humann_bundle=humann3.9") == ("humann_bundle", "humann3.9")
+    assert _parse_param("v=4.0") == ("v", "4.0")
+    assert _parse_param("id=007") == ("id", "007")
+    assert _parse_param("expr=a=b") == ("expr", "a=b")
+    with pytest.raises(typer.BadParameter):
+        _parse_param("novalue")

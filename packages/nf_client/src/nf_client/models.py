@@ -25,6 +25,8 @@ class DispatchBatchResponse(BaseModel):
     workflow_pk: int
     repository_url: str
     revision: str
+    # Pipeline params pinned to the registration (ADR-0010); empty for a plain workflow.
+    params: dict[str, str | int | float | bool] = {}
     jobs: list[DispatchedJob]
 
 

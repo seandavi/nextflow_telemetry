@@ -40,3 +40,9 @@ def test_sanitized_config_yaml_drops_token_and_defaults():
     assert "s3cret" not in out
     assert "key.json" not in out
     assert "server_url" in out
+
+
+def test_dispatch_workflow_id_accepts_a_comma_separated_string():
+    from nf_client.config import DispatchConfig
+
+    assert DispatchConfig(workflow_id="cmgd_humann3.9, cmgd_mpa4.2").workflow_id == ["cmgd_humann3.9", "cmgd_mpa4.2"]

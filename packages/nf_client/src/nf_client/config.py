@@ -72,7 +72,7 @@ class DispatchConfig(BaseModel):
         if v is None:
             return None
         if isinstance(v, str):
-            return [v]
+            return [x.strip() for x in v.split(",") if x.strip()]
         if isinstance(v, list):
             return [str(x) for x in v]
         raise ValueError(f"workflow_id must be a string or list of strings, got {type(v)}")

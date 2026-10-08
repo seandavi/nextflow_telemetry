@@ -5,6 +5,7 @@ when to call them — nf_client does not drive execution scheduling.
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import time
@@ -84,10 +85,11 @@ def build_nextflow_command(
     # -revision only applies to remote repos; skip for local paths
     if not batch.repository_url.startswith(("/", ".")):
         cmd += ["-revision", batch.revision]
+    cmd += ["-profile", profile, "-name", run_name, "-with-weblog", weblog_url]
+    # The registration's params first, so the orchestrator-owned ones below win.
+    for key, value in batch.params.items():
+        cmd.extend([f"--{key}", json.dumps(value) if isinstance(value, bool) else str(value)])
     cmd += [
-        "-profile", profile,
-        "-name", run_name,
-        "-with-weblog", weblog_url,
         "--sample_ids", sample_ids,
         "--workflow_id", batch.workflow_id,
         "--workflow_version", batch.workflow_version,
@@ -256,6 +258,8 @@ def build_submission_context(
         "workflow_id": batch.workflow_id,
         "workflow_version": batch.workflow_version,
         "metadata_tsv_content": generate_metadata_tsv(batch.jobs),
+        # Written to params.json for -params-file; "" when the registration has none.
+        "params_json": json.dumps(batch.params) if batch.params else "",
     }
 
 

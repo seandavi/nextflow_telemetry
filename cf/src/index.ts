@@ -294,12 +294,29 @@ api.get("/samples/:sample_id", describeRoute({ summary: "One sample by content a
 // workflows
 // ====================================================================
 
-api.post("/workflows", describeRoute({ summary: "Register (upsert) a workflow version", tags: ["workflows"], requestBody: { content: { "application/json": { schema: resolver(S.RegisterWorkflowRequest) } } }, responses: { "201": { description: "OK", content: { "application/json": { schema: resolver(S.Workflow) } } } } }), async (c) => {
+api.post("/workflows", describeRoute({ summary: "Register (upsert) a workflow version", tags: ["workflows"], requestBody: { content: { "application/json": { schema: resolver(S.RegisterWorkflowRequest) } } }, responses: { "201": { description: "OK", content: { "application/json": { schema: resolver(S.Workflow) } } }, "409": { description: "The version is already registered with different params" } } }), async (c) => {
   const body = await json(c);
   for (const k of ["workflow_id", "version", "repository_url", "revision"]) {
     if (!body[k]) return c.json({ detail: `${k} is required` }, 422);
   }
-  return c.json(await control(c.env).registerWorkflow(body), 201);
+  if (!S.WorkflowParams.optional().safeParse(body.params).success) {
+    return c.json({ detail: "params must be an object of string, number or boolean values" }, 422);
+  }
+  if (!S.WorkflowCollections.nullish().safeParse(body.collections).success) {
+    return c.json({ detail: "collections must be a non-empty array of collection ids, or null" }, 422);
+  }
+  const { workflow, conflict } = await control(c.env).registerWorkflow(body);
+  if (conflict) {
+    return c.json(
+      {
+        detail:
+          `${body.workflow_id} ${body.version} is registered with params ${JSON.stringify(workflow.params)}; ` +
+          "params are the output contract, so register a new version to change them (ADR-0004)",
+      },
+      409,
+    );
+  }
+  return c.json(workflow, 201);
 });
 
 api.get("/workflows", describeRoute({ summary: "List workflow versions", tags: ["workflows"], responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(z.array(S.Workflow)) } } } } }), async (c) => c.json(await control(c.env).listWorkflows(c.req.query("status") ?? null)));

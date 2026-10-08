@@ -35,6 +35,14 @@ export const RegisterSampleRequest = z.object({
   collection: z.string().nullish().describe("Collection to attach to; membership rows are the truth (ADR-0005)"),
 });
 
+export const WorkflowParams = z
+  .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+  .describe("Pipeline params (Nextflow -params-file). Output contract: fixed for a (workflow_id, version) (ADR-0010)");
+export const WorkflowCollections = z
+  .array(z.string().min(1))
+  .min(1)
+  .describe("Reconcile creates jobs only for samples in these collections; null = every sample (ADR-0010)");
+
 export const RegisterWorkflowRequest = z.object({
   workflow_id: z.string(),
   version: z.string(),
@@ -44,6 +52,8 @@ export const RegisterWorkflowRequest = z.object({
   max_retries: z.number().int().min(0).optional(),
   status: z.enum(["active", "paused", "retired"]).optional(),
   description: z.string().nullish(),
+  params: WorkflowParams.optional().describe("Omitted = {}. Re-registering a version with different params is a 409"),
+  collections: WorkflowCollections.nullish().describe("Replaced on re-registration; omitted = every sample"),
 });
 
 export const WorkflowStatusRequest = z.object({ status: z.enum(["active", "paused", "retired"]) });
@@ -112,6 +122,8 @@ export const Workflow = z.looseObject({
   max_retries: z.number().int(),
   status: z.enum(["active", "paused", "retired"]),
   description: z.string().nullable(),
+  params: WorkflowParams,
+  collections: WorkflowCollections.nullable(),
   created_at: iso,
   updated_at: iso,
 });
@@ -141,6 +153,7 @@ export const ClaimedBatch = z.looseObject({
   workflow_version: z.string(),
   repository_url: z.string(),
   revision: z.string(),
+  params: WorkflowParams,
   jobs: z.array(
     z.looseObject({
       id: z.number().int(),

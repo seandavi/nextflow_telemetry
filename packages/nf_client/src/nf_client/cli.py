@@ -620,6 +620,23 @@ def add_cmd(
     _emit(payload, as_json, human)
 
 
+def _parse_param(spec: str) -> tuple[str, str | int | bool]:
+    """``key=value`` -> (key, value) for the params file.
+
+    ``true``/``false`` become JSON booleans and integers become ints, because
+    Groovy treats the string "false" as true. Anything else stays a string, so
+    a version-like value such as ``4.0`` is never turned into a float.
+    """
+    key, sep, value = spec.partition("=")
+    if not sep or not key:
+        raise typer.BadParameter(f"expected key=value, got {spec!r}", param_hint="--param")
+    if value in ("true", "false"):
+        return key, value == "true"
+    if re.fullmatch(r"-?(0|[1-9][0-9]*)", value):
+        return key, int(value)
+    return key, value
+
+
 @app.command(name="register-workflow")
 def register_workflow_cmd(
     workflow_id: str = typer.Option(..., "--id", help="Workflow id, e.g. nf_testing."),
@@ -628,11 +645,18 @@ def register_workflow_cmd(
     revision: str = typer.Option(..., "--revision", help="Git branch/tag/commit (mutable — no rerun on change)."),
     max_retries: int = typer.Option(3, "--max-retries", help="Retries before dead-lettering (0–10)."),
     description: str | None = typer.Option(None, "--description", help="Free-text description."),
+    param: list[str] | None = typer.Option(None, "--param", help="Pipeline param key=value, repeatable. Fixed for this version (ADR-0010)."),
+    collection: list[str] | None = typer.Option(None, "--collection", help="Only create jobs for samples in this collection, repeatable."),
     config: Path = opt_config,
     server: str = opt_server,
     as_json: bool = json_option,
 ) -> None:
-    """Register (upsert) a workflow version. Requires an operator token."""
+    """Register (upsert) a workflow version. Requires an operator token.
+
+    A registration is one pipeline configuration (ADR-0010): its --param values
+    go to Nextflow as -params-file. Re-registering a version with different
+    params is refused; register a new version instead.
+    """
     body: dict = {
         "workflow_id": workflow_id,
         "version": version,
@@ -642,6 +666,10 @@ def register_workflow_cmd(
     }
     if description:
         body["description"] = description
+    if param:
+        body["params"] = dict(_parse_param(p) for p in param)
+    if collection:
+        body["collections"] = collection
 
     async def _run() -> dict:
         cfg = _operator_config(config, server)
