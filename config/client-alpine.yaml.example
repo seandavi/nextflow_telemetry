@@ -9,7 +9,7 @@ continuous: true
 
 dispatch:
   batch_size: 25
-  workflow_id: "cmgd_nextflow"
+  workflow_id: "cmgd_nextflow,cmgd_mpa4.2"   # comma-separated or YAML list (ADR-0010)
 
 submission:
   mode: slurm
