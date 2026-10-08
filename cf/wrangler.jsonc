@@ -28,7 +28,8 @@
     // Claim not confirmed submitted within this window -> jobs return to pending.
     "CLAIM_TTL_MINUTES": "5",
     // Backstop for a run sitting in the scheduler queue with no wrapper yet.
-    "SUBMIT_BACKSTOP_HOURS": "48",
+    // 7 days: Anvil/Alpine queues and maintenance reservations exceed 48 h.
+    "SUBMIT_BACKSTOP_HOURS": "168",
     // No heartbeat for this long once the wrapper is alive -> presumed dead.
     "LIVENESS_MINUTES": "10",
     // Comma-separated browser origins allowed by CORS: the dashboard and Vite dev.
