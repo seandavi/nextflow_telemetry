@@ -136,3 +136,38 @@ rows/sample, bytes/row (live parquet file bytes over record counts, so rows
 still inlined in the catalog are left out), bytes/sample, and extrapolations to
 200k and 400k samples; gene families come from their files index. The latest
 measurement is in [`data-volumes.md`](./data-volumes.md).
+
+## Publishing (ADR 0011)
+
+`nf-etl publish` builds one public release of one registration into a local store;
+it never touches a bucket. `--sync` uploads an already-built dataset. Consumer
+view: [`data-access.md`](./data-access.md).
+
+| variable | default | used for |
+|---|---|---|
+| `ETL_PUBLISH_ROOT` | `/data/cmgd/publish` | local release store (`--out`) |
+| `ETL_PUBLIC_REMOTE` | `r2:cmgd-public` | rclone destination for `--sync` (`--remote`) |
+| `ETL_RAW_PUBLIC_BASE_URL` | unset | gene-family download base; production value `https://cmgd-raw.cancerdatasci.org` (live once monode applies it). Unset: `url` is null in `genefamilies/index.json` |
+
+The lake connection is `cdsci.lake.lake_connect(read_only=True)`, configured by
+cdsci-lake's own `CU_OPENALEX_*` settings (the producer setup from #234).
+
+```sh
+uv run nf-etl publish --registration cmgd_nextflow/2.2.1        # build -> /data/cmgd/publish/cmgd_nextflow-2.2.1/<release>/
+ls /data/cmgd/publish/cmgd_nextflow-2.2.1/                      # latest.json, releases.json, <release>/
+uv run nf-etl publish --registration cmgd_nextflow/2.2.1 --sync --dry-run   # print the rclone commands
+uv run nf-etl publish --registration cmgd_nextflow/2.2.1 --sync             # upload
+uv run python scripts/smoke_public_data.py                     # run docs/data-access.md against the live site
+```
+
+A build reads the registration's rows at one lake snapshot, then runs cdsci-lake's
+`publish_release`: sorted Parquet, a frozen read-only `catalog.ducklake`,
+manifest and checksums, acceptance checks, then `releases.json`/`latest.json`. A
+failed acceptance leaves no `manifest.json` and the index untouched. `studies/`
+and `genefamilies/` are added to the release directory afterwards.
+
+The sync copies release directories with `rclone copy --immutable` (a published
+object is never rewritten), then the two pointer files with
+`Cache-Control: no-cache`, so `latest.json` never names a release that isn't
+uploaded yet. It never deletes anything in the bucket.
+

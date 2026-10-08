@@ -1,163 +1,317 @@
 # Accessing the cMD data (consumer guide)
 
-> **Audience:** researchers and data scientists who want to *use* the curated metagenomic (cMD) profiles — not run the pipeline. If you want to query taxonomic profiles, markers, resistome, or per-sample QC across studies, start here.
+> **Audience:** researchers who want to *use* the curatedMetagenomicData (cMD)
+> profiles, not run the pipeline.
 >
-> **Status:** the public artifact is published by the ETL's frozen-lake step (issue #57, Phase 5). Until that lands, the URLs below are placeholders marked _(pending)_. The **schema and access patterns are stable** — this guide is written against them.
+> **Status:** the site is `https://cmgd-public.cancerdatasci.org`. Its first
+> releases go up once the `cmgd-public` bucket (monode#52) exists; until then
+> the URLs below return 404. Every code block on this page is run by the test
+> suite against a local copy of a release (`tests/test_data_access_docs.py`), and
+> `scripts/smoke_public_data.py` runs them against the live site.
 
-## What the data is
+## What is published
 
-A periodically-refreshed, read-only snapshot of the outputs of the `cmgd_nextflow` pipeline: per-sample microbial **taxonomic profiles**, **strain markers**, **antimicrobial-resistance (resistome)** calls, and **QC/provenance**, harmonized across many studies. It is published as a **frozen DuckLake** — one DuckDB catalog file plus Parquet data, all read over plain **HTTPS** (no credentials, no accounts).
+Everything is plain files over HTTPS: no accounts, no credentials. Each pipeline
+**registration** (a pipeline version plus its configuration, ADR-0010) is its own
+**dataset**, named `<workflow_id>-<version>`:
 
-Two equivalent ways in:
-
-| You want… | Use |
+| dataset | what it holds |
 |---|---|
-| SQL across the whole dataset, joins, one connection | **Attach the frozen catalog** (below) |
-| A single known Parquet file (or S3-credentialed bulk access) | **Read a Parquet URL** directly |
+| `cmgd_nextflow-2.2.1` | pipeline 2.2.1: MetaPhlAn 4.2.2 (vJan25), Bracken, resistome, markers, QC; samples keyed by the md5 `sample_id` |
+| `cmgd_mpa4.2-2.3.0` | pipeline 2.3.0 without HUMAnN; samples keyed by readset id (`RS.…`) |
+| `cmgd_humann3.9-2.3.0` | as above, plus HUMAnN 3.9: its own MetaPhlAn pass, pathway tables, gene-family downloads |
+| `cmgd_humann4a1-2.3.0` | as above with HUMAnN 4.0.0a1 (no pathway coverage) |
 
-Everything is DuckDB-native, but the Parquet files are readable by any Arrow/Parquet client.
+A dataset is published as **releases**. A release is an immutable full snapshot,
+named by its UTC build date (`2026-10-08`; a second release that day is
+`2026-10-08.2`). `latest.json` names the newest release and `releases.json`
+lists them all. To cite the data, give the dataset and the release id.
 
-## Quick start — attach the catalog
+```text
+https://cmgd-public.cancerdatasci.org/
+  <dataset>/
+    latest.json                       {"release": "2026-10-08", ...}
+    releases.json                     every release, oldest first
+    <release>/
+      manifest.json                   tables, row counts, schema digests, licence
+      catalog.ducklake                read-only DuckLake catalog over the tables below
+      README.md                       table and column documentation
+      tables/<table>/schema.json      columns, types, units, descriptions
+      tables/<table>/files.json       data files with bytes, sha256, row counts
+      tables/<table>/data/part-00000.parquet
+      studies/index.json              per-study downloads: studies, sample counts, files
+      studies/<study>/metaphlan_species.tsv.gz, metaphlan.parquet, bracken.parquet,
+                      resistome.parquet, pathways.parquet (HUMAnN datasets), qc.tsv
+      genefamilies/index.json, index.tsv   HUMAnN datasets only: per-sample gene-family files
+```
 
-You need [DuckDB](https://duckdb.org) ≥ 1.0 (CLI, Python, R, or Node). Nothing else.
+Nothing on the site can be listed (it is an R2 bucket served over HTTPS), so the
+JSON indexes above are how you find files.
+
+## Find the current release
+
+The examples on this page use release `2026-10-08`. Replace it with the current
+release from `latest.json`:
+
+```bash
+curl -sSf https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/latest.json
+```
+
+## SQL with DuckDB
+
+You need [DuckDB](https://duckdb.org) 1.5.2 or newer (CLI, Python, R, …).
+Attaching the release's catalog is instant: DuckDB fetches only the parts of the
+Parquet files a query touches.
 
 ```sql
--- DuckDB CLI or any client
+INSTALL ducklake; LOAD ducklake;
 INSTALL httpfs; LOAD httpfs;
-ATTACH 'https://data.cmgd.cancerdatasci.org/cmgd.duckdb' AS cmgd (READ_ONLY);   -- (pending)
-SHOW TABLES;                    -- see the tables below
-SELECT * FROM cmgd.taxonomic_profile_metaphlan LIMIT 5;
+ATTACH 'https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/2026-10-08/catalog.ducklake' AS cmgd (
+  TYPE DUCKLAKE,
+  DATA_PATH 'https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/2026-10-08/',
+  OVERRIDE_DATA_PATH,
+  READ_ONLY);
+SELECT table_name FROM duckdb_tables() WHERE database_name = 'cmgd' ORDER BY table_name;
 ```
 
-That single file is a **catalog** — the actual data is fetched from the shared Parquet store over HTTPS on demand (range GETs), so attaching is instant and you only download the columns/rows your query touches.
+`DATA_PATH` must be the release's own URL (with `OVERRIDE_DATA_PATH`): the
+catalog stores file paths relative to it.
 
-Python:
+Studies, sample counts and mean read depth (`qc_metrics` has one row per sample):
+
+```sql
+SELECT study_name, count(*) AS n_samples, avg(reads_decontaminated) AS mean_reads
+FROM cmgd.qc_metrics
+GROUP BY study_name
+ORDER BY n_samples DESC;
+```
+
+Find a sample by run accession:
+
+```sql
+SELECT sample_key, study_name, run_ids
+FROM cmgd.qc_metrics
+WHERE run_ids LIKE '%ERR866581%';
+```
+
+Mean species abundance in one study. Use the main MetaPhlAn pass
+(`humann_bundle IS NULL`) on all reads (`data_type = 'full_data'`). A species
+missing from a sample has no row, so divide by the study's sample count rather
+than using `avg`:
+
+```sql
+SELECT clade_name,
+       sum(relative_abundance) / (SELECT count(*) FROM cmgd.qc_metrics
+                                  WHERE study_name = 'ArtachoA_2021') AS mean_percent
+FROM cmgd.taxonomic_profile_metaphlan
+WHERE study_name = 'ArtachoA_2021' AND rank = 'species'
+  AND data_type = 'full_data' AND humann_bundle IS NULL
+GROUP BY clade_name
+ORDER BY mean_percent DESC
+LIMIT 10;
+```
+
+Without the catalog, read one table's Parquet file directly. `files.json` lists
+every file of a table; today there is one per table.
+
+```sql
+SELECT count(*) AS n_samples
+FROM read_parquet('https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/2026-10-08/tables/qc_metrics/data/part-00000.parquet');
+```
+
+## Python
+
+Look up the current release, attach it, and query. DuckDB is the only
+dependency: it also fetches the JSON indexes and files. (The site's firewall
+rejects Python's default `urllib` user agent; `requests`, `httpx` and DuckDB are
+fine.) `.fetchall()` returns tuples; `.df()` (pandas) and `.pl()` (polars) work
+too if you have them installed.
 
 ```python
+import json
+
 import duckdb
+
+BASE = "https://cmgd-public.cancerdatasci.org"
+DATASET = "cmgd_nextflow-2.2.1"
+
 con = duckdb.connect()
-con.sql("INSTALL httpfs; LOAD httpfs;")
-con.sql("ATTACH 'https://data.cmgd.cancerdatasci.org/cmgd.duckdb' AS cmgd (READ_ONLY)")  # (pending)
-df = con.sql("SELECT * FROM cmgd.taxonomic_profile_metaphlan WHERE study_name = 'ArtachoA_2021'").df()
+con.execute("INSTALL ducklake; LOAD ducklake; INSTALL httpfs; LOAD httpfs;")
+
+
+def fetch_json(url):
+    return json.loads(con.execute("SELECT content FROM read_text(?)", [url]).fetchone()[0])
+
+
+release = fetch_json(f"{BASE}/{DATASET}/latest.json")["release"]
+url = f"{BASE}/{DATASET}/{release}"
+con.execute(f"ATTACH '{url}/catalog.ducklake' AS cmgd "
+            f"(TYPE DUCKLAKE, DATA_PATH '{url}/', OVERRIDE_DATA_PATH, READ_ONLY)")
+rows = con.execute(
+    "SELECT sample_key, clade_name, relative_abundance "
+    "FROM cmgd.taxonomic_profile_metaphlan "
+    "WHERE study_name = ? AND rank = 'species' AND data_type = 'full_data' "
+    "AND humann_bundle IS NULL",
+    ["ArtachoA_2021"],
+).fetchall()
+print(len(rows), "species rows")
 ```
 
-R (via `duckdb`/`DBI`):
+## R: a TreeSummarizedExperiment
+
+Needs the CRAN packages `DBI`, `duckdb`, `Matrix` and `jsonlite`, and
+Bioconductor's `TreeSummarizedExperiment`. This builds a sparse species ×
+samples matrix of relative abundance (percent) for one study, with the study's
+QC table as `colData`:
 
 ```r
-con <- DBI::dbConnect(duckdb::duckdb())
-DBI::dbExecute(con, "INSTALL httpfs")   # one statement per call in the R client
-DBI::dbExecute(con, "LOAD httpfs")
-DBI::dbExecute(con, "ATTACH 'https://data.cmgd.cancerdatasci.org/cmgd.duckdb' AS cmgd (READ_ONLY)")  # (pending)
-df <- DBI::dbGetQuery(con, "SELECT * FROM cmgd.qc_metrics LIMIT 100")
+library(DBI)
+library(duckdb)
+library(Matrix)
+library(TreeSummarizedExperiment)
+
+base <- "https://cmgd-public.cancerdatasci.org"
+dataset <- "cmgd_nextflow-2.2.1"
+release <- jsonlite::fromJSON(paste0(base, "/", dataset, "/latest.json"))$release
+url <- paste0(base, "/", dataset, "/", release)
+
+con <- dbConnect(duckdb())
+for (sql in c("INSTALL ducklake", "LOAD ducklake", "INSTALL httpfs", "LOAD httpfs")) {
+  dbExecute(con, sql)
+}
+dbExecute(con, sprintf(
+  "ATTACH '%s/catalog.ducklake' AS cmgd (TYPE DUCKLAKE, DATA_PATH '%s/', OVERRIDE_DATA_PATH, READ_ONLY)",
+  url, url))
+
+study <- "ArtachoA_2021"
+long <- dbGetQuery(con, "
+  SELECT sample_key, clade_name, relative_abundance
+  FROM cmgd.taxonomic_profile_metaphlan
+  WHERE study_name = ? AND rank = 'species' AND data_type = 'full_data'
+    AND humann_bundle IS NULL", params = list(study))
+qc <- dbGetQuery(con, "SELECT * FROM cmgd.qc_metrics WHERE study_name = ? ORDER BY sample_key",
+                 params = list(study))
+dbDisconnect(con, shutdown = TRUE)
+
+species <- sort(unique(long$clade_name))
+abundance <- sparseMatrix(
+  i = match(long$clade_name, species),
+  j = match(long$sample_key, qc$sample_key),
+  x = long$relative_abundance,
+  dims = c(length(species), nrow(qc)),
+  dimnames = list(species, qc$sample_key))
+tse <- TreeSummarizedExperiment(
+  assays = list(relative_abundance = abundance),
+  colData = S4Vectors::DataFrame(qc, row.names = qc$sample_key))
+print(tse)
 ```
 
-## Quick start — read Parquet directly
+## Per-study downloads
 
-If you don't want the catalog, you can read Parquet straight from HTTPS — but with one constraint: **plain HTTPS can't list a directory**, so DuckDB's `httpfs` can't expand a `**/*.parquet` glob over `https://`. Two honest options:
+Each release has ready-made files per study. `studies/index.json` lists every
+study with its sample count and, per file, its `path` (relative to the release
+URL), `bytes` and `sha256`; `file_descriptions` says what each file holds.
 
-- **A single known file** — read one explicit URL directly:
-  ```sql
-  INSTALL httpfs; LOAD httpfs;
-  SELECT clade_name, relative_abundance
-  FROM read_parquet('https://data.cmgd.cancerdatasci.org/parquet/taxonomic_profile_metaphlan/version=2.2.1/data_type=full_data/part-0.parquet')  -- (pending, one file)
-  WHERE rank = 'species' LIMIT 20;
-  ```
-- **Many files / whole tables** — **attach the catalog** instead (top of this page). The catalog *enumerates* every Parquet file, so DuckDB never needs to list a directory — this is the supported way to query across files over HTTPS. (If you have S3/R2 credentials for the bucket, globbing works over the `s3://` endpoint, where LIST is available.)
+- `metaphlan_species.tsv.gz`: species × samples. One row per MetaPhlAn species
+  clade (`clade_name`), one column per `sample_key`, relative abundance in
+  percent from the main MetaPhlAn pass on all reads (`full_data`). `0` means not
+  detected.
+- `metaphlan.parquet`, `bracken.parquet`, `resistome.parquet`,
+  `pathways.parquet` (HUMAnN datasets): the study's rows of the release tables,
+  in long form.
+- `qc.tsv`: one row per sample with read counts and `run_ids`.
 
-The Parquet is partitioned by `version` / `data_type` (the table name already encodes the method), so once files are enumerated (via the catalog) those filters prune to the relevant files.
+```bash
+REL=https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/2026-10-08
+curl -sSf "$REL/studies/index.json" -o studies-index.json
+curl -sSfO "$REL/studies/ArtachoA_2021/metaphlan_species.tsv.gz"
+curl -sSfO "$REL/studies/ArtachoA_2021/qc.tsv"
+```
+
+In R, read the downloaded matrix with
+`read.delim("metaphlan_species.tsv.gz", row.names = 1, check.names = FALSE)`.
+In Python:
+
+```python
+studies = fetch_json(f"{url}/studies/index.json")["studies"]
+artacho = next(s for s in studies if s["study_name"] == "ArtachoA_2021")
+print(artacho["n_samples"], "samples:", [f["name"] for f in artacho["files"]])
+species = con.read_csv(f"{url}/studies/ArtachoA_2021/metaphlan_species.tsv.gz", sep="\t")
+print(species.shape)
+```
+
+## HUMAnN gene families
+
+Gene families are too large for the tables (10^5 to 10^6 rows per sample). Each
+sample's HUMAnN table is a separate download, listed in the HUMAnN datasets'
+`genefamilies/index.json` and `index.tsv`: `study_name`, `sample_key`,
+`readset_id`, `humann_bundle`, `branch`, `key` (the object key in the `cmgd-raw`
+bucket), `url`, `bytes` and `rows`. Values are HUMAnN's unnormalized output in
+the bundle's units.
+
+The download base is `https://cmgd-raw.cancerdatasci.org`, which goes live when
+the monode change that makes `cmgd-raw` public is applied. Until then `url` is
+`null` and only `key` is set.
+
+```sql
+SELECT study_name, sample_key, bytes, rows, url
+FROM read_csv('https://cmgd-public.cancerdatasci.org/cmgd_humann3.9-2.3.0/2026-10-08/genefamilies/index.tsv', delim = '\t')
+ORDER BY bytes DESC
+LIMIT 5;
+```
+
+```python
+GF = f"{BASE}/cmgd_humann3.9-2.3.0"
+gf_release = fetch_json(f"{GF}/latest.json")["release"]
+gene_families = fetch_json(f"{GF}/{gf_release}/genefamilies/index.json")["files"]
+mine = [f for f in gene_families if f["study_name"] == "ArtachoA_2021"]
+print(len(mine), "gene-family files")
+for f in mine[:2]:
+    if f["url"]:  # null until cmgd-raw is public
+        data = con.execute("SELECT content FROM read_blob(?)", [f["url"]]).fetchone()[0]
+        with open(f"{f['sample_key']}_genefamilies.tsv.gz", "wb") as out:
+            out.write(data)
+```
 
 ## The tables
 
-Every row carries the identity keys: **`sample_id`** (the join key — `md5` of the sorted run accessions), **`study_name`**, and **`run_ids`** (e.g. `SRR…;SRR…`).
+Every row carries the identity columns: **`sample_key`** (the id the sample was
+published under: a readset id `RS.…` for 2.3.0 datasets, the md5 `sample_id`
+for 2.2.1), `sample_id`, `readset_id`, **`study_name`**, `run_ids`
+(`SRR…;SRR…`), `workflow_id` and `version`. Fact tables also carry
+**`data_type`**: `full_data` (all reads) or `rarefied_data` (a 1M-read
+subsample). Each release's `README.md` and `tables/<table>/schema.json` document
+every column.
 
-**Fact tables** additionally carry **`workflow`**, **`version`** (the pipeline version — *filter this if you don't want to aggregate across versions*), and **`data_type`** (`full_data` = all reads, `rarefied_data` = 1M-read subsample). The two **dimension tables** (`qc_metrics`, `taxon`) do **not** carry `data_type`: `qc_metrics` is exactly one row per sample, `taxon` is one row per (taxon, `db_version`).
+| table | one row per | main columns |
+|---|---|---|
+| `taxonomic_profile_metaphlan` | sample × `data_type` × MetaPhlAn pass × clade | `clade_name` (as reported), `rank`, `ncbi_taxid`, `sgb_id`, `relative_abundance` (percent), `coverage`, `estimated_reads`, `metaphlan_profile`, `humann_bundle` |
+| `taxonomic_profile_bracken` | sample × `data_type` × taxon | `clade_name`, `rank`, `ncbi_taxid`, `fraction_total_reads` (0–1), `estimated_reads` |
+| `resistome` | sample × `data_type` × CARD template | `gene`, `template_coverage`, `template_identity`, `depth`, `score` |
+| `marker_abundance` | sample × `data_type` × marker | `marker_name`, `value` |
+| `marker_presence` | sample × `data_type` × present marker | `marker_name` |
+| `qc_metrics` | sample | `reads_raw`, `reads_decontaminated`, `bases_raw`, `bases_decontaminated`, surviving fractions, `metaphlan_index`/`metaphlan_profile`, `humann_bundle`, `pipeline_version`, `git_commit` |
+| `humann_pathabundance` | sample × pathway × stratum (HUMAnN datasets) | `pathway`, `stratum` (NULL = community total), `abundance`, `humann_bundle` |
+| `humann_pathcoverage` | sample × pathway × stratum (HUMAnN 3.9) | `pathway`, `stratum`, `coverage` |
 
-| table | kind | one row per | columns beyond the identity keys |
-|---|---|---|---|
-| `taxonomic_profile_metaphlan` | fact | sample × taxon × `data_type` | **`clade_name`** (label as reported), `rank`, `ncbi_taxid`, `sgb_id`, `relative_abundance` (percent), `coverage`, `estimated_reads` |
-| `taxonomic_profile_bracken` | fact | sample × taxon × `data_type` | **`clade_name`**, `rank`, `ncbi_taxid`, `fraction_total_reads` (0–1), `estimated_reads` |
-| `marker_abundance` | fact | sample × marker × `data_type` | `marker_name`, `value` |
-| `marker_presence` | fact | sample × present marker × `data_type` | `marker_name` (membership — a row exists iff the marker is present) |
-| `resistome` | fact | sample × AMR gene × `data_type` | `gene` (CARD reference), `template_coverage`, `template_identity`, `depth`, `score` (from KMA/CARD `card_kma.res`) |
-| `qc_metrics` | **dimension** | sample | `reads_raw`, `reads_decontaminated`, `bases_raw`, `bases_decontaminated`, `reads_surviving_fraction`, `bases_surviving_fraction`, `metaphlan_index` (reference DB version), `pipeline_version`, `git_commit` |
-| `taxon` | **dimension** | taxon × `db_version` | `taxon_key`, **`db_version`**, `ncbi_taxid`, `sgb_id`, `ncbi_species`, `rank`, `genus`, `family`, `phylum` |
+Things to know before you compute:
 
-**One table per method — on purpose.** metaphlan and bracken are separate tables because their abundance columns carry **different value interpretations**: metaphlan `relative_abundance` is a **percent** (marker/genome-size-normalized), bracken `fraction_total_reads` is a **0–1 read-count fraction**. Keeping them apart means every column has a single meaning. (The 2.2.1 pipeline runs metaphlan + bracken only — no gtdb.)
+1. **Abundances are not comparable across methods.** MetaPhlAn
+   `relative_abundance` is a percent; Bracken `fraction_total_reads` is a 0–1
+   read fraction. Both are stored in their native units.
+2. **Pick one `data_type`.** Don't mix `full_data` and `rarefied_data` in an
+   aggregate. Most analyses want `full_data`.
+3. **Pick one MetaPhlAn pass.** In HUMAnN datasets, the bundle's own MetaPhlAn
+   pass (`humann_bundle` set, `full_data` only) sits next to the main pass
+   (`humann_bundle IS NULL`).
+4. **HUMAnN units depend on the bundle** (3.9: RPK-based; 4.0.0a1: CPM).
 
-**`clade_name` is as-reported.** Both tables' `clade_name` is the label *exactly as the profiler reported it* (metaphlan's SGB lineage, bracken's binomial). For a canonical name or to roll up to `genus`/`family`/`phylum`, join the **`taxon`** dimension. `taxonomic_profile_metaphlan` carries both `sgb_id` and `ncbi_taxid` (join on `sgb_id` for the most precise match); `taxonomic_profile_bracken` carries `ncbi_taxid` only.
+## Licence
 
-**Joining `taxon` correctly.** `taxon` has one row per taxon *per `db_version`*, so join on **both** the taxon key **and** `db_version`, or rows fan out. A sample's `db_version` is its `qc_metrics.metaphlan_index`. If a snapshot has a single `db_version` (common), filter `taxon` to that one value once and forget it.
-
-**Per-sample QC/provenance lives once in `qc_metrics`** (not repeated on every clade row) — join it on `sample_id` for read depth or the reference DB version.
-
-## Worked examples
-
-First, discover what's in the snapshot:
-
-```sql
-SELECT DISTINCT study_name FROM cmgd.taxonomic_profile_metaphlan ORDER BY 1;   -- studies
-SELECT DISTINCT version    FROM cmgd.taxonomic_profile_metaphlan;              -- pipeline versions present
-```
-
-Find the `sample_id` for a run accession you care about (the join key isn't the SRR — look it up):
-
-```sql
-SELECT DISTINCT sample_id, run_ids
-FROM cmgd.qc_metrics
-WHERE run_ids LIKE '%SRR19065012%';
-```
-
-Top 10 species in a study (metaphlan, full-read, one pipeline version):
-
-```sql
-SELECT clade_name, avg(relative_abundance) AS mean_rel_ab
-FROM cmgd.taxonomic_profile_metaphlan
-WHERE study_name = 'ArtachoA_2021'
-  AND rank = 'species'
-  AND data_type = 'full_data'
-  AND version = '2.2.1'                          -- pin the version, or you aggregate across versions
-GROUP BY clade_name ORDER BY mean_rel_ab DESC LIMIT 10;
-```
-
-One sample's profile joined to canonical taxonomy — note the `taxon` join includes `db_version` (from `qc_metrics.metaphlan_index`) and uses `sgb_id`, the precise key metaphlan carries:
-
-```sql
-WITH s AS (
-  SELECT metaphlan_index AS db_version
-  FROM cmgd.qc_metrics
-  WHERE sample_id = '04835269dd64216afea75569f36f2f6c'
-)
-SELECT p.relative_abundance, t.ncbi_species, t.genus, t.phylum
-FROM cmgd.taxonomic_profile_metaphlan p
-JOIN cmgd.taxon t
-  ON t.sgb_id = p.sgb_id
- AND t.db_version = (SELECT db_version FROM s)   -- both keys, or rows fan out
-WHERE p.sample_id = '04835269dd64216afea75569f36f2f6c'
-  AND p.data_type = 'full_data'
-ORDER BY p.relative_abundance DESC;
-```
-
-Sample count and mean read depth per study (`qc_metrics` is one row per sample, so `count(*)` is the sample count and the read depths are unambiguous — no `data_type` to mix):
-
-```sql
-SELECT study_name, count(*) AS n_samples, avg(reads_decontaminated) AS mean_depth
-FROM cmgd.qc_metrics GROUP BY study_name ORDER BY n_samples DESC;
-```
-
-## Two things to know before you compute
-
-1. **Abundances are not comparable across methods** — which is why they're separate tables. `taxonomic_profile_metaphlan.relative_abundance` is a **percent** (marker/genome-size-normalized); `taxonomic_profile_bracken.fraction_total_reads` is a **0–1 read-count fraction**. Both are stored in their native units. Matching a *taxon* across the two (via `taxon`) unifies *who*, not *how much*.
-2. **`data_type` matters.** `full_data` uses all reads; `rarefied_data` is a 1M-read subsample (for depth-controlled comparisons). Pick one — don't mix them in an aggregate. Most analyses want `full_data`.
-
-## Citing / reproducibility
-
-The published catalog is a **frozen point-in-time snapshot** — "the cMD lake as of `<date>`" is a concrete, immutable artifact. Record the snapshot date (or catalog URL, which is versioned) in your methods so your analysis is reproducible. Newer snapshots add samples and may add columns under a new pipeline `version`; historical rows keep their shape (filter on `version` if you need a fixed schema).
-
-## Relationship to `curatedMetagenomicData`
-
-This is the successor publishing path to the experimental `curatedMetagenomicDataETL`. The public Parquet URLs keep the same shape existing consumers expect; the frozen DuckLake is the new, richer entry point. If you use the Bioconductor `curatedMetagenomicData` package, that surface continues to work — this guide is for direct SQL/Parquet access to the current pipeline outputs.
+The data is released under CC0-1.0 (recorded in every release's
+`manifest.json` and table schemas).
 
 ## Getting help
 
-- Schema / design: `docs/output-catalog-etl-design.md`.
-- Something missing or a URL 404s: open an issue referencing #57.
+Design: [ADR-0011](adr/0011-results-storage-and-publication.md). A missing file or
+a broken snippet: open an issue in `seandavi/nextflow_telemetry`.

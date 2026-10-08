@@ -1,5 +1,7 @@
 # Output-catalog ETL — execution plan (#57)
 
+> **Superseded in part by [ADR 0011](adr/0011-results-storage-and-publication.md) (2026-10-08):** results live in the shared lake (`lake.cmgd.*`), and the public artifact is a versioned `publish_release` dataset per registration on `cmgd-public`, not a frozen copy of a dedicated cmgd lake. `nf-etl freeze` is gone.
+
 > Status: **plan** — the *how to build it* companion to [`output-catalog-etl-design.md`](./output-catalog-etl-design.md)
 > (file→table mechanism, analytical schema, taxonomy) and [`publish-and-catalog-design.md`](./publish-and-catalog-design.md)
 > (telemetry plumbing, dedicated + frozen DuckLake, no orchestrator). This doc is the staged build with a

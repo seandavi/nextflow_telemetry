@@ -59,3 +59,4 @@ other. This preserves the historical record rather than rewriting it.
 | [0008](0008-object-storage-on-r2.md) | Keep all cloud object storage on Cloudflare R2 | Accepted |
 | [0009](0009-catalog-in-postgres-control-plane-in-worker.md) | Keep the catalog in Postgres and the control plane in the Worker | Accepted |
 | [0010](0010-registrations-are-bundles.md) | Registrations are bundles | Accepted |
+| [0011](0011-results-storage-and-publication.md) | Results storage and publication | Accepted |
