@@ -92,6 +92,7 @@ export const Detail = z.object({ detail: z.string() });
 export const Sample = z.looseObject({
   id: z.number().int(),
   sample_id: z.string(),
+  readset_id: z.string().nullable().describe("ADR-0007 readset id (RS.…) of the run set; null if ncbi_accession holds a non-run entry"),
   ncbi_accession: z.string().nullable(),
   biosample_id: z.string().nullable(),
   metadata: z.record(z.string(), z.unknown()),
@@ -124,6 +125,9 @@ export const Workflow = z.looseObject({
   description: z.string().nullable(),
   params: WorkflowParams,
   collections: WorkflowCollections.nullable(),
+  sample_key: z
+    .enum(["sample_id", "readset_id"])
+    .describe("Id the pipeline is handed as sample_id: the md5 for registrations before ADR-0007, the readset id after"),
   created_at: iso,
   updated_at: iso,
 });
@@ -157,7 +161,7 @@ export const ClaimedBatch = z.looseObject({
   jobs: z.array(
     z.looseObject({
       id: z.number().int(),
-      sample_id: z.string(),
+      sample_id: z.string().describe("The registration's sample_key: md5 sample_id or readset id"),
       ncbi_accession: z.string().nullable(),
       metadata: z.record(z.string(), z.unknown()).nullable(),
     }),
