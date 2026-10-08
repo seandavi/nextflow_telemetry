@@ -15,10 +15,10 @@ from cdsci.lake.publish.builder import LocalDirStore
 from cdsci.lake.publish.frozen import frozen_ducklake_attach_sql
 from cdsci.lake.publish.verify import verify_release
 from cmgd_release_fixture import (  # noqa: F401 -- public_site is a fixture
-    HUMANN, LEGACY, SPECIES, STUDIES, build_lake, public_site, sample_keys,
+    GF_FILE, GF_ROWS, HUMANN, LEGACY, SPECIES, STUDIES, build_lake, public_site, sample_keys,
 )
 
-from nextflow_telemetry.etl import cli, lake, publish
+from nextflow_telemetry.etl import cli, export, lake, publish
 from nextflow_telemetry.etl.specs import SPECS
 
 
@@ -44,6 +44,26 @@ def test_release_is_published_verified_and_indexed(public_site):
     assert "humann_genefamilies" not in {t.name for t in humann.tables}
     assert "humann_pathabundance" in {t.name for t in humann.tables}
     assert "humann_pathabundance" not in {t.name for t in legacy.tables}
+
+
+def test_root_index_lists_every_published_dataset(public_site):
+    idx = json.loads((public_site.root / "index.json").read_text())
+    assert idx["spec_version"] == export.INDEX_SPEC_VERSION
+    assert [d["id"] for d in idx["datasets"]] == sorted(publish.dataset_id(*r) for r in (LEGACY, HUMANN))
+    for d in idx["datasets"]:
+        latest = json.loads((public_site.root / d["latest"]).read_text())
+        assert d["latest_release"] == latest["release"] == "2026-10-08"
+        assert (d["workflow_id"], d["version"]) in (LEGACY, HUMANN) and d["updated_at"]
+    assert not list(public_site.root.glob(".index-*"))
+
+
+def test_root_index_merge_replaces_only_the_republished_dataset(tmp_path):
+    publish.update_root_index(tmp_path, *LEGACY, "2026-10-08")
+    publish.update_root_index(tmp_path, *HUMANN, "2026-10-08")
+    publish.update_root_index(tmp_path, *LEGACY, "2026-10-08.2")
+    ds = json.loads((tmp_path / "index.json").read_text())["datasets"]
+    assert [(d["id"], d["latest_release"]) for d in ds] == [
+        ("cmgd_humann3.9-2.3.0", "2026-10-08"), ("cmgd_nextflow-2.2.1", "2026-10-08.2")]
 
 
 def test_release_holds_only_its_registration_sorted_by_study_sample_feature(public_site):
@@ -74,6 +94,7 @@ def _sha(path):
 def test_per_study_artifacts_and_index(public_site):
     _, rdir = _release(public_site, HUMANN)
     index = json.loads((rdir / "studies" / "index.json").read_text())
+    assert index["spec_version"] == export.INDEX_SPEC_VERSION
     assert [(s["study_name"], s["n_samples"]) for s in index["studies"]] == sorted(STUDIES.items())
     for s in index["studies"]:
         names = {f["name"] for f in s["files"]}
@@ -81,10 +102,14 @@ def test_per_study_artifacts_and_index(public_site):
                          "resistome.parquet", "pathways.parquet", "qc.tsv"}
         for f in s["files"]:
             assert f["path"] == f"studies/{s['study_name']}/{f['name']}"
-            assert (f["bytes"], f["sha256"]) == ((rdir / f["path"]).stat().st_size, _sha(rdir / f["path"]))
+            assert (f["size"], f["sha256"]) == ((rdir / f["path"]).stat().st_size, _sha(rdir / f["path"]))
     assert set(index["file_descriptions"]) >= {"metaphlan_species.tsv.gz", "qc.tsv"}
+    # the release's other index files, which the manifest can't list (cdsci-lake#134)
+    [art] = index["artifacts"]
+    assert art["path"] == "genefamilies/index.json"
+    assert (art["size"], art["sha256"]) == ((rdir / art["path"]).stat().st_size, _sha(rdir / art["path"]))
 
-    # species x samples, main pass, full_data, sample columns sorted, absent = 0
+    # species x samples, main pass, full_data, every sample a column (sorted), absent = 0
     study = "ArtachoA_2021"
     keys = sorted(sample_keys(HUMANN[0], study))
     with gzip.open(rdir / "studies" / study / "metaphlan_species.tsv.gz", "rt") as f:
@@ -94,7 +119,9 @@ def test_per_study_artifacts_and_index(public_site):
     by_species = {r[0]: r[1:] for r in table[1:]}
     order = [sample_keys(HUMANN[0], study).index(k) for k in keys]  # fixture index i per column
     for j, clade in enumerate(SPECIES):
-        assert [float(v) for v in by_species[clade]] == [10.0 * (j + 1) + i if j <= i else 0.0 for i in order]
+        assert [float(v) for v in by_species[clade]] == [10.0 * (j + 1) + i if j < i else 0.0 for i in order]
+    # fixture sample 0 has no species rows: kept, as an all-zero column
+    assert all(float(r[1 + order.index(0)]) == 0.0 for r in table[1:])
 
     long = duckdb.sql(f"SELECT DISTINCT study_name, humann_bundle FROM "
                       f"read_parquet('{rdir}/studies/{study}/metaphlan.parquet')").fetchall()
@@ -103,22 +130,35 @@ def test_per_study_artifacts_and_index(public_site):
     assert sorted(r["sample_key"] for r in qc) == keys
 
     _, legacy_dir = _release(public_site, LEGACY)
-    legacy_files = {f["name"] for f in json.loads(
-        (legacy_dir / "studies" / "index.json").read_text())["studies"][0]["files"]}
-    assert "pathways.parquet" not in legacy_files
+    legacy_index = json.loads((legacy_dir / "studies" / "index.json").read_text())
+    assert "pathways.parquet" not in {f["name"] for f in legacy_index["studies"][0]["files"]}
+    assert legacy_index["artifacts"] == []
 
 
-def test_genefamilies_index(public_site):
+def test_genefamilies_index_is_split_per_study(public_site):
     _, rdir = _release(public_site, HUMANN)
     idx = json.loads((rdir / "genefamilies" / "index.json").read_text())
-    assert idx["raw_base_url"] == public_site.raw
-    files = idx["files"]
-    assert len(files) == sum(STUDIES.values())
-    f = files[0]
-    assert f["study_name"] == "ArtachoA_2021" and f["branch"] == "full_data"
-    assert f["url"] == f"{public_site.raw}/{f['key']}" and f["bytes"] > 0 and f["rows"] == 3
+    assert idx["spec_version"] == export.INDEX_SPEC_VERSION and idx["raw_base_url"] == public_site.raw
+    assert [(s["study_name"], s["n_samples"], s["n_files"]) for s in idx["studies"]] == [
+        (k, n, n) for k, n in sorted(STUDIES.items())]
+    keys = []
+    for s in idx["studies"]:
+        assert s["path"] == f"genefamilies/{s['study_name']}.json"
+        assert (s["size"], s["sha256"]) == ((rdir / s["path"]).stat().st_size, _sha(rdir / s["path"]))
+        study = json.loads((rdir / s["path"]).read_text())
+        assert study["spec_version"] == export.INDEX_SPEC_VERSION
+        assert study["study_name"] == s["study_name"]
+        for f in study["files"]:
+            assert f["study_name"] == s["study_name"] and f["branch"] == "full_data"
+            assert f["url"] == f"{public_site.raw}/{f['key']}"
+            assert (f["size"], f["sha256"], f["rows"]) == (
+                len(GF_FILE), hashlib.sha256(GF_FILE).hexdigest(), GF_ROWS)
+            keys.append(f["key"])
+    [art] = idx["artifacts"]
+    assert art["path"] == "genefamilies/index.tsv"
+    assert (art["size"], art["sha256"]) == ((rdir / art["path"]).stat().st_size, _sha(rdir / art["path"]))
     tsv = list(csv.DictReader(io.StringIO((rdir / "genefamilies" / "index.tsv").read_text()), delimiter="\t"))
-    assert [r["key"] for r in tsv] == [f["key"] for f in files]
+    assert [r["key"] for r in tsv] == keys
     _, legacy_dir = _release(public_site, LEGACY)
     assert not (legacy_dir / "genefamilies").exists()
 
@@ -126,8 +166,10 @@ def test_genefamilies_index(public_site):
 def test_genefamilies_url_is_null_without_raw_base(tmp_path):
     con = build_lake(tmp_path / "lake")
     m = publish.publish(con, *HUMANN, tmp_path / "store", raw_base_url=None)
-    idx = json.loads((tmp_path / "store" / m.dataset / m.release / "genefamilies" / "index.json").read_text())
-    assert idx["raw_base_url"] is None and all(f["url"] is None and f["key"] for f in idx["files"])
+    gf = tmp_path / "store" / m.dataset / m.release / "genefamilies"
+    assert json.loads((gf / "index.json").read_text())["raw_base_url"] is None
+    files = json.loads((gf / "ArtachoA_2021.json").read_text())["files"]
+    assert all(f["url"] is None and f["key"] for f in files)
     assert not list((tmp_path / "store").glob(".staging-*"))  # staging cleaned up
 
 
@@ -148,8 +190,10 @@ def test_sync_uploads_releases_before_pointers(tmp_path, monkeypatch, capsys):
     cmds = publish.sync_commands(tmp_path, "cmgd_nextflow-2.2.1", "r2:cmgd-public")
     assert cmds[0][:3] == ["rclone", "copy", "--immutable"]
     assert cmds[0][-2:] == [f"{tmp_path}/cmgd_nextflow-2.2.1", "r2:cmgd-public/cmgd_nextflow-2.2.1"]
-    assert [c[-1] for c in cmds[1:]] == ["r2:cmgd-public/cmgd_nextflow-2.2.1/releases.json",
-                                         "r2:cmgd-public/cmgd_nextflow-2.2.1/latest.json"]
+    assert [c[-2:] for c in cmds[1:]] == [
+        [f"{tmp_path}/cmgd_nextflow-2.2.1/releases.json", "r2:cmgd-public/cmgd_nextflow-2.2.1/releases.json"],
+        [f"{tmp_path}/cmgd_nextflow-2.2.1/latest.json", "r2:cmgd-public/cmgd_nextflow-2.2.1/latest.json"],
+        [f"{tmp_path}/index.json", "r2:cmgd-public/index.json"]]
     with pytest.raises(ValueError):
         publish.sync_commands(tmp_path, "../x")
 
@@ -159,7 +203,7 @@ def test_sync_uploads_releases_before_pointers(tmp_path, monkeypatch, capsys):
     cli.main(["publish", "--registration", "cmgd_nextflow/2.2.1", "--sync", "--dry-run",
               "--out", str(tmp_path)])
     out = capsys.readouterr().out.splitlines()
-    assert len(out) == 3 and out[-1].endswith("r2:cmgd-public/cmgd_nextflow-2.2.1/latest.json")
+    assert len(out) == 4 and out[-1].endswith("r2:cmgd-public/index.json")
 
 
 def test_cli_publish_builds_from_the_lake(tmp_path, monkeypatch, capsys):

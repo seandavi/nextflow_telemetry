@@ -7,25 +7,29 @@ manifest, ``releases.json``/``latest.json``) into a local store. The per-study
 downloads and the gene-family index (``export.py``) are built from the same
 snapshot and moved into the release directory once ``publish_release`` returns:
 it has no hook for extra artifacts, so they are not in the manifest (their own
-``index.json`` files carry bytes and checksums).
+``index.json`` files carry sizes and checksums; cdsci-lake#134). Last, the
+store's root ``index.json`` gets the dataset's entry, so clients can find every
+dataset without LIST.
 
 ``sync`` is the separate, explicit upload of a local dataset to ``cmgd-public``.
 
+  <root>/index.json                                    every dataset in the store
   <root>/<dataset>/releases.json, latest.json
   <root>/<dataset>/<release>/manifest.json, catalog.ducklake, tables/<table>/...
   <root>/<dataset>/<release>/studies/index.json, studies/<study>/...
-  <root>/<dataset>/<release>/genefamilies/index.json, index.tsv
+  <root>/<dataset>/<release>/genefamilies/index.json, <study>.json, index.tsv
 
 The dataset id is ``<workflow_id>-<version>`` (e.g. ``cmgd_nextflow-2.2.1``).
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import tempfile
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import duckdb
@@ -213,19 +217,21 @@ def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
         snap.mkdir()
         for t in contract.tables:
             _snapshot(con, t, sid, workflow_id, version, snap / f"{t}.parquet")
-        export.write_studies(snap, extras / "studies", contract.id)
+        artifacts = []
         if has_humann(workflow_id, version):
             files = con.sql(
                 "SELECT q.study_name, f.sample_key, f.readset_id, f.humann_bundle, f.branch, f.key, "
-                f"f.bytes, f.rows FROM (SELECT * FROM lake.{LAKE_SCHEMA}.{GENEFAMILY_FILES_TABLE} "
+                f"f.size, f.sha256, f.rows FROM (SELECT * FROM lake.{LAKE_SCHEMA}.{GENEFAMILY_FILES_TABLE} "
                 f"AT (VERSION => {sid})) AS f LEFT JOIN read_parquet('{snap / 'qc_metrics.parquet'}') AS q "
                 "USING (sample_key) WHERE f.workflow_id = $w AND f.version = $v "
                 "ORDER BY q.study_name, f.sample_key",
                 params={"w": workflow_id, "v": version})
             export.write_genefamilies_index(files, extras / "genefamilies", contract.id,
                                             raw_base_url)
+            artifacts.append(export.entry(extras, extras / "genefamilies" / "index.json"))
             sources.append(SourceAssetVersion(ref=f"lake.{LAKE_SCHEMA}.{GENEFAMILY_FILES_TABLE}",
                                               version=f"snapshot:{sid}"))
+        export.write_studies(snap, extras / "studies", contract.id, artifacts)
 
         rcon = duckdb.connect()
         manifest = publish_release(
@@ -236,13 +242,33 @@ def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
         release_dir = root / contract.id / manifest.release
         for extra in sorted(extras.iterdir()):
             shutil.move(str(extra), str(release_dir / extra.name))
+    update_root_index(root, workflow_id, version, manifest.release)
     return manifest
+
+
+def update_root_index(root: Path, workflow_id: str, version: str, release: str) -> None:
+    """Add or replace one dataset's entry in ``<root>/index.json`` (read, merge,
+    atomic replace). ``latest`` is relative to the store root."""
+    path = root / "index.json"
+    datasets = json.loads(path.read_text())["datasets"] if path.exists() else []
+    did = dataset_id(workflow_id, version)
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    datasets = sorted([d for d in datasets if d["id"] != did] + [
+        {"id": did, "workflow_id": workflow_id, "version": version, "latest_release": release,
+         "latest": f"{did}/latest.json", "updated_at": now}], key=lambda d: d["id"])
+    with tempfile.NamedTemporaryFile("w", dir=root, prefix=".index-", suffix=".json",
+                                     delete=False) as f:
+        json.dump({"spec_version": export.INDEX_SPEC_VERSION, "updated_at": now,
+                   "datasets": datasets}, f, indent=2)
+    os.replace(f.name, path)
 
 
 def sync_commands(root: Path | str, dataset: str, remote: str = SYNC_REMOTE) -> list[list[str]]:
     """rclone commands that upload a local dataset to the public bucket. Release
     directories first (``--immutable``: a published object is never rewritten), the
-    pointer files last, so ``latest.json`` never names a release that isn't there."""
+    pointer files next, so ``latest.json`` never names a release that isn't there,
+    and the store's root ``index.json`` last. The root index lists every dataset
+    built in the local store, so sync each one after building it."""
     if not export.SAFE_NAME.match(dataset):
         raise ValueError(f"bad dataset id {dataset!r}")
     src, dst = f"{Path(root)}/{dataset}", f"{remote}/{dataset}"
@@ -251,6 +277,8 @@ def sync_commands(root: Path | str, dataset: str, remote: str = SYNC_REMOTE) -> 
     for pointer in ("releases.json", "latest.json"):
         cmds.append(["rclone", "copyto", "--header-upload", "Cache-Control: no-cache",
                      f"{src}/{pointer}", f"{dst}/{pointer}"])
+    cmds.append(["rclone", "copyto", "--header-upload", "Cache-Control: no-cache",
+                 f"{Path(root)}/index.json", f"{remote}/index.json"])
     return cmds
 
 

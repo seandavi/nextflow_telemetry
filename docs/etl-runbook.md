@@ -147,7 +147,7 @@ view: [`data-access.md`](./data-access.md).
 |---|---|---|
 | `ETL_PUBLISH_ROOT` | `/data/cmgd/publish` | local release store (`--out`) |
 | `ETL_PUBLIC_REMOTE` | `r2:cmgd-public` | rclone destination for `--sync` (`--remote`) |
-| `ETL_RAW_PUBLIC_BASE_URL` | unset | gene-family download base; production value `https://cmgd-raw.cancerdatasci.org` (live since 2026-10-08, monode#53). Unset: `url` is null in `genefamilies/index.json` |
+| `ETL_RAW_PUBLIC_BASE_URL` | unset | gene-family download base; production value `https://cmgd-raw.cancerdatasci.org` (live since 2026-10-08, monode#53). Unset: `url` is null in `genefamilies/<study>.json` |
 
 The lake connection is `cdsci.lake.lake_connect(read_only=True)`, configured by
 cdsci-lake's own `CU_OPENALEX_*` settings (the producer setup from #234).
@@ -164,10 +164,13 @@ A build reads the registration's rows at one lake snapshot, then runs cdsci-lake
 `publish_release`: sorted Parquet, a frozen read-only `catalog.ducklake`,
 manifest and checksums, acceptance checks, then `releases.json`/`latest.json`. A
 failed acceptance leaves no `manifest.json` and the index untouched. `studies/`
-and `genefamilies/` are added to the release directory afterwards.
+and `genefamilies/` are added to the release directory afterwards, and the
+dataset's entry in the store's root `index.json` is replaced last.
 
 The sync copies release directories with `rclone copy --immutable` (a published
 object is never rewritten), then the two pointer files with
 `Cache-Control: no-cache`, so `latest.json` never names a release that isn't
-uploaded yet. It never deletes anything in the bucket.
+uploaded yet, then the root `index.json` the same way. The root index lists
+every dataset built in the local store, so sync each dataset you build. It
+never deletes anything in the bucket.
 

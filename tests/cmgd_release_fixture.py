@@ -27,13 +27,15 @@ from nextflow_telemetry.etl import lake, publish
 
 FIX = Path(__file__).parent / "fixtures" / "etl"
 RELEASE_DAY = date(2026, 10, 8)  # docs/data-access.md's example release id
-STUDIES = {"ArtachoA_2021": 3, "ZellerG_2014": 2}
+STUDIES = {"ArtachoA_2021": 4, "ZellerG_2014": 2}
 LEGACY = ("cmgd_nextflow", "2.2.1")
 HUMANN = ("cmgd_humann3.9", "2.3.0")
 SPECIES = ["k__Bacteria|p__Bacillota|c__Clostridia|o__Eubacteriales|f__Lachnospiraceae|g__Blautia|s__Blautia_wexlerae",
            "k__Bacteria|p__Bacteroidota|c__Bacteroidia|o__Bacteroidales|f__Bacteroidaceae|g__Bacteroides|s__Bacteroides_uniformis",
            "k__Bacteria|p__Pseudomonadota|c__Gammaproteobacteria|o__Enterobacterales|f__Enterobacteriaceae|g__Escherichia|s__Escherichia_coli"]
-GF_FILE = gzip.compress((FIX / "humann3.9" / "out_genefamilies.tsv").read_bytes(), mtime=0)
+GF_TSV = (FIX / "humann3.9" / "out_genefamilies.tsv").read_bytes()
+GF_FILE = gzip.compress(GF_TSV, mtime=0)
+GF_ROWS = len(GF_TSV.splitlines()) - 1  # data lines, after the header
 
 
 def sample_keys(workflow_id: str, study: str) -> list[str]:
@@ -44,7 +46,6 @@ def sample_keys(workflow_id: str, study: str) -> list[str]:
 
 def _rows(workflow_id: str, version: str) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {t: [] for t in lake.SCHEMAS}
-    out["humann_genefamilies_files"] = []
     humann = (workflow_id, version) == HUMANN
     run = 866581
     for study in STUDIES:
@@ -58,8 +59,9 @@ def _rows(workflow_id: str, version: str) -> dict[str, list[dict]]:
                                       "pipeline_version": version})
             for data_type in ("full_data", "rarefied_data"):
                 b = {**ids, "data_type": data_type}
-                # sample i has species[0..i]: absent species exercise the 0-fill
-                for j, clade in enumerate(SPECIES[: i + 1]):
+                # sample i has species[0..i-1]: absent species exercise the 0-fill,
+                # sample 0 (no species rows) the all-zero column
+                for j, clade in enumerate(SPECIES[:i]):
                     out["taxonomic_profile_metaphlan"].append(
                         {**b, "metaphlan_profile": "mpa4.2.2_vJan25", "clade_name": clade,
                          "rank": "species", "relative_abundance": 10.0 * (j + 1) + i})
@@ -83,21 +85,17 @@ def _rows(workflow_id: str, version: str) -> dict[str, list[dict]]:
                     {"sample_key": key, "readset_id": key, "workflow_id": workflow_id, "version": version,
                      "humann_bundle": "humann3.9", "branch": "full_data",
                      "key": f"{workflow_id}/{version}/{key}/humann/humann3.9/out_genefamilies.tsv.gz",
-                     "bytes": len(GF_FILE), "rows": 3})
+                     "size": len(GF_FILE), "sha256": hashlib.sha256(GF_FILE).hexdigest(),
+                     "rows": GF_ROWS})
     return out
-
-
-GENEFAMILY_FILES = {"sample_key": "VARCHAR", "readset_id": "VARCHAR", "workflow_id": "VARCHAR",
-                    "version": "VARCHAR", "humann_bundle": "VARCHAR", "branch": "VARCHAR",
-                    "key": "VARCHAR", "bytes": "BIGINT", "rows": "BIGINT"}
 
 
 def build_lake(root: Path) -> duckdb.DuckDBPyConnection:
     """A local cdsci lake with the #234 contract: ``lake.cmgd.<table>`` per
-    ``lake.SCHEMAS`` plus ``lake.cmgd.humann_genefamilies_files``."""
+    ``lake.SCHEMAS`` (including ``humann_genefamilies_files``)."""
     con = lake_connect(Settings(lake_backend="local", storage_base_uri=f"file://{root}"))
     con.execute("CREATE SCHEMA lake.cmgd")
-    schemas = {**lake.SCHEMAS, "humann_genefamilies_files": GENEFAMILY_FILES}
+    schemas = lake.SCHEMAS
     for table, cols in schemas.items():
         con.execute(f"CREATE TABLE lake.cmgd.{table} ({', '.join(f'{c} {t}' for c, t in cols.items())})")
     for reg in (LEGACY, HUMANN):

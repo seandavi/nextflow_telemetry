@@ -29,6 +29,7 @@ lists them all. To cite the data, give the dataset and the release id.
 
 ```text
 https://cmgd-public.cancerdatasci.org/
+  index.json                          every dataset and its latest release
   <dataset>/
     latest.json                       {"release": "2026-10-08", ...}
     releases.json                     every release, oldest first
@@ -37,23 +38,28 @@ https://cmgd-public.cancerdatasci.org/
       catalog.ducklake                read-only DuckLake catalog over the tables below
       README.md                       table and column documentation
       tables/<table>/schema.json      columns, types, units, descriptions
-      tables/<table>/files.json       data files with bytes, sha256, row counts
+      tables/<table>/files.json       data files with size, sha256, row counts
       tables/<table>/data/part-00000.parquet
       studies/index.json              per-study downloads: studies, sample counts, files
       studies/<study>/metaphlan_species.tsv.gz, metaphlan.parquet, bracken.parquet,
                       resistome.parquet, pathways.parquet (HUMAnN datasets), qc.tsv
-      genefamilies/index.json, index.tsv   HUMAnN datasets only: per-sample gene-family files
+      genefamilies/index.json         HUMAnN datasets only: studies, each with its file below
+      genefamilies/<study>.json       the study's per-sample gene-family files
+      genefamilies/index.tsv          every gene-family file in one table
 ```
 
 Nothing on the site can be listed (it is an R2 bucket served over HTTPS), so the
-JSON indexes above are how you find files.
+JSON indexes above are how you find files ([Index files](#index-files)).
 
-## Find the current release
+## Find the datasets and the current release
 
-The examples on this page use release `2026-10-08`. Replace it with the current
-release from `latest.json`:
+`index.json` at the site root lists every dataset with its newest release
+(`latest_release`) and the path of its `latest.json`. The examples on this page
+use release `2026-10-08`. Replace it with the current release from
+`latest.json`:
 
 ```bash
+curl -sSf https://cmgd-public.cancerdatasci.org/index.json
 curl -sSf https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/latest.json
 ```
 
@@ -210,12 +216,13 @@ print(tse)
 
 Each release has ready-made files per study. `studies/index.json` lists every
 study with its sample count and, per file, its `path` (relative to the release
-URL), `bytes` and `sha256`; `file_descriptions` says what each file holds.
+URL), `size` and `sha256`; `file_descriptions` says what each file holds.
 
 - `metaphlan_species.tsv.gz`: species × samples. One row per MetaPhlAn species
   clade (`clade_name`), one column per `sample_key`, relative abundance in
   percent from the main MetaPhlAn pass on all reads (`full_data`). `0` means not
-  detected.
+  detected. Every sample in `qc.tsv` has a column: a sample with no
+  species-level rows is kept as an all-zero column, not dropped.
 - `metaphlan.parquet`, `bracken.parquet`, `resistome.parquet`,
   `pathways.parquet` (HUMAnN datasets): the study's rows of the release tables,
   in long form.
@@ -243,35 +250,71 @@ print(species.shape)
 ## HUMAnN gene families
 
 Gene families are too large for the tables (10^5 to 10^6 rows per sample). Each
-sample's HUMAnN table is a separate download, listed in the HUMAnN datasets'
-`genefamilies/index.json` and `index.tsv`: `study_name`, `sample_key`,
-`readset_id`, `humann_bundle`, `branch`, `key` (the object key in the `cmgd-raw`
-bucket), `url`, `bytes` and `rows`. Values are HUMAnN's unnormalized output in
-the bundle's units.
+sample's HUMAnN table is a separate download. In the HUMAnN datasets,
+`genefamilies/index.json` lists the studies (`study_name`, `n_samples`,
+`n_files`) with the `path`, `size` and `sha256` of each study's own index,
+`genefamilies/<study>.json`. That file lists the study's files: `study_name`,
+`sample_key`, `readset_id`, `humann_bundle`, `branch`, `key` (the object key in
+the `cmgd-raw` bucket), `url`, `size`, `sha256` (of the gzipped file, computed
+when it was ingested) and `rows` (gene-family rows in the file). `index.tsv`
+holds every file of the release in one table with the same columns. Values are
+HUMAnN's unnormalized output in the bundle's units.
 
 The download base is `https://cmgd-raw.cancerdatasci.org` (public read, no
 listing). `url` is the base joined with `key`; a release built without the base
 configured carries `url: null` and only `key`.
 
 ```sql
-SELECT study_name, sample_key, bytes, rows, url
+SELECT study_name, sample_key, size, rows, url
 FROM read_csv('https://cmgd-public.cancerdatasci.org/cmgd_humann3.9-2.3.0/2026-10-08/genefamilies/index.tsv', delim = '\t')
-ORDER BY bytes DESC
+ORDER BY size DESC
 LIMIT 5;
 ```
 
 ```python
+import hashlib
+
 GF = f"{BASE}/cmgd_humann3.9-2.3.0"
 gf_release = fetch_json(f"{GF}/latest.json")["release"]
-gene_families = fetch_json(f"{GF}/{gf_release}/genefamilies/index.json")["files"]
-mine = [f for f in gene_families if f["study_name"] == "ArtachoA_2021"]
+gf_studies = fetch_json(f"{GF}/{gf_release}/genefamilies/index.json")["studies"]
+artacho = next(s for s in gf_studies if s["study_name"] == "ArtachoA_2021")
+mine = fetch_json(f"{GF}/{gf_release}/{artacho['path']}")["files"]
 print(len(mine), "gene-family files")
 for f in mine[:2]:
-    if f["url"]:  # null until cmgd-raw is public
+    if f["url"]:  # null if the release was built without the cmgd-raw base
         data = con.execute("SELECT content FROM read_blob(?)", [f["url"]]).fetchone()[0]
+        assert len(data) == f["size"] and hashlib.sha256(data).hexdigest() == f["sha256"]
         with open(f"{f['sample_key']}_genefamilies.tsv.gz", "wb") as out:
             out.write(data)
 ```
+
+## Index files
+
+The JSON indexes this site adds to cdsci-lake's release files follow the **cmgd
+index spec**, versioned by the `spec_version` each one carries (`"1.0"` today).
+A reader should check the major version: a change that breaks readers bumps it.
+This is separate from the `spec_version` of cdsci-lake's own files
+(`manifest.json`, `files.json`, `releases.json`, `latest.json`: spec 2.0).
+
+| file | holds |
+|---|---|
+| `index.json` (site root) | `datasets`: `id`, `workflow_id`, `version`, `latest_release`, `latest` (path of `latest.json`), `updated_at`; plus `updated_at` |
+| `studies/index.json` | `dataset`, `file_descriptions`, `studies` (`study_name`, `n_samples`, `files`: `name`, `path`, `size`, `sha256`), `artifacts` |
+| `genefamilies/index.json` | `dataset`, `raw_base_url`, `description`, `studies` (`study_name`, `n_samples`, `n_files`, `path`, `size`, `sha256`), `artifacts` |
+| `genefamilies/<study>.json` | `dataset`, `study_name`, `raw_base_url`, `files` (see above) |
+
+Conventions, shared with cdsci-lake's `files.json`: sizes are `size` (bytes),
+checksums `sha256` (hex). `path` values in a release are relative to the release
+URL; in the root index, relative to the site root. `url` values are absolute.
+
+`artifacts` lists the release's other index files with `size` and `sha256`:
+`studies/index.json` lists `genefamilies/index.json`, which lists
+`genefamilies/index.tsv`. They are there because a release's `manifest.json`
+cannot list files outside its tables yet (cdsci-lake#134); `studies/index.json`
+itself and the root `index.json` have no checksum anywhere.
+
+`studies/index.json` is one file for all studies (about 1 kB per study). The
+gene-family index is split per study because it has one entry per sample.
 
 ## The tables
 

@@ -39,14 +39,20 @@ Forces:
    per registration, named `<workflow_id>-<version>`. Each release is built by
    `publish_release` from one lake snapshot, into a local store on onclappc02.
    A separate `nf-etl publish --sync` step uploads it. Release ids are UTC build
-   dates.
+   dates. A root `index.json` lists every dataset and its latest release.
 3. **Each release carries per-study artifacts** under `studies/`: a wide
    species matrix (`metaphlan_species.tsv.gz`), long Parquet per profile and
-   `qc.tsv`, listed with bytes and sha256 in `studies/index.json`. (#229)
+   `qc.tsv`, listed with size and sha256 in `studies/index.json`. (#229)
 4. **Gene families are per-sample downloads**: the files the pipeline already
-   wrote to `cmgd-raw`, listed per release in `genefamilies/index.json` and
-   `index.tsv` (key, URL, bytes, rows). They are not in the lake. Download URLs
-   use `https://cmgd-raw.cancerdatasci.org` once `cmgd-raw` is public.
+   wrote to `cmgd-raw`, listed per release and per study in
+   `genefamilies/<study>.json` (key, URL, size, sha256, rows; sha256 computed at
+   ingest, which reads every file anyway), with `genefamilies/index.json` over
+   the studies and `index.tsv` over all files. They are not in the lake.
+   Download URLs use `https://cmgd-raw.cancerdatasci.org`.
+6. **cmgd's own JSON indexes** (root `index.json`, `studies/index.json`,
+   `genefamilies/*.json`) carry `spec_version` (the cmgd index spec, 1.0,
+   documented in `docs/data-access.md`) and use cdsci-lake's `size`/`sha256`
+   naming.
 5. **Recorded future option for gene families:** TileDB-SOMA hosted on AWS Open
    Data, if the sponsorship enquiry succeeds. The measured volumes from #234
    feed that enquiry. S3 there supports LIST and anonymous reads, which removes
@@ -87,7 +93,11 @@ Forces:
   releases are a cdsci-lake change.
 - `publish_release` has no hook for extra artifacts, so `studies/` and
   `genefamilies/` are written next to the release, not listed in its manifest.
-  Their own `index.json` files carry bytes and checksums.
+  Their index files carry sizes and checksums, and an `artifacts` list chains
+  the other index files to `studies/index.json`, which itself has no checksum
+  until cdsci-lake#134.
+- The root `index.json` lists every dataset built in the local store; `sync`
+  uploads it last, so sync every dataset you build.
 - Each release rebuilds every study's files. Rebuilding only changed studies
   waits until that is too slow.
 - The public licence is CC0-1.0, set in one place (`etl/publish.py`).
