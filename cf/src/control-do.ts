@@ -395,12 +395,16 @@ export class ControlDO extends DurableObject<Env> {
       args.push(opts.status);
     }
     return this.all(
-      `select j.id as job_id, j.sample_id as sample_key, j.status, j.completed_at,
-              s.sample_id, s.ncbi_accession,
+      // sample_key is the id the registration handed the pipeline, i.e. the
+      // output folder name: the readset id for readset-keyed registrations.
+      `select j.id as job_id,
+              case when w.sample_key = 'readset_id' then s.readset_id else j.sample_id end as sample_key,
+              j.status, j.completed_at, s.sample_id, s.readset_id, s.ncbi_accession,
               (select json_group_array(collection_id) from
                  (select collection_id from collection_samples
                    where sample_id = j.sample_id order by collection_id)) as collections
-         from jobs j left join samples s on s.sample_id = j.sample_id
+         from jobs j join workflows w on w.id = j.workflow_pk
+              left join samples s on s.sample_id = j.sample_id
         where ${where.join(" and ")}
         order by j.id limit ?`,
       ...args,

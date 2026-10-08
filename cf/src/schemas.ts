@@ -141,6 +141,7 @@ export const JobListItem = z.looseObject({
   status: z.string(),
   completed_at: iso.nullable(),
   sample_id: z.string().nullable(),
+  readset_id: z.string().nullable(),
   ncbi_accession: z.string().nullable(),
   collections: z.array(z.string()),
 });
