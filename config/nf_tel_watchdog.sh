@@ -24,7 +24,9 @@ start_daemon() {
     # A leftover session (daemon exited, shell gone) would block new-session.
     tmux kill-session -t nf 2>/dev/null
     sleep 3  # killing the last session stops the tmux server; an immediate new-session dies with it
-    tmux new-session -d -s nf "$NF_TEL_REPO/config/nf_tel_daemon.sh"
+    # 9>&-: the tmux server must not inherit the lock fd, or it holds the lock
+    # for its lifetime and every later watchdog run exits at flock.
+    tmux new-session -d -s nf "$NF_TEL_REPO/config/nf_tel_daemon.sh" 9>&-
     sleep 10
     if pgrep -u "$USER" -f 'nf-client daemon' >/dev/null; then
         log "started nf-client daemon"

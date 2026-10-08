@@ -43,3 +43,17 @@ def test_sweep_does_nothing_when_squeue_fails(tmp_path):
     subprocess.run(["bash", str(WATCHDOG)], env=env, check=True)
     assert sorted(p.name for p in scratch.iterdir()) == ["111", "222", "333", "444", "555", "work"]
     assert "sweep skipped" in (daemon / "watchdog.log").read_text()
+
+
+def test_daemon_start_does_not_inherit_the_lock(tmp_path):
+    """A started daemon (tmux) must not keep the flock fd open (it disabled later runs)."""
+    scratch, daemon, env = _setup(tmp_path, "111\\n")
+    bindir = tmp_path / "bin"
+    # pgrep fails → start_daemon runs; the tmux stub records its open fds.
+    (bindir / "pgrep").write_text("#!/bin/bash\nexit 1\n")
+    (bindir / "tmux").write_text(f"#!/bin/bash\nls /proc/$$/fd > {tmp_path}/tmux_fds\nexit 0\n")
+    (bindir / "sleep").write_text("#!/bin/bash\nexit 0\n")
+    for n in ("pgrep", "tmux", "sleep"):
+        (bindir / n).chmod(0o755)
+    subprocess.run(["bash", str(WATCHDOG)], env=env, check=True)
+    assert "9" not in (tmp_path / "tmux_fds").read_text().split()
