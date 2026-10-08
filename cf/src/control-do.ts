@@ -1220,6 +1220,9 @@ export function classifyRun(row: Row): string {
   const wec = row.wrapper_exit_code;
   if (wec != null && wec !== 0) return "wrapper-failed";
   if (["claimed", "submitted", "running"].includes(row.status as string)) {
+    // No wrapper heartbeat yet: the batch is waiting in the scheduler queue,
+    // which can take days. The submit backstop alarm closes it if it never starts.
+    if (row.status !== "running" && row.last_heartbeat_at == null) return "queued";
     const hb = row.last_heartbeat_at ?? row.submitted_at ?? row.claimed_at;
     if (hb && Date.now() - Date.parse(hb as string) > RUN_STALE_MS) return "stalled";
     return "active";

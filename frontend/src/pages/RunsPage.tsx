@@ -29,6 +29,7 @@ const CLASS_HELP: Record<string, string> = {
   'wrapper-failed': 'Driver exited non-zero — the Nextflow process itself failed.',
   'ended-no-log': 'Reached a terminal state but never uploaded .nextflow.log — driver likely hard-killed (OOM / scancel / node failure). Check sacct.',
   'stalled': 'Non-terminal but no heartbeat for >15 min — wrapper gone, run not closed.',
+  'queued': 'Submitted, waiting in the scheduler queue; the wrapper has not started yet.',
 }
 
 function ts(v: string | null): string {

@@ -648,3 +648,12 @@ describe("readset ids (ADR-0007)", () => {
     expect(run.job_status_counts.completed).toBe(1);
   });
 });
+
+describe("run classification", () => {
+  it("calls a submitted run with no wrapper heartbeat queued, however long it waits", async () => {
+    const { classifyRun } = await import("../src/control-do");
+    const old = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    expect(classifyRun({ status: "submitted", submitted_at: old, last_heartbeat_at: null })).toBe("queued");
+    expect(classifyRun({ status: "running", submitted_at: old, last_heartbeat_at: old })).toBe("stalled");
+  });
+});
