@@ -20,7 +20,7 @@ exec 9>"/tmp/nf_tel_watchdog.$USER.lock"
 flock -n 9 || exit 0
 
 start_daemon() {
-    pgrep -u "$USER" -f 'nf-client daemon' >/dev/null && return
+    pgrep -u "$USER" -f '[n]f-client daemon' >/dev/null && return
     # A leftover session (daemon exited, shell gone) would block new-session.
     tmux kill-session -t nf 2>/dev/null
     sleep 3  # killing the last session stops the tmux server; an immediate new-session dies with it
@@ -28,7 +28,7 @@ start_daemon() {
     # for its lifetime and every later watchdog run exits at flock.
     tmux new-session -d -s nf "$NF_TEL_REPO/config/nf_tel_daemon.sh" 9>&-
     sleep 10
-    if pgrep -u "$USER" -f 'nf-client daemon' >/dev/null; then
+    if pgrep -u "$USER" -f '[n]f-client daemon' >/dev/null; then
         log "started nf-client daemon"
     else
         log "FAILED to start nf-client daemon (see daemon.log)"
