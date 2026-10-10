@@ -33,6 +33,7 @@ help:
 	@echo ""
 	@echo "Production deploy (onclappc02)"
 	@echo "  just deploy-onclappc02   Fetch OAuth secrets from GCP SM, rebuild+restart the API."
+	@echo "  just deploy-clients [alpine|anvil|all] [ref]   Deploy HPC daemons at a pushed commit (FORCE=1 over active runs)."
 
 # Install project + dev dependencies into .venv using uv.
 sync:
@@ -203,3 +204,8 @@ deploy-onclappc02:
 	@echo ""
 	@echo "Container restarted. Watch it become healthy:"
 	@echo "  docker ps --filter name=nf_telemetry_api"
+
+# Deploy the HPC nf-client daemons at one pushed commit and verify the heartbeat
+# reports it (#254). Refuses while the daemon has active runs unless FORCE=1.
+deploy-clients cluster="all" ref="origin/main":
+	scripts/deploy_clients.sh {{cluster}} {{ref}}

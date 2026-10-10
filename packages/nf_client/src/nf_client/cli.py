@@ -22,11 +22,22 @@ import time
 from pathlib import Path
 
 import typer
-try:
-    from importlib.metadata import version as _pkg_version
-    _NF_CLIENT_VERSION: str | None = _pkg_version("nf-client")
-except Exception:
-    _NF_CLIENT_VERSION = None
+def _client_version() -> str | None:
+    """`<version>+<sha7>` when installed from a git URL (PEP 610 direct_url.json),
+    so a daemon's heartbeat says which commit it runs (#254); else `<version>`."""
+    try:
+        from importlib.metadata import distribution
+        dist = distribution("nf-client")
+    except Exception:
+        return None
+    try:
+        sha = _json.loads(dist.read_text("direct_url.json") or "{}")["vcs_info"]["commit_id"]
+        return f"{dist.version}+{sha[:7]}"
+    except Exception:
+        return dist.version
+
+
+_NF_CLIENT_VERSION = _client_version()
 
 from .client import JobClient
 from .config import ClientConfig

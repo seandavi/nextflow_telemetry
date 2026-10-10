@@ -7,7 +7,7 @@ Every SLURM cluster runs the same pieces; only values differ:
 | Paths, account, modules | `config/nf_tel.env.<cluster>` | `~/.nf_tel.env`, sourced from `~/.bash_profile` |
 | v2 bearer token | GSM `cdsci-nf-telemetry-v2-api-token` (project `cdsci-infra`) | `~/.nf_tel.secrets` (mode 600, `export NF_OPERATOR_TOKEN=...`) |
 | R2 S3 keys (`-profile r2`) | GSM `cdsci-r2-account-id`, `cdsci-r2-access-key-id`, `cdsci-r2-secret-access-key` | `~/.nf_tel.r2` (mode 600, `export R2_ACCOUNT_ID=...` etc.), sourced by the submit script ([ADR 0008](adr/0008-object-storage-on-r2.md)) |
-| Client yaml | `config/client-<cluster>.yaml.example` | `$NF_TEL_CONFIG` |
+| Client yaml | `config/client-<cluster>.yaml` | read in place (`$NF_TEL_CONFIG` points into the checkout) |
 | Submit template | `templates/submit_slurm.sh.j2` | read from `$NF_TEL_REPO` |
 | Daemon launcher | `config/nf_tel_daemon.sh` | run from `$NF_TEL_REPO` in tmux |
 
@@ -17,12 +17,11 @@ partition, qos, resources, batch sizes, `profile`. The submit script sources
 `~/.nf_tel.env` itself, because batch shells are not login shells and Alpine
 submits with `--export=NONE`.
 
-Sync after editing:
+Deploy after merging (installs the env file, checkout, client yaml and nf-client
+at one commit, restarts the daemon, and checks its heartbeat):
 
 ```bash
-scp config/nf_tel.env.alpine alpine:~/.nf_tel.env
-scp config/nf_tel.env.anvil  anvil:~/.nf_tel.env
-ssh <cluster> 'source ~/.nf_tel.env && cd $NF_TEL_REPO && git pull --ff-only'
+just deploy-clients all            # or: alpine | anvil, optional ref (default origin/main)
 ```
 
 ## Variables
@@ -81,7 +80,7 @@ Anvil project space is per allocation (`/anvil/projects/x-<account>`), so
 ## Adding a cluster (e.g. PSC Bridges-2)
 
 Add `config/nf_tel.env.<cluster>` with every variable above and
-`config/client-<cluster>.yaml.example` with that cluster's partition, qos and
+`config/client-<cluster>.yaml` with that cluster's partition, qos and
 resources. No template or code changes are needed when the cluster runs SLURM.
 Decide `slurm_export_none` by testing whether login-node modules leak into jobs,
 and check `sbatch --test-only` with the rendered script before starting the daemon.
@@ -147,12 +146,11 @@ tmux kill-session -t nf                                             # stop
 tail -f $NF_TEL_DAEMON/daemon.log
 ```
 
-Update nf-client from the checkout, then restart:
-
-```bash
-source ~/.nf_tel.env && cd $NF_TEL_REPO && git pull --ff-only
-uv tool install --force --python 3.13 $NF_TEL_REPO/packages/nf_client
-```
+Update with `just deploy-clients <cluster>` from a workstation, not by hand: it
+installs nf-client from `git+file://$NF_TEL_REPO@<sha>`, so the heartbeat's
+`nf_client_version` reads `<version>+<sha7>` and the daily health report can
+flag a daemon that is behind main (#254). The checkout is left detached at
+that commit.
 
 The daemon re-reads `$NF_TEL_CONFIG` every poll and the template on every
 submit; only nf-client code changes and env-file changes need a restart.
