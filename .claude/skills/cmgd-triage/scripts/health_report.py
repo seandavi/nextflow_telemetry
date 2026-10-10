@@ -73,6 +73,33 @@ def total_for(api, version, process, status, window_hours, limit=1):
     return get(api, q)
 
 
+REPO_API = "https://api.github.com/repos/seandavi/nextflow_telemetry"
+CLIENT_PATHS = ("packages/nf_client/", "templates/", "config/")
+
+
+def check_client_drift(r, d):
+    """Flag a daemon whose commit (nf_client_version `<ver>+<sha7>`, #254) is
+    missing changes on main that the cluster runs: client, templates, config."""
+    ver = d.get("nf_client_version") or ""
+    if "+" not in ver:
+        r.note(f"daemon {d['agent_id']} reports no commit ({ver or 'no version'}); "
+               f"redeploy with `just deploy-clients` (#254)")
+        return
+    sha = ver.rsplit("+", 1)[1]
+    try:
+        req = urllib.request.Request(f"{REPO_API}/compare/{sha}...main",
+                                     headers={"User-Agent": "cmgd-health-report/2"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            files = [f["filename"] for f in json.load(resp).get("files", [])]
+    except Exception as e:  # GitHub down or rate-limited: say so, don't fail the report
+        r.note(f"daemon {d['agent_id']}: drift check against main failed ({e})")
+        return
+    behind = [f for f in files if f.startswith(CLIENT_PATHS)]
+    if behind:
+        r.flag(f"daemon {d['agent_id']} runs {sha}; main changed {len(behind)} deployed "
+               f"file(s) since (e.g. {behind[0]}); run `just deploy-clients`")
+
+
 class Report:
     def __init__(self):
         self.lines = []
@@ -152,11 +179,13 @@ def run(args):
         seen = d.get("last_seen_at")
         stale = _age_minutes(seen)
         flagstr = ""
-        if WORKFLOW_ID in (d.get("workflow_id") or ""):
+        wf = d.get("workflow_id") or ""
+        if not wf or WORKFLOW_ID in wf:  # empty gate = claims every active registration
             if stale is None or stale > args.daemon_stale_min:
                 r.flag(f"daemon {d['agent_id']} heartbeat stale "
                        f"(last_seen {seen}, ~{stale}min)")
                 flagstr = "  <-- STALE"
+            check_client_drift(r, d)
         r.say(f"  {d['agent_id']:<40} status={d.get('status')} "
               f"active_runs={d.get('active_runs')} last_seen={seen}{flagstr}")
 

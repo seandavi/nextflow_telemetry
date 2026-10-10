@@ -47,8 +47,7 @@ echo '[ -f ~/.nf_tel.env ] && . ~/.nf_tel.env' >> ~/.bash_profile
 source ~/.nf_tel.env
 mkdir -p $NF_TEL_DAEMON $NF_TEL_LOGS $NF_TEL_STORE
 git clone https://github.com/seandavi/nextflow_telemetry $NF_TEL_REPO
-cp $NF_TEL_REPO/config/client-$NF_TEL_CLUSTER.yaml.example $NF_TEL_CONFIG
-uv tool install --python 3.13 $NF_TEL_REPO/packages/nf_client
+uv tool install --python 3.13 "nf-client @ git+file://$NF_TEL_REPO@$(git -C $NF_TEL_REPO rev-parse HEAD)#subdirectory=packages/nf_client"
 curl -fsSL https://get.nextflow.io -o $NF_TEL_DAEMON/nextflow && chmod +x $NF_TEL_DAEMON/nextflow   # pinned by NXF_VER
 ```
 

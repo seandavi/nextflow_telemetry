@@ -1,4 +1,5 @@
-# Installed at $NF_TEL_CONFIG. ${NAME} is expanded from the daemon's environment
+# Read in place from the checkout ($NF_TEL_CONFIG); deployed by `just deploy-clients` (#254).
+# ${NAME} is expanded from the daemon's environment
 # (~/.nf_tel.env, ~/.nf_tel.secrets); an unset variable fails the load.
 server_url: "https://nf-telemetry.seandavi.workers.dev/api"
 weblog_url: "https://nf-telemetry.seandavi.workers.dev/telemetry"
@@ -9,7 +10,9 @@ continuous: true
 
 dispatch:
   batch_size: 50             # smaller batches finish inside the wrapper walltime
-  workflow_id: "cmgd_nextflow,cmgd_mpa4.2"   # comma-separated or YAML list (ADR-0010)
+  # No workflow_id: claim from every active registration. Pausing or retiring a
+  # registration on the server is the gate (#249). Set a list here only for a
+  # cluster that can't run everything.
 
 submission:
   mode: slurm
