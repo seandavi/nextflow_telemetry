@@ -507,6 +507,17 @@ describe("failed runs", () => {
   });
 });
 
+describe("workflow gate", () => {
+  it("claims with a comma-joined workflow_id the way dispatchability reads it (#250)", async () => {
+    await post("/api/workflows", { ...WF, workflow_id: "commawf" });
+    await post("/api/samples", { sample_id: "sampleC1", ncbi_accession: "SRR000031", collection: "PRJNA000031" });
+    await post("/api/admin/reconcile-jobs", {});
+    const res = await post("/api/dispatch/batch", { limit: 10, workflow_id: ["nosuchwf,commawf"] });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as any).workflow_id).toBe("commawf");
+  });
+});
+
 describe("registrations are bundles (ADR-0010)", () => {
   const BUNDLE = {
     ...WF,

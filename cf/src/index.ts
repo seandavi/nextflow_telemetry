@@ -55,7 +55,10 @@ const api = new Hono<{ Bindings: Env }>();
 api.post("/dispatch/batch", describeRoute({ summary: "Claim a batch of pending jobs and mint a run", tags: ["dispatch"], requestBody: { content: { "application/json": { schema: resolver(S.ClaimRequest) } } }, responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.ClaimedBatch) } } }, "204": { description: "Nothing pending for the requested workflows" } } }), async (c) => {
   const body = await json(c);
   const limit = clamp(num(body.limit, 50), 1, 500);
-  const workflowIds = body.workflow_id == null ? null : ([] as string[]).concat(body.workflow_id);
+  // Split comma-joined ids the way dispatchability does, so a daemon sending
+  // ["a,b"] claims a and b instead of nothing (#250).
+  const workflowIds = body.workflow_id == null ? null : ([] as string[]).concat(body.workflow_id)
+    .flatMap((x) => String(x).split(",")).map((x) => x.trim()).filter(Boolean);
 
   const batch = await control(c.env).claimBatch(limit, workflowIds, body.workflow_version ?? null);
   if (!batch) return c.body(null, 204);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Daily cmgd_nextflow fleet health report — read-only, safe to cron.
+"""Daily cmgd fleet health report (one workflow_id, default cmgd_mpa4.2) — read-only, safe to cron.
 
 Runs the `cmgd-triage` "Fleet health report" sweep against the telemetry API,
 applies the documented signal-vs-noise rules, prints a concise report, and sets
@@ -23,8 +23,8 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 
-DEFAULT_API = "https://nf-telemetry.cancerdatasci.org"
-WORKFLOW_ID = "cmgd_nextflow"
+DEFAULT_API = "https://nf-telemetry.seandavi.workers.dev"
+DEFAULT_WORKFLOW_ID = "cmgd_mpa4.2"  # the corpus registration (#238); 2.2.1 cmgd_nextflow is paused
 
 # Processes whose failures are expected background (retry-recovers or per-sample
 # ignore). See skill. Anything NOT here that fails notably is worth a look.
@@ -51,8 +51,20 @@ def is_infra_abort(exit_code):
 
 def get(api, path, timeout=30):
     url = f"{api}{path}"
-    with urllib.request.urlopen(url, timeout=timeout) as r:
+    # Cloudflare rejects urllib's default User-Agent with 403.
+    req = urllib.request.Request(url, headers={"User-Agent": "cmgd-health-report/2"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
+
+
+def get_or_none(api, path):
+    """GET, but return None on 501 (v2 historical-metrics routes, nextflow_telemetry #175)."""
+    try:
+        return get(api, path)
+    except urllib.error.HTTPError as e:
+        if e.code == 501:
+            return None
+        raise
 
 
 def total_for(api, version, process, status, window_hours, limit=1):
@@ -82,9 +94,10 @@ class Report:
 
 def run(args):
     api = args.api
+    WORKFLOW_ID = args.workflow_id
     r = Report()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
-    r.say(f"cmgd_nextflow health report — {now}")
+    r.say(f"{WORKFLOW_ID} health report — {now}")
     r.say(f"api: {api}")
     r.say("=" * 60)
 
@@ -95,7 +108,7 @@ def run(args):
         r.flag(f"expected exactly 1 active {WORKFLOW_ID} row, found {len(active)} "
                f"(reconcile double-dispatches every sample if >1)")
         if not active:
-            r.say("no active cmgd_nextflow workflow — nothing to report")
+            r.say(f"no active {WORKFLOW_ID} workflow — nothing to report")
             return r
     wf = active[0]
     pk = wf["id"]
@@ -107,6 +120,7 @@ def run(args):
     r.say("")
     r.say(f"jobs: {js['completed']}/{js['total']} complete ({js['completion_pct']}%)  "
           f"running={js['running']} pending={js['pending']} "
+          f"claimed={js.get('claimed', 0)} submitted={js.get('submitted', 0)} "
           f"failed={js['failed']} dead_letter={js['dead_letter']}")
     if js["total"]:
         dlq_pct = 100.0 * js["dead_letter"] / js["total"]
@@ -147,19 +161,24 @@ def run(args):
               f"active_runs={d.get('active_runs')} last_seen={seen}{flagstr}")
 
     # --- failure signatures (what's breaking) ---
-    sigs = get(api, f"/api/metrics/processes/failure-signatures"
-                    f"?workflow_version={version}&window_hours={args.window_hours}")
+    sigs = get_or_none(api, f"/api/metrics/processes/failure-signatures"
+                            f"?workflow_version={version}&window_hours={args.window_hours}")
     r.say("")
-    r.say(f"failure signatures (last {args.window_hours}h):")
-    if not sigs.get("rows"):
+    if sigs is None:
+        r.say("failure signatures / assessment: historical metrics not available yet (#175)")
+        sigs = {}
+    else:
+        r.say(f"failure signatures (last {args.window_hours}h):")
+    if sigs and not sigs.get("rows"):
         r.say("  none")
     for row in sigs.get("rows", []):
         r.say(f"  {row['process']:<40} exit={row['exit_code']:<6} "
               f"action={row['error_action']:<8} n={row['failures']}")
 
     # --- classify each failing process ---
-    r.say("")
-    r.say("assessment:")
+    if sigs:
+        r.say("")
+        r.say("assessment:")
     for row in sigs.get("rows", []):
         proc, n, code = row["process"], row["failures"], row["exit_code"]
         if any(proc.startswith(p) for p in REGRESSION_ZERO):
@@ -197,9 +216,12 @@ def run(args):
                    f"— below investigate threshold ({args.min_unknown})")
 
     # --- recent failure-rate trend ---
-    tl = get(api, f"/api/metrics/processes/timeline"
-                  f"?workflow_version={version}&bucket=hour&window_hours={args.window_hours}")
-    rows = tl.get("rows", [])
+    tl = get_or_none(api, f"/api/metrics/processes/timeline"
+                          f"?workflow_version={version}&bucket=hour&window_hours={args.window_hours}")
+    if tl is None:
+        r.say("")
+        r.say("recent task failure rate: historical metrics not available yet (#175)")
+    rows = (tl or {}).get("rows", [])
     if rows:
         recent = rows[-3:]
         tot = sum(x["total"] for x in recent)
@@ -230,6 +252,7 @@ def _age_minutes(iso):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--api", default=DEFAULT_API)
+    ap.add_argument("--workflow-id", default=DEFAULT_WORKFLOW_ID)
     ap.add_argument("--version", default=None, help="override workflow version (default: active row's)")
     ap.add_argument("--window-hours", type=int, default=24)
     ap.add_argument("--daemon-stale-min", type=int, default=15)
