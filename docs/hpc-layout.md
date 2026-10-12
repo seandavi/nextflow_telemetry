@@ -93,7 +93,7 @@ and check `sbatch --test-only` with the rendered script before starting the daem
 | projects | 250 G, 140 G used (56 %) | 5 T, 132 G used |
 | scratch | 2.8 P shared, purged | 100 T, purged |
 | nextflow | 25.10.8 launcher at `$NF_TEL_DAEMON/nextflow` (Java 18 module); the 24.04 module is not used | 25.10.8 launcher at `$NF_TEL_DAEMON/nextflow` (Temurin 21 at `$NF_TEL_DAEMON/jdk`) |
-| partitions | `acpu` (1 day) with qos `cpu-normal`; `cpu-long` for 7 days. `amilan` is gone. | `shared` |
+| partitions | `acpu`. Run wrappers use qos `cpu-long` at 4 days (must be >24h, 7-day cap, 20 nodes per user) because a wrapper waits on every child including retries; child tasks use the default qos (1 day). `amilan` is gone. | `shared` |
 
 Scratch purges empty `$NF_TEL_SIF_CACHE`. A run that finds it cold builds each
 image inside its wrapper job, and `mksquashfs` on the 1.6 GB MetaPhlAn image needs
