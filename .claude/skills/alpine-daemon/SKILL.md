@@ -45,7 +45,7 @@ remote commands with `source ~/.nf_tel.env`.
 | SSH | `ssh alpine` (tailnet jump via dccapp720; BatchMode ok) | `ssh anvil` (pinned to login07; BatchMode ok) |
 | Cluster user | `seda0001_amc` | `x-seandavi` |
 | `NF_TEL_ACCOUNT` | `amc-general` | `cis240955` (ACCESS; `NF_TEL_HOME` derives from it) |
-| Partition / qos | `acpu` / `cpu-normal` (1 day); `amilan` is gone | `shared` |
+| Partition / qos | wrapper: `acpu` / `cpu-long` (4 days; needs >24h, 20-node per-user cap); child tasks: `acpu` default qos (1 day); `amilan` is gone | `shared` |
 | Nextflow `-profile` | `alpine,r2` (R2 `s3://cmgd-raw`, ADR 0008) | `anvil,r2` (since 2026-10-07); never `anvil,gcs` (new GCS writes violate ADR 0008) |
 | `slurm_export_none` | `true` (login env leaks to compute) | `false` |
 | Nextflow | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, `jdk/18.0.1.1`); not the 24.04 module | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, user-space Temurin 21 at `$NF_TEL_DAEMON/jdk`; modules stop at Java 11) |
