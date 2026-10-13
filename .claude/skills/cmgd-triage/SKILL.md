@@ -19,7 +19,7 @@ the decision tree below.
 ## Step 0 — orient
 
 ```bash
-API=https://nf-telemetry.cancerdatasci.org
+API=https://nf-telemetry.seandavi.workers.dev
 curl -s "$API/api/workflows?status=active" | python3 -m json.tool     # which pk is live
 curl -s "$API/api/workflows/<pk>/job-summary" | python3 -m json.tool  # counts
 curl -s "$API/api/admin/dispatchability" | python3 -m json.tool       # is it even being claimed
@@ -63,7 +63,7 @@ On the onclappc02-adjacent workstation the wrapper runs as the
 them here**. The manual recipe below is the same read-only sweep by hand:
 
 ```bash
-API=https://nf-telemetry.cancerdatasci.org
+API=https://nf-telemetry.seandavi.workers.dev
 PK=$(curl -s "$API/api/workflows?status=active" | python3 -c 'import sys,json;print([w["id"] for w in json.load(sys.stdin) if w["workflow_id"]=="cmgd_nextflow"][0])')
 V=$(curl -s "$API/api/workflows/$PK" | python3 -c 'import sys,json;print(json.load(sys.stdin)["version"])')
 
@@ -164,7 +164,7 @@ No active daemon claims this workflow_id.
 for a human-driven recovery; after any of them, confirm via `job-summary`.
 
 ```bash
-API=https://nf-telemetry.cancerdatasci.org
+API=https://nf-telemetry.seandavi.workers.dev
 curl -s -X POST "$API/api/admin/requeue-dead-letter"             # DLQ → pending
 curl -s -X POST "$API/api/admin/expire-stale-runs?older_than_hours=2"  # close zombies, sweep
 curl -s -X POST "$API/api/admin/reset-running"                   # last resort: running → pending

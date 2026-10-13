@@ -37,6 +37,18 @@ line each: one ControlDO, DO alarms instead of Workflows and sweepers, NDJSON on
 R2 instead of Pipelines, reprocess instead of migrating jobs, `job_counts` by
 trigger, wrapper and weblog routes open.
 
+## What changed since 2026-09-21
+
+- **Cutover done (confirmed 2026-10-13):** clusters, `cmgd.cancerdatasci.org` and
+  the fleet-health cron all use v2 (`nf-telemetry.seandavi.workers.dev`). Both
+  daemons (Alpine `login-ci4`, Anvil `login07`) are on it.
+- Live: 125/137 pilot jobs complete under `cmgd_mpa4.2 2.3.0` (#238), 12 running
+  in one Alpine run, 0 failed, 0 dead-letter. Run states, queue-wait
+  (`submitted` → `running` on the weblog `started` event) and run classification
+  match SLURM (`squeue`/`/runs`, checked 2026-10-13).
+- Remaining under #193: v1 retirement and Phases 1–3 (#195–#197). The sections
+  below are the 2026-09-21 card and are historical.
+
 ## Your attention
 
 0. **Production hardening deployed** (Phase 0 of #194): `POST /admin/reset` is

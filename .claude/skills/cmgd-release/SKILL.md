@@ -45,7 +45,7 @@ break silently. This is the single most important rule.
 The workflow row's `revision` is what daemons check out. Update it and flip
 lifecycle status so only the new version dispatches.
 ```bash
-API=https://nf-telemetry.cancerdatasci.org
+API=https://nf-telemetry.seandavi.workers.dev
 curl -s "$API/api/workflows" | python3 -m json.tool        # find pks + current revisions
 
 # Point the live row at the new tag (if reusing a row) ...

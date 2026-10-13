@@ -43,8 +43,10 @@ Two packages in one repo:
 Plus a third, in-progress implementation:
 
 - **`cf/`** — v2 of the server: same wire protocol, Cloudflare Workers + Durable
-  Objects + R2 instead of FastAPI + Postgres. Not yet deployed; v1 is still the
-  live server. See `cf/README.md` for what is and isn't implemented (the
+  Objects + R2 instead of FastAPI + Postgres. **Live**: clusters and
+  `cmgd.cancerdatasci.org` use it (`https://nf-telemetry.seandavi.workers.dev`, no
+  `/api` prefix); the v1 FastAPI container is no longer the source of truth
+  (#193 phases track its retirement). See `cf/README.md` for what is and isn't implemented (the
   historical `/metrics/processes/*` tier and `/submissions` are not) and for the
   places where it deliberately diverges from the v2 spec. TypeScript, `npm test`.
 
