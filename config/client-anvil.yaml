@@ -10,9 +10,12 @@ continuous: true
 
 dispatch:
   batch_size: 25             # smaller batches finish inside the wrapper walltime; same as Alpine
-  # No workflow_id: claim from every active registration. Pausing or retiring a
-  # registration on the server is the gate (#249). Set a list here only for a
-  # cluster that can't run everything.
+  # Accept list: claim only these workflow ids. Anvil is held to cmgd_nextflow
+  # (paused, so effectively idle) while cmgd_mpa4.2 runs on Alpine: Anvil is down
+  # for power maintenance 2026-10-13..23. After that, delete this line to claim from
+  # every active registration (the Alpine setting) or add cmgd_mpa4.2 here. The
+  # daemon re-reads this file every poll, so no restart is needed.
+  workflow_id: [cmgd_nextflow]
 
 submission:
   mode: slurm
