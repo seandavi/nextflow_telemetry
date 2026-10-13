@@ -1,5 +1,7 @@
 # nextflow_telemetry — Work Plan / Roadmap
 
+> **Note (2026-10-13):** v2 cutover is done; for current state see #193 and `cf/STATUS.md`. Epic text below predates it.
+
 _Last updated: 2026-07-10. Author: planning pass over the open-issue backlog after a
 telemetry-hardening + 100k-scale UI evaluation session; 2026-07-10 added the Architecture
 deepening section from a `/improve-codebase-architecture` design review._

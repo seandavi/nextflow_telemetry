@@ -17,7 +17,7 @@ shared reference for talking to it; `cmgd-triage`, `cmgd-release`, and
 
 ## Base URL
 
-Production: `https://nf-telemetry.cancerdatasci.org`
+Production: `https://nf-telemetry.seandavi.workers.dev`
 Local dev:  `http://localhost:8000`
 
 All app routes are under `/api`. The single exception is `/telemetry` (the
@@ -87,7 +87,7 @@ gate them behind a human:
 ## Quick recipes
 
 ```bash
-API=https://nf-telemetry.cancerdatasci.org
+API=https://nf-telemetry.seandavi.workers.dev
 
 # Active workflows + their pks (pk is the {workflow_pk} in PATCH/job-summary)
 curl -s "$API/api/workflows?status=active" | python3 -m json.tool

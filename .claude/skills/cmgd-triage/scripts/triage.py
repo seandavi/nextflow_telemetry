@@ -14,7 +14,7 @@ import json
 import sys
 import urllib.request
 
-DEFAULT_API = "https://nf-telemetry.cancerdatasci.org"
+DEFAULT_API = "https://nf-telemetry.seandavi.workers.dev"
 
 
 def get(url: str):
