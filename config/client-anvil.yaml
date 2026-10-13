@@ -9,7 +9,7 @@ profile: "anvil,r2"    # R2 output (ADR 0008); needs ~/.nf_tel.r2 and Nextflow >
 continuous: true
 
 dispatch:
-  batch_size: 50             # smaller batches finish inside the wrapper walltime
+  batch_size: 25             # smaller batches finish inside the wrapper walltime; same as Alpine
   # No workflow_id: claim from every active registration. Pausing or retiring a
   # registration on the server is the gate (#249). Set a list here only for a
   # cluster that can't run everything.
@@ -17,7 +17,7 @@ dispatch:
 submission:
   mode: slurm
   template_path: "${NF_TEL_REPO}/templates/submit_slurm.sh.j2"
-  max_concurrent_runs: 5
+  max_concurrent_runs: 10
   slurm_export_none: false   # Anvil's compute environment is clean
 
   defaults:
