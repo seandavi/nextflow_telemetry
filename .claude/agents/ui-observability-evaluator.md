@@ -32,7 +32,7 @@ pretty" reviewer — every finding must matter to that operator.
   — `obscura fetch <url> --dump text|markdown|html -e '<js>'`, or `obscura serve`
   for CDP. Obscura has **no paint engine** (cannot screenshot) — use chromium for
   visuals, obscura for quick DOM/text pulls.
-- The dashboard reads live data from `https://nf-telemetry.cancerdatasci.org/api`
+- The dashboard reads live data from `https://nf-telemetry.seandavi.workers.dev/api`
   (public, unauthenticated today). Cross-check what the UI *shows* against what
   the API *has* (e.g. `/api/admin/stats`, `/api/workflows`, `/api/runs`).
 - Ground every visual claim in an actual screenshot (`Read` the PNGs). Ground

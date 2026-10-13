@@ -45,7 +45,8 @@ Plus a third, in-progress implementation:
 - **`cf/`** — v2 of the server: same wire protocol, Cloudflare Workers + Durable
   Objects + R2 instead of FastAPI + Postgres. **Live**: clusters and
   `cmgd.cancerdatasci.org` use it (`https://nf-telemetry.seandavi.workers.dev`; routes work with or
-  without `/api`); the v1 FastAPI container is no longer the source of truth
+  without `/api`); the v1 FastAPI container no longer runs orchestration but still
+  backs the Worker's historical-tier routes via `CATALOG_URL` (ADR-0009), so keep it up
   (#193 phases track its retirement). See `cf/README.md` for what is and isn't implemented (the
   historical `/metrics/processes/*` tier and `/submissions` are not) and for the
   places where it deliberately diverges from the v2 spec. TypeScript, `npm test`.
@@ -98,12 +99,8 @@ Integration tests (`test_integration.py`, `test_e2e.py`) spin up a real Postgres
 - **`MARK_COMPLETE` sentinel**: Per-sample completion is signalled by a Nextflow process named `MARK_COMPLETE` (checked via `.endswith("MARK_COMPLETE")`). The pipeline must emit this process with `status=COMPLETED` for a job to be marked complete.
 - **Server restart after code changes**: uvicorn caches modules at startup — always restart after a `git pull` on a deployed instance.
 
-## Delegating menial work (Haiku subagents)
+## Cheap status checks (use scripts, not agents)
 
-Project agents in `.claude/agents/` run on Haiku to keep bulk output out of the main context and save cost/latency. Use them for mechanical, read-only gathering; keep judgement, diagnosis and any write on the main thread.
-
-- `fleet-snapshot` — live API + squeue snapshot. Trigger: "how's the fleet", before triage, after a deploy.
-- `stale-ref-sweeper` — grep sweeps for stale URLs/names after a rename or cutover. Trigger: any rename/cutover/doc cleanup.
-- `issue-digest` — checklist/last-comment digest for issues and PRs. Trigger: need status of ≥2 issues, or any issue with a long body.
-
-Agents report; they never mutate (no requeue, deploy, close, edit). Verify anything surprising yourself before acting on it.
+- Fleet state: `just health` (`.claude/skills/cmgd-triage/scripts/health_report.py`, GET-only, deterministic). SLURM side: `ssh alpine|anvil 'squeue -u $USER'` per the hpc-ssh skill. A run's jobs are batched, so API job counts exceed SLURM wrapper jobs; `nf-*` SLURM jobs are Nextflow tasks.
+- Stale-reference sweeps: plain `grep -rnI`; read the hits yourself. Issue status: `gh issue view N --json ...`.
+- Model-written summaries of mechanical output added noise and unverified claims when tried (2026-10-13); prefer a script.
