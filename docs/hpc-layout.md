@@ -7,7 +7,7 @@ Every SLURM cluster runs the same pieces; only values differ:
 | Paths, account, modules | `config/nf_tel.env.<cluster>` | `~/.nf_tel.env`, sourced from `~/.bash_profile` |
 | v2 bearer token | GSM `cdsci-nf-telemetry-v2-api-token` (project `cdsci-infra`) | `~/.nf_tel.secrets` (mode 600, `export NF_OPERATOR_TOKEN=...`) |
 | R2 S3 keys (`-profile r2`) | GSM `cdsci-r2-account-id`, `cdsci-r2-access-key-id`, `cdsci-r2-secret-access-key` | `~/.nf_tel.r2` (mode 600, `export R2_ACCOUNT_ID=...` etc.), sourced by the submit script ([ADR 0008](adr/0008-object-storage-on-r2.md)) |
-| Client yaml | `config/client-<cluster>.yaml` | read in place (`$NF_TEL_CONFIG` points into the checkout) |
+| Client yaml | `config/client-<cluster>.yaml` | read in place: `$NF_TEL_CONFIG` = `$NF_TEL_REPO/config/client-<cluster>.yaml`, so the checkout *is* the config |
 | Submit template | `templates/submit_slurm.sh.j2` | read from `$NF_TEL_REPO` |
 | Daemon launcher | `config/nf_tel_daemon.sh` | run from `$NF_TEL_REPO` in tmux |
 
@@ -23,6 +23,34 @@ at one commit, restarts the daemon, and checks its heartbeat):
 ```bash
 just deploy-clients all            # or: alpine | anvil, optional ref (default origin/main)
 ```
+
+### Where the client yaml comes from, and the accept list
+
+The tracked `config/client-<cluster>.yaml` is the only source of truth. Before
+#255 it was an untracked, hand-edited copy in `$NF_TEL_DAEMON` (seeded from a
+`.example`); those copies and their `*.bak*` files are leftovers and are no
+longer read once a cluster is deployed at or after #255. Change a setting by
+PR, then `just deploy-clients`; never edit the file on the cluster (the next
+deploy checks out over it and refuses a dirty checkout).
+
+`dispatch.workflow_id` is the **accept list**: the daemon claims only those
+workflow ids. Omit it to claim from every *active* registration (Alpine does;
+pausing or retiring a registration on the server is then the gate). A revision
+bump (ADR-0004) keeps the workflow id, so it never needs an accept-list edit;
+only a brand-new workflow id does. Anvil is currently pinned to
+`[cmgd_nextflow]` (see the comment in its yaml).
+
+Order of operations for a release: tag the pipeline, `PATCH /workflows/{pk}/revision`
+(see the `cmgd-release` skill), merge any client yaml change, then
+`just deploy-clients <cluster>`. The yaml is re-read every poll, so a yaml-only
+change is live as soon as the checkout is at the new commit; nf-client code and
+env-file changes need the restart that `deploy-clients` performs.
+
+Restarting is safe with runs in flight: the daemon holds no run state, it counts
+active runs from UUID-named wrapper jobs in `squeue` (`_count_active_slurm_jobs`),
+and wrappers report to the server directly. `deploy-clients` still refuses when
+the daemon reports active runs; pass `FORCE=1` for a code or env change you do
+not want to wait out.
 
 ## Variables
 
