@@ -20,11 +20,7 @@ shared reference for talking to it; `cmgd-triage`, `cmgd-release`, and
 Production: `https://nf-telemetry.seandavi.workers.dev`
 Local dev:  `http://localhost:8000`
 
-> **v2 (Cloudflare Worker) has no `/api` prefix**: use `$API/runs`, `$API/admin/stats`,
-> `$API/daemons`, not `$API/api/...`. The endpoint map below is v1-shaped; drop the
-> `/api` and check `cf/README.md` for which routes exist (8 analytical ones are 501).
-
-All app routes are under `/api` (v1 only). The single exception is `/telemetry` (the
+All app routes are under `/api`. The single exception is `/telemetry` (the
 Nextflow `-with-weblog` sink) which is **unauthenticated by design** — Nextflow's
 weblog cannot send auth headers.
 
