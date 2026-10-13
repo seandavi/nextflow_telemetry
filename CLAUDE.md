@@ -102,5 +102,6 @@ Integration tests (`test_integration.py`, `test_e2e.py`) spin up a real Postgres
 ## Cheap status checks (use scripts, not agents)
 
 - Fleet state: `just health` (`.claude/skills/cmgd-triage/scripts/health_report.py`, GET-only, deterministic). SLURM side: `ssh alpine|anvil 'squeue -u $USER'` per the hpc-ssh skill. A run's jobs are batched, so API job counts exceed SLURM wrapper jobs; `nf-*` SLURM jobs are Nextflow tasks.
+- The fleet-health issue (#256) body is a once-a-day snapshot and can be hours old; run `just health` for live state before calling anything stuck.
 - Stale-reference sweeps: plain `grep -rnI`; read the hits yourself. Issue status: `gh issue view N --json ...`.
 - Model-written summaries of mechanical output added noise and unverified claims when tried (2026-10-13); prefer a script.
