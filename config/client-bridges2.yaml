@@ -16,8 +16,10 @@ submission:
   template_path: "${NF_TEL_REPO}/templates/submit_slurm.sh.j2"
   # 0 = heartbeat but never claim. The pipeline needs a `bridges2` profile in the
   # registered revision before this cluster can run anything (Nextflow rejects an
-  # unknown -profile). Raise to 2 once that release is registered. Keep it low:
-  # the allocation is 10,000 SU and 1000 GiB of Ocean for everything.
+  # unknown -profile). Raise to 2 once that release is registered. Ocean disk is
+  # the limit, not SUs: the pipeline deletes nothing mid-run, so a run holds about
+  # 50 GB per sample (fastq + kneaddata, measured on Anvil 2026-10-13) until it
+  # ends. Peak disk ~ batch_size x max_concurrent_runs x 50 GB, plus the ~90 GB store.
   max_concurrent_runs: 0
   slurm_export_none: false   # login env does not leak modules into jobs here (no modules loaded)
 
