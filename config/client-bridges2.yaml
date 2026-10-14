@@ -9,18 +9,17 @@ profile: "bridges2,r2"   # R2 output (ADR 0008); needs ~/.nf_tel.r2 and Nextflow
 continuous: true
 
 dispatch:
-  batch_size: 25
+  batch_size: 10             # disk-bound: ~50 GB per sample held until the run ends
 
 submission:
   mode: slurm
   template_path: "${NF_TEL_REPO}/templates/submit_slurm.sh.j2"
-  # 0 = heartbeat but never claim. The pipeline needs a `bridges2` profile in the
-  # registered revision before this cluster can run anything (Nextflow rejects an
-  # unknown -profile). Raise to 2 once that release is registered. Ocean disk is
-  # the limit, not SUs: the pipeline deletes nothing mid-run, so a run holds about
-  # 50 GB per sample (fastq + kneaddata, measured on Anvil 2026-10-13) until it
-  # ends. Peak disk ~ batch_size x max_concurrent_runs x 50 GB, plus the ~90 GB store.
-  max_concurrent_runs: 0
+  # Ocean disk, not SUs, limits this: the pipeline deletes nothing mid-run, so a
+  # run holds about 50 GB per sample (fastq + kneaddata, measured on Anvil
+  # 2026-10-13) until it ends. Peak ~ batch_size x max_concurrent_runs x 50 GB,
+  # plus the 83 GB store. 1 x 10 fits the 1000 GiB quota; at 5 TB, 6 x 10 does.
+  # Needs pipeline >= 2.3.2 (first release with -profile bridges2).
+  max_concurrent_runs: 1
   slurm_export_none: false   # login env does not leak modules into jobs here (no modules loaded)
 
   defaults:
