@@ -78,8 +78,11 @@ export NXF_TEMP=$WORKDIR/tempdir
 cat << NFOVERRIDE > nextflow_override.config
 workDir = 'work'
 process.executor = 'slurm'
-process.clusterOptions = '--partition {{ partition }}{% if account | default('') %} --account {{ account }}{% endif %}{% if qos | default('') %} --qos={{ qos }}{% endif %} --output=$NF_TEL_LOGS/nf-%j.out'
-process.queueSize = 200
+{% if max_mem_per_cpu_mb | default('') %}// The cluster rejects jobs above {{ max_mem_per_cpu_mb }} MB per core (Bridges-2 RM-shared), so raise
+// each task's cores to fit its memory. A trailing --cpus-per-task overrides Nextflow's -c.
+process.clusterOptions = { "--partition {{ partition }}{% if account | default('') %} --account {{ account }}{% endif %}{% if qos | default('') %} --qos={{ qos }}{% endif %} --output=$NF_TEL_LOGS/nf-%j.out --cpus-per-task=\${task.memory ? Math.max(task.cpus as int, Math.ceil(task.memory.toMega() / {{ max_mem_per_cpu_mb }}) as int) : task.cpus}" }
+{% else %}process.clusterOptions = '--partition {{ partition }}{% if account | default('') %} --account {{ account }}{% endif %}{% if qos | default('') %} --qos={{ qos }}{% endif %} --output=$NF_TEL_LOGS/nf-%j.out'
+{% endif %}process.queueSize = 200
 process.time = '24h'
 params.store_dir = '$NF_TEL_STORE'
 singularity.runOptions = '--bind $NF_TEL_STORE:/keep/store/'

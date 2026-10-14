@@ -276,6 +276,34 @@ def test_slurm_template_keeps_task_dirs_under_the_run_dir() -> None:
     assert "trap cleanup EXIT" in script
 
 
+def test_slurm_template_raises_task_cores_to_fit_a_per_core_memory_cap() -> None:
+    """max_mem_per_cpu_mb (Bridges-2) appends a Groovy --cpus-per-task that survives the bash heredoc."""
+    import subprocess
+    from pathlib import Path
+
+    from nf_client.submission import render_submission_script
+
+    tmpl = Path(__file__).resolve().parents[3] / "templates" / "submit_slurm.sh.j2"
+    ctx = {
+        "mem": "8G", "cpus": 2, "time": "1:00:00", "partition": "p", "log_dir": "/l",
+        "run_name": "r1", "sample_ids": "s", "workflow_repository": "o/r",
+        "workflow_revision": "1.0", "profile": "bridges2,r2", "server_url": "u",
+        "weblog_url": "w", "workflow_id": "wf", "workflow_version": "1",
+        "metadata_tsv_content": "",
+    }
+
+    def override(**extra) -> str:
+        script = render_submission_script(tmpl, {**ctx, **extra})
+        heredoc = "cat << NFOVERRIDE" + script.split("cat << NFOVERRIDE", 1)[1].split("\nNFOVERRIDE", 1)[0]
+        return subprocess.run(["bash", "-c", heredoc.replace("> nextflow_override.config", "") + "\nNFOVERRIDE\n"],
+                              env={"NF_TEL_LOGS": "/logs", "NF_TEL_STORE": "/store"},
+                              capture_output=True, text=True, check=True).stdout
+
+    capped = override(max_mem_per_cpu_mb=2000)
+    assert "--output=/logs/nf-%j.out --cpus-per-task=${task.memory ? Math.max(task.cpus as int, Math.ceil(task.memory.toMega() / 2000) as int) : task.cpus}" in capped
+    assert "--cpus-per-task" not in override()
+
+
 def _run_rendered(tmp_path, wrapper_body: str, env_extra: dict, signal_after: float | None = None):
     """Render the real template, stub nf-client, run the batch script under bash."""
     import os

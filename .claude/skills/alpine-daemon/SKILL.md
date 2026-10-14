@@ -40,17 +40,17 @@ Source of truth: `docs/hpc-layout.md` (variables, files) and
 Non-interactive `ssh host 'cmd'` does **not** source `~/.bash_profile`; start
 remote commands with `source ~/.nf_tel.env`.
 
-| | Alpine (CU Boulder) | Anvil (Purdue) |
-|---|---|---|
-| SSH | `ssh alpine` (tailnet jump via dccapp720; BatchMode ok) | `ssh anvil` (pinned to login07; BatchMode ok) |
-| Cluster user | `seda0001_amc` | `x-seandavi` |
-| `NF_TEL_ACCOUNT` | `amc-general` | `cis240955` (ACCESS; `NF_TEL_HOME` derives from it) |
-| Partition / qos | wrapper: `acpu` / `cpu-long` (4 days; needs >24h, 20-node per-user cap); child tasks: `acpu` default qos (1 day); `amilan` is gone | `shared` |
-| Nextflow `-profile` | `alpine,r2` (R2 `s3://cmgd-raw`, ADR 0008) | `anvil,r2` (since 2026-10-07); never `anvil,gcs` (new GCS writes violate ADR 0008) |
-| `slurm_export_none` | `true` (login env leaks to compute) | `false` |
-| Nextflow | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, `jdk/18.0.1.1`); not the 24.04 module | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, user-space Temurin 21 at `$NF_TEL_DAEMON/jdk`; modules stop at Java 11) |
-| Short test partition | `atesting`, qos `testing` (1 h) | — |
-| GCS access | `rclone gs1:` only (no gcloud/gsutil) | — |
+| | Alpine (CU Boulder) | Anvil (Purdue) | Bridges-2 (PSC) |
+|---|---|---|---|
+| SSH | `ssh alpine` (tailnet jump via dccapp720; BatchMode ok) | `ssh anvil` (pinned to login07; BatchMode ok) | `ssh bridges2` via an open ControlMaster session (PSC needs interactive auth; open one with a plain `ssh bridges2` first); daemon on `br012` |
+| Cluster user | `seda0001_amc` | `x-seandavi` | `seandavi` |
+| `NF_TEL_ACCOUNT` | `amc-general` | `cis240955` (ACCESS; `NF_TEL_HOME` derives from it) | `cis260344p` (10,000 SU, 1000 GiB Ocean total) |
+| Partition / qos | wrapper: `acpu` / `cpu-long` (4 days; needs >24h, 20-node per-user cap); child tasks: `acpu` default qos (1 day); `amilan` is gone | `shared` | `RM-shared`, 3 days max; **2000 MB per core cap**, so the template raises task cores to fit memory (`max_mem_per_cpu_mb`) |
+| Nextflow `-profile` | `alpine,r2` (R2 `s3://cmgd-raw`, ADR 0008) | `anvil,r2` (since 2026-10-07); never `anvil,gcs` (new GCS writes violate ADR 0008) | `bridges2,r2` (needs a pipeline release carrying `conf/profiles/bridges2.config`; idle via `max_concurrent_runs: 0` until then) |
+| `slurm_export_none` | `true` (login env leaks to compute) | `false` | `false` |
+| Nextflow | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, `jdk/18.0.1.1`); not the 24.04 module | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, user-space Temurin 21 at `$NF_TEL_DAEMON/jdk`; modules stop at Java 11) | 25.10.8 launcher, user-space Temurin 21 at `$NF_TEL_DAEMON/jdk` (system java is 1.8) |
+| Short test partition | `atesting`, qos `testing` (1 h) | — | `RM-small` (8 h) |
+| GCS access | `rclone gs1:` only (no gcloud/gsutil) | — | — |
 
 ## Start / stop / restart
 
@@ -67,7 +67,7 @@ tail -n 20 $NF_TEL_DAEMON/daemon.log
 (`@reboot` and every 10 min): if no `nf-client daemon` process exists it starts the
 tmux session above and logs to `$NF_TEL_DAEMON/watchdog.log`. A reboot or crash
 costs at most ~10 min. Install/inspect with `crontab -l`; the crontab lives on that
-login node only (login-ci4, login07), so reinstall it if the daemon moves nodes.
+login node only (login-ci4, login07, br012), so reinstall it if the daemon moves nodes.
 To stop the daemon on purpose, comment out the crontab lines first.
 
 Confirm from a fresh connection that the process survived, not just the log:

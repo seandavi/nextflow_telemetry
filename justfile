@@ -33,7 +33,7 @@ help:
 	@echo ""
 	@echo "Production deploy (onclappc02)"
 	@echo "  just deploy-onclappc02   Fetch OAuth secrets from GCP SM, rebuild+restart the API."
-	@echo "  just deploy-clients [alpine|anvil|all] [ref]   Deploy HPC daemons at a pushed commit (FORCE=1 over active runs)."
+	@echo "  just deploy-clients [alpine|anvil|bridges2|all] [ref]   Deploy HPC daemons at a pushed commit (FORCE=1 over active runs)."
 
 # Install project + dev dependencies into .venv using uv.
 sync:

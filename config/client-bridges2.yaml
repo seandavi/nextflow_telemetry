@@ -1,0 +1,34 @@
+# Read in place from the checkout ($NF_TEL_CONFIG); deployed by `just deploy-clients` (#254).
+# ${NAME} is expanded from the daemon's environment
+# (~/.nf_tel.env, ~/.nf_tel.secrets); an unset variable fails the load.
+server_url: "https://nf-telemetry.seandavi.workers.dev/api"
+weblog_url: "https://nf-telemetry.seandavi.workers.dev/telemetry"
+token: "${NF_OPERATOR_TOKEN}"
+
+profile: "bridges2,r2"   # R2 output (ADR 0008); needs ~/.nf_tel.r2 and Nextflow >= 25.04
+continuous: true
+
+dispatch:
+  batch_size: 25
+
+submission:
+  mode: slurm
+  template_path: "${NF_TEL_REPO}/templates/submit_slurm.sh.j2"
+  # 0 = heartbeat but never claim. The pipeline needs a `bridges2` profile in the
+  # registered revision before this cluster can run anything (Nextflow rejects an
+  # unknown -profile). Raise to 2 once that release is registered. Keep it low:
+  # the allocation is 10,000 SU and 1000 GiB of Ocean for everything.
+  max_concurrent_runs: 0
+  slurm_export_none: false   # login env does not leak modules into jobs here (no modules loaded)
+
+  defaults:
+    # RM-shared rejects more than 2000 MB per core, for the wrapper and for every
+    # task; the template raises each task's cores to fit its memory.
+    max_mem_per_cpu_mb: 2000
+    mem: "7900M"             # >4G for mksquashfs on a cold SIF cache (#208); 4 cores x 2000M
+    cpus: 4
+    time: "72:00:00"         # RM-shared max walltime is 3 days
+    partition: "RM-shared"
+    account: "${NF_TEL_ACCOUNT}"
+    log_dir: "${NF_TEL_LOGS}"
+    publish_base: "s3://cmgd-raw"   # must match the r2 profile; results go to <base>/<workflow_id>/<version>/ (#220)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy the nf-client daemon to the HPC login nodes at one pushed commit (#254).
 #
-#   scripts/deploy_clients.sh <alpine|anvil|all> [ref]      (or: just deploy-clients ...)
+#   scripts/deploy_clients.sh <alpine|anvil|bridges2|all> [ref]      (or: just deploy-clients ...)
 #
 # Per cluster, on the login node the daemon runs on (from /api/daemons; NODE=
 # overrides, e.g. for a first deploy):
@@ -10,15 +10,17 @@
 #   3. reinstall nf-client from git+file://<checkout>@<sha>, so the heartbeat reports the sha
 #   4. restart the daemon, then poll /api/daemons until it reports <version>+<sha7>
 # The client yaml is read in place from the checkout ($NF_TEL_CONFIG), so step 2
-# deploys it too. ssh aliases `alpine` and `anvil` must work non-interactively.
+# deploys it too. ssh aliases `alpine`, `anvil` and `bridges2` must work
+# non-interactively (Bridges-2: an open ControlMaster session, since PSC login
+# needs interactive auth).
 set -euo pipefail
 
 API=${NF_TEL_API:-https://nf-telemetry.seandavi.workers.dev}
-target=${1:?usage: deploy_clients.sh <alpine|anvil|all> [ref]}
+target=${1:?usage: deploy_clients.sh <alpine|anvil|bridges2|all> [ref]}
 ref=${2:-origin/main}
 case $target in
-    all) clusters=(alpine anvil) ;;
-    alpine|anvil) clusters=("$target") ;;
+    all) clusters=(alpine anvil bridges2) ;;
+    alpine|anvil|bridges2) clusters=("$target") ;;
     *) echo "unknown cluster: $target" >&2; exit 2 ;;
 esac
 
