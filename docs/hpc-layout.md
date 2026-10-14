@@ -117,7 +117,7 @@ and check `sbatch --test-only` with the rendered script before starting the daem
 
 | | |
 |---|---|
-| SSH | `ssh bridges2` lands on a round-robin login node (daemon on `br012`). PSC login needs interactive auth, so non-interactive commands and `deploy-clients` ride an open `ControlMaster` session (`ControlPersist 4h` in `~/.ssh/config`) |
+| SSH | `ssh bridges2` lands on a round-robin login node (daemon on `br012`). PSC login needs interactive auth, so non-interactive commands and `deploy-clients` ride an open `ControlMaster` session (`ControlPersist 4h` in `~/.ssh/config`). `scp` is refused; pipe files instead: `ssh bridges2 'cat > ~/f' < f` |
 | Allocation | `cis260344p`: 10,000 SU (RM, billed per core-hour) and 1000 GiB Ocean for store, SIF cache and run dirs together. `cis260183p` has no SUs |
 | Partition | `RM-shared`, 3-day max walltime, at most 64 cores per job |
 | Memory | Rejects any job above **2000 MB per core** ("mem-per-core higher than maximum"). The client yaml sets `max_mem_per_cpu_mb: 2000`, which makes the submit template raise each task's `--cpus-per-task` to `ceil(memory / 2000 MB)`. MetaPhlAn's 55 GiB therefore costs 29 cores, about 29 SU per hour |
