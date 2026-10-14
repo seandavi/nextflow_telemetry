@@ -84,7 +84,7 @@ REMOTE
         got=$(curl -fsS --max-time 30 "$API/api/daemons/" | python3 -c '
 import json, sys
 for d in json.load(sys.stdin):
-    if d["agent_id"] == sys.argv[1]:
+    if d["agent_id"].split(".")[0] == sys.argv[1].split(".")[0]:   # NODE= may be the short name
         print(d.get("nf_client_version") or "")' "$node")
         if [[ $got == *"$want" ]]; then echo "[$cluster] $node: running $got"; return 0; fi
     done
