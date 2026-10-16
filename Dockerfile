@@ -8,6 +8,9 @@ COPY --from=ghcr.io/astral-sh/uv:0.8.11 /uv /uvx /bin/
 
 WORKDIR /app
 
+# git: uv fetches the cdsci-lake dependency from GitHub.
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml uv.lock ./
 
 RUN uv sync --frozen --no-dev --no-install-project
