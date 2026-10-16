@@ -32,6 +32,7 @@ STUDY_PARQUET = {
     "bracken.parquet": "taxonomic_profile_bracken",
     "resistome.parquet": "resistome",
     "pathways.parquet": "humann_pathabundance",
+    "metadata.parquet": "sample_metadata_harmonized",
 }
 STUDY_FILE_DOCS = {
     SPECIES_TSV: ("Species x samples matrix: one row per MetaPhlAn species clade (clade_name), "
@@ -42,6 +43,8 @@ STUDY_FILE_DOCS = {
     "bracken.parquet": "taxonomic_profile_bracken rows for the study (long).",
     "resistome.parquet": "resistome rows for the study (long).",
     "pathways.parquet": "humann_pathabundance rows for the study (long; HUMAnN registrations only).",
+    "metadata.parquet": ("sample_metadata_harmonized rows for the study (long: one row per sample "
+                         "and field, with source and source release). CC-BY-4.0, see manifest.json."),
     QC_TSV: "qc_metrics rows for the study: one row per sample, with run_ids.",
 }
 

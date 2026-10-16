@@ -15,7 +15,7 @@ from cdsci.lake.publish.builder import LocalDirStore
 from cdsci.lake.publish.frozen import frozen_ducklake_attach_sql
 from cdsci.lake.publish.verify import verify_release
 from cmgd_release_fixture import (  # noqa: F401 -- public_site is a fixture
-    GF_FILE, GF_ROWS, HUMANN, LEGACY, SPECIES, STUDIES, build_lake, public_site, sample_keys,
+    GF_FILE, GF_ROWS, HUMANN, LEGACY, REGS, SPECIES, STUDIES, build_lake, public_site, sample_keys,
 )
 
 from nextflow_telemetry.etl import cli, export, lake, publish
@@ -36,7 +36,8 @@ def test_release_is_published_verified_and_indexed(public_site):
                               contract=publish.dataset_contract(*reg)).passed
         latest = json.loads((public_site.root / m.dataset / "latest.json").read_text())
         assert latest["release"] == m.release
-        assert {s.ref for s in m.source_asset_versions} >= {f"lake.cmgd.{t.name}" for t in m.tables}
+        assert {s.ref for s in m.source_asset_versions} >= {f"lake.cmgd.{t.name}" for t in m.tables
+                                                            if t.name != "samples"}
         assert all(t.license == publish.CMGD_DATA_LICENSE for t in m.tables)
     # gene families are downloads, never a release table; pathways only with HUMAnN
     legacy, _ = _release(public_site, LEGACY)
@@ -49,11 +50,11 @@ def test_release_is_published_verified_and_indexed(public_site):
 def test_root_index_lists_every_published_dataset(public_site):
     idx = json.loads((public_site.root / "index.json").read_text())
     assert idx["spec_version"] == export.INDEX_SPEC_VERSION
-    assert [d["id"] for d in idx["datasets"]] == sorted(publish.dataset_id(*r) for r in (LEGACY, HUMANN))
+    assert [d["id"] for d in idx["datasets"]] == sorted(publish.dataset_id(*r) for r in REGS)
     for d in idx["datasets"]:
         latest = json.loads((public_site.root / d["latest"]).read_text())
         assert d["latest_release"] == latest["release"] == "2026-10-08"
-        assert (d["workflow_id"], d["version"]) in (LEGACY, HUMANN) and d["updated_at"]
+        assert (d["workflow_id"], d["version"]) in REGS and d["updated_at"]
     assert not list(public_site.root.glob(".index-*"))
 
 
@@ -177,7 +178,8 @@ def test_contract_documents_every_published_column():
     for reg in SPECS:
         for t in publish.published_tables(*reg):
             c = publish.table_contract(t)  # KeyError on an undocumented column/table
-            assert [col.name for col in c.columns] == list(lake.SCHEMAS[t])
+            cols = publish.SAMPLES_COLUMNS if t == publish.SAMPLES_TABLE else lake.SCHEMAS[t]
+            assert [col.name for col in c.columns] == list(cols)
 
 
 def test_parse_registration():
@@ -211,6 +213,39 @@ def test_cli_publish_builds_from_the_lake(tmp_path, monkeypatch, capsys):
 
     con = build_lake(tmp_path / "lake")
     monkeypatch.setattr(cdsci.lake, "lake_connect", lambda read_only: con)
+    monkeypatch.setattr(cli.v2, "registrations", lambda client: [])
     cli.main(["publish", "--registration", "cmgd_nextflow/2.2.1", "--out", str(tmp_path / "store")])
     assert "cmgd_nextflow-2.2.1" in capsys.readouterr().out
     assert json.loads((tmp_path / "store" / "cmgd_nextflow-2.2.1" / "latest.json").read_text())["release"]
+
+
+def test_samples_table_provenance_and_site(public_site):
+    m, rdir = _release(public_site, HUMANN)
+    samples = duckdb.sql(f"SELECT study_name, count(DISTINCT readset_id) FROM read_parquet("
+                         f"'{rdir}/tables/samples/data/part-00000.parquet') GROUP BY 1 ORDER BY 1").fetchall()
+    assert samples == sorted(STUDIES.items())
+    assert {t.name: t.license for t in m.tables}["samples"] == publish.CMGD_DATA_LICENSE
+    block = json.loads((rdir / "provenance.json").read_text())["cmgd"]
+    assert block["registration"]["workflow_id"] == HUMANN[0]
+    assert sum(r["n_samples"] for r in block["pipeline_runs"]) == sum(STUDIES.values())
+    assert block["licenses"]["samples"] == "CC0-1.0" and block["citation"]["cmgd"]
+    # pages: root landing + llms.txt, the release page, one page per study
+    root = public_site.root
+    landing, llms = (root / "index.html").read_text(), (root / "llms.txt").read_text()
+    assert f"{m.dataset}/{m.release}/index.html" in landing and "not part of this release" in landing
+    assert f"/{{dataset}}/{{release}}/tables/{{table}}/data/part-00000.parquet" in llms
+    assert (rdir / "index.html").exists()
+    for study in STUDIES:
+        page = (rdir / "studies" / study / "index.html").read_text()
+        assert all(k in page for k in sample_keys(HUMANN[0], study))
+    # the release's checksummed files are untouched by the pages
+    assert verify_release(LocalDirStore(root), m.dataset, m.release).passed
+
+
+def test_site_snippets_run_against_the_release(public_site):
+    from nextflow_telemetry.etl import site
+    m, rdir = _release(public_site, HUMANN)
+    r = site.Release(rdir, public_site.base)
+    con = duckdb.connect()
+    for sql in site._snippet_list(r):
+        assert con.execute(sql).fetchall(), sql

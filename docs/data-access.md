@@ -30,6 +30,7 @@ lists them all. To cite the data, give the dataset and the release id.
 ```text
 https://cmgd-public.cancerdatasci.org/
   index.json                          every dataset and its latest release
+  index.html, llms.txt                landing page; plain-text guide for programs and agents
   <dataset>/
     latest.json                       {"release": "2026-10-08", ...}
     releases.json                     every release, oldest first
@@ -40,7 +41,11 @@ https://cmgd-public.cancerdatasci.org/
       tables/<table>/schema.json      columns, types, units, descriptions
       tables/<table>/files.json       data files with size, sha256, row counts
       tables/<table>/data/part-00000.parquet
+      index.html                      release page: provenance, studies, files, query examples
+      provenance.json                 sources, plus a "cmgd" block: registration, pipeline runs,
+                                      reference databases, metadata source releases, licences
       studies/index.json              per-study downloads: studies, sample counts, files
+      studies/<study>/index.html      study page: samples, metadata coverage, files
       studies/<study>/metaphlan_species.tsv.gz, metaphlan.parquet, bracken.parquet,
                       resistome.parquet, pathways.parquet (HUMAnN datasets), qc.tsv
       genefamilies/index.json         HUMAnN datasets only: studies, each with its file below
@@ -336,6 +341,17 @@ every column.
 | `qc_metrics` | sample | `reads_raw`, `reads_decontaminated`, `bases_raw`, `bases_decontaminated`, surviving fractions, `metaphlan_index`/`metaphlan_profile`, `humann_bundle`, `pipeline_version`, `git_commit` |
 | `humann_pathabundance` | sample × pathway × stratum (HUMAnN datasets) | `pathway`, `stratum` (NULL = community total), `abundance`, `humann_bundle` |
 | `humann_pathcoverage` | sample × pathway × stratum (HUMAnN 3.9) | `pathway`, `stratum`, `coverage` |
+| `samples` | sample (releases from 2026-10-16 on) | `run_accessions`, `biosample`, `bioproject`, `pipeline_version`, `git_commit`, `completed_at`: the join hub to INSDC and to metadata sources |
+| `sample_metadata_cmd`, `sample_metadata_olm`, `sample_metadata_harmonized` | sample × field (when the release has metadata) | `field`, `value`, `source`, `release`, `route`, `confidence`: each value with the source and source release it came from |
+
+The `samples` table of the readset-keyed dataset, with its runs:
+
+```sql
+SELECT study_name, count(DISTINCT readset_id) AS n_samples
+FROM read_parquet('https://cmgd-public.cancerdatasci.org/cmgd_mpa4.2-2.3.0/2026-10-08/tables/samples/data/part-00000.parquet')
+GROUP BY study_name
+ORDER BY study_name;
+```
 
 Things to know before you compute:
 
@@ -351,8 +367,12 @@ Things to know before you compute:
 
 ## Licence
 
-The data is released under CC0-1.0 (recorded in every release's
-`manifest.json` and table schemas).
+Each table has its own licence, recorded in the release's `manifest.json`
+and table schemas. Pipeline outputs and the `samples` table are CC0-1.0.
+Metadata tables derived from the Olm lab Microbiome Repo
+(`sample_metadata_olm`, `sample_metadata_harmonized`) are CC-BY-4.0 and need
+the attribution in `provenance.json` (`cmgd.citation.olm`). Cite
+curatedMetagenomicData as `cmgd.citation.cmgd` there.
 
 ## Getting help
 

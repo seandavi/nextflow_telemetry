@@ -12,6 +12,7 @@ every registration with an OutputSpec is processed, narrowed by ``--workflow`` /
   nf-etl volumes                                    measured sizes + extrapolations (markdown)
   nf-etl publish --registration W/V [--out DIR]     build a public release into the local store
   nf-etl publish --registration W/V --sync          upload the built dataset to r2:cmgd-public
+  nf-etl mirror  --registration W/V --to zenodo|hf  copy a built release (Zenodo draft / HF repo)
 """
 from __future__ import annotations
 
@@ -127,13 +128,37 @@ def cmd_publish(a) -> None:
         return
     from cdsci.lake import lake_connect  # type: ignore[import-untyped]
 
+    with httpx.Client(timeout=60) as client:
+        reg = next((r for r in v2.registrations(client)
+                    if (r.workflow_id, r.version) == (workflow_id, version)), None)
+        jobs = v2.completed_jobs(client, reg) if reg else []
     con = lake_connect(read_only=True)
     try:
-        m = publish.publish(con, workflow_id, version, a.out)
+        m = publish.publish(con, workflow_id, version, a.out, jobs=jobs, registration=reg)
     finally:
         con.close()
     rows = {t.name: t.row_count for t in m.tables}
     print(f"{m.dataset} {m.release} -> {a.out}/{m.dataset}/{m.release}: {json.dumps(rows)}")
+
+
+def cmd_mirror(a) -> None:
+    """Copy a built release to Zenodo (as an unpublished draft) or a Hugging Face
+    Dataset repo (private unless --public). Never builds; never mints a DOI."""
+    from pathlib import Path
+
+    from . import mirror
+
+    workflow_id, version = publish.parse_registration(a.registration)
+    did = publish.dataset_id(workflow_id, version)
+    release = a.release or json.loads((Path(a.out) / did / "latest.json").read_text())["release"]
+    rdir = Path(a.out) / did / release
+    if a.to == "zenodo":
+        out = mirror.zenodo_deposit(rdir, publish.PUBLIC_BASE_URL, previous=a.previous,
+                                    dry_run=a.dry_run)
+    else:
+        out = mirror.hf_upload(rdir, a.repo, publish.PUBLIC_BASE_URL, public=a.public,
+                               dry_run=a.dry_run)
+    print(json.dumps(out, indent=2))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -163,9 +188,21 @@ def main(argv: list[str] | None = None) -> None:
     pub.add_argument("--remote", default=publish.SYNC_REMOTE)
     pub.add_argument("--dry-run", action="store_true", help="with --sync: print the rclone commands")
 
+    mir = sub.add_parser("mirror", help="copy a built release to Zenodo (draft) or Hugging Face")
+    mir.add_argument("--registration", required=True, help="<workflow_id>/<version>")
+    mir.add_argument("--release", default=None, help="release id (default: latest.json)")
+    mir.add_argument("--to", required=True, choices=("zenodo", "hf"))
+    mir.add_argument("--out", default=publish.PUBLISH_ROOT, help="local release store")
+    mir.add_argument("--previous", type=int, default=None,
+                     help="zenodo: deposition id to add a new version to (one concept DOI)")
+    mir.add_argument("--repo", default="cancerdatasci/curatedMetagenomicData",
+                     help="hf: dataset repo id")
+    mir.add_argument("--public", action="store_true", help="hf: create the repo public")
+    mir.add_argument("--dry-run", action="store_true", help="print the upload set, upload nothing")
+
     a = p.parse_args(argv)
     {"status": cmd_status, "ingest": cmd_ingest, "tick": cmd_tick, "parse": cmd_parse,
-     "volumes": cmd_volumes, "publish": cmd_publish}[a.cmd](a)
+     "volumes": cmd_volumes, "publish": cmd_publish, "mirror": cmd_mirror}[a.cmd](a)
 
 
 if __name__ == "__main__":
