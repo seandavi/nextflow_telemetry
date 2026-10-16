@@ -174,3 +174,21 @@ uploaded yet, then the root `index.json` the same way. The root index lists
 every dataset built in the local store, so sync each dataset you build. It
 never deletes anything in the bucket.
 
+
+## Sample metadata (nf-meta, ADR 0012)
+
+`nf-meta` loads metadata sources into `lake.cmgd_meta.*`. It uses the same
+environment as nf-etl. Run the steps in this order:
+
+```sh
+export CU_OPENALEX_LAKE_BACKEND=postgres
+uv run nf-meta load olm https://github.com/OlmLab/microbiome_repo-data/releases/download/data-v1.20.0/data_package_v1.20.0.zip \
+  --doi 10.5281/zenodo.23087712          # add --pin to move the pin to a newer release
+uv run nf-meta load cmd <commit-sha>     # curatedMetagenomicDataCuration; default master
+uv run nf-meta load xref                 # after either source (or v2 samples) changes
+uv run nf-meta views                     # seeds + views; views are DDL, so this always writes a snapshot
+```
+
+Reloading a release is a no-op: the ops run reports `idempotent`. The first
+release of a source is pinned. A later release is loaded alongside it and
+stays unpinned unless you pass `--pin`.

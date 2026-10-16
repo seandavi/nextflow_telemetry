@@ -26,6 +26,7 @@ dependencies = [
 
 [project.scripts]
 nf-etl = "nextflow_telemetry.etl.cli:main"
+nf-meta = "nextflow_telemetry.meta.cli:main"
 
 [dependency-groups]
 dev = [
@@ -45,6 +46,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["nextflow_telemetry*"]
+
+[tool.setuptools.package-data]
+"nextflow_telemetry.meta" = ["*.csv"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
