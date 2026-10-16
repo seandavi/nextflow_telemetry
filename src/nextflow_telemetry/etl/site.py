@@ -259,17 +259,22 @@ def _snippet_list(r: Release, study: str | None = None) -> list[str]:
     got = _sql(r.parquet("taxonomic_profile_metaphlan"), q, {"s": study} if study else None)
     sample = got[0] if got else None
     rs, st = (sample[0], sample[1]) if sample else ("RS.…", study or "…")
+    runs = _sql(r.parquet("qc_metrics"), "SELECT run_ids FROM {p} WHERE sample_key = $k",
+                {"k": rs}) if sample else []
+    run = (runs[0][0] or "").split(";")[0] if runs else "SRR…"
     out = [f"""-- DuckDB 1.5+: attach the whole release (read-only, fetches only what a query needs)
 INSTALL ducklake; LOAD ducklake; INSTALL httpfs; LOAD httpfs;
 ATTACH '{u}/catalog.ducklake' AS cmgd (
   TYPE DUCKLAKE, DATA_PATH '{u}/', OVERRIDE_DATA_PATH, READ_ONLY);
 SELECT study_name, count(*) AS n_samples FROM cmgd.samples GROUP BY 1 ORDER BY 1;""",
-           f"""-- Top 5 MetaPhlAn species of one sample, straight from Parquet (no attach needed)
-SELECT clade_name, relative_abundance
-FROM read_parquet('{u}/tables/taxonomic_profile_metaphlan/data/part-00000.parquet')
-WHERE sample_key = '{rs}' AND rank = 'species'
-  AND data_type = 'full_data' AND humann_bundle IS NULL
-ORDER BY relative_abundance DESC LIMIT 5;""",
+           f"""-- Top 5 MetaPhlAn species of the sample holding a run accession, straight from Parquet.
+-- run_ids / run_accessions are ';'-joined text: split them to match one run.
+SELECT q.sample_key, m.clade_name, m.relative_abundance
+FROM read_parquet('{u}/tables/taxonomic_profile_metaphlan/data/part-00000.parquet') m
+JOIN read_parquet('{u}/tables/qc_metrics/data/part-00000.parquet') q USING (sample_key)
+WHERE list_contains(string_split(q.run_ids, ';'), '{run}')
+  AND m.rank = 'species' AND m.data_type = 'full_data' AND m.humann_bundle IS NULL
+ORDER BY m.relative_abundance DESC LIMIT 5;""",
            f"""-- A study's samples: readset id, runs, BioSample, BioProject
 SELECT sample_key, run_accessions, biosample, bioproject
 FROM read_parquet('{u}/tables/samples/data/part-00000.parquet')
@@ -449,7 +454,8 @@ def llms_txt(rels: list[tuple[dict, Release | None]], featured: Release | None, 
               "", "## Join keys", "",
               "- sample_key / readset_id (RS.…): every table; samples has one row per sample",
               "- study_name: every table (curatedMetagenomicData study name)",
-              "- run_accessions, biosample, bioproject: samples table",
+              "- run_accessions, biosample, bioproject: samples table (run_ids in every table); "
+              "runs are ';'-joined text: match one with list_contains(string_split(run_ids, ';'), 'SRR…')",
               "- metadata tables (when present): sample_metadata_cmd, sample_metadata_olm, "
               "sample_metadata_harmonized, keyed by sample_key + field, with source and release per value",
               "", "## Profiles", "",
