@@ -22,3 +22,10 @@ def test_preview_job_does_not_trigger_on_labeled_add_study() -> None:
     preview_section = WORKFLOW.split("apply:")[0]
     assert "labeled' && github.event.label.name == 'add-study'" not in preview_section
     assert 'labeled" && github.event.label.name == "add-study"' not in preview_section
+
+
+def test_both_jobs_trigger_on_add_study_title_without_label() -> None:
+    """#196: issues filed without the template's label must still run."""
+    preview, apply = WORKFLOW.split("\n  apply:")
+    for job in (preview, apply):
+        assert "startsWith(github.event.issue.title, '[add-study]')" in job

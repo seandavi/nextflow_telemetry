@@ -8,6 +8,7 @@ the sample list the core registers.
 """
 from __future__ import annotations
 
+import statistics
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ..db import samples_tbl, submissions_tbl
+from ..log import logger
 from ..utils import normalize_srrs, srrs_to_sample_id
 from .collection import add_to_collection
 
@@ -25,8 +27,15 @@ ENA_FILEREPORT = "https://www.ebi.ac.uk/ena/portal/api/filereport"
 ENA_FIELDS = (
     "run_accession,secondary_sample_accession,sample_accession,"
     "study_accession,secondary_study_accession,sample_title,"
-    "library_strategy,library_selection,library_source,instrument_platform"
+    "library_strategy,library_selection,library_source,instrument_platform,"
+    "library_layout,base_count,read_count"
 )
+
+# Cost constants for the add-study estimate (docs/plans/onboarding-and-publication.md §2c).
+# ponytail: fixed constants; refit them from the MVP cohort's telemetry (#269).
+CORE_H_PER_SAMPLE = 24  # cmgd_mpa4.2 2.3.x rehearsal
+SCRATCH_GB_PER_SAMPLE = 50  # peak: fastq + kneaddata are held until the run ends
+SU_INTERCEPT, SU_PER_M_READS = 6.59, 0.198  # docs/research/resource-tuning-2.3.0.md
 
 # Library tags that mark a study as NOT shotgun metagenomics (16S/amplicon).
 _AMPLICON_STRATEGY = {"AMPLICON"}
@@ -100,8 +109,12 @@ def _group_samples(rows: list[dict[str, Any]], collection_id: str) -> list[dict[
         srs = (r.get("secondary_sample_accession") or "").strip()
         if not srr or not srs:
             continue
-        g = groups.setdefault(srs, {"srrs": [], "row": r})
+        g = groups.setdefault(srs, {"srrs": [], "row": r, "bases": 0, "reads": 0})
         g["srrs"].append(srr)
+        # Raw reads count both mates of a paired run; ENA read_count is spots.
+        mates = 2 if (r.get("library_layout") or "").upper() == "PAIRED" else 1
+        g["bases"] += int(r.get("base_count") or 0)
+        g["reads"] += int(r.get("read_count") or 0) * mates
 
     samples = []
     for srs, g in groups.items():
@@ -110,6 +123,8 @@ def _group_samples(rows: list[dict[str, Any]], collection_id: str) -> list[dict[
             "sample_id": srrs_to_sample_id(g["srrs"]),
             "ncbi_accession": normalize_srrs(g["srrs"]),
             "biosample_id": (r.get("sample_accession") or "").strip() or None,
+            "bases": g["bases"],
+            "reads": g["reads"],
             "metadata": {
                 "sra_sample": srs,
                 "biosample": (r.get("sample_accession") or "").strip() or None,
@@ -121,9 +136,27 @@ def _group_samples(rows: list[dict[str, Any]], collection_id: str) -> list[dict[
     return samples
 
 
+def estimate(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    """Cost of running ``samples`` (from ``_group_samples``) through cmgd_mpa4.2."""
+    gbp = [s["bases"] / 1e9 for s in samples]
+    su = sum(SU_INTERCEPT + SU_PER_M_READS * s["reads"] / 1e6 for s in samples)
+    return {
+        "samples": len(samples),
+        "gbp": round(sum(gbp), 1),
+        "median_gbp": round(statistics.median(gbp), 2) if gbp else 0.0,
+        "core_h": CORE_H_PER_SAMPLE * len(samples),
+        "anvil_su": round(su),
+        "peak_scratch_gb_per_sample": SCRATCH_GB_PER_SAMPLE,
+    }
+
+
 @dataclass
 class SubmissionService:
     engine: AsyncEngine
+    # v2 control plane (the Worker). With both set, a registration writes through
+    # to v2 POST /samples after the v1 transaction commits (#195). Empty: v1 only.
+    v2_url: str = ""
+    v2_token: str = ""
 
     async def register_from_accession(
         self, accession: str, submitted_by: str, dry_run: bool = False
@@ -168,6 +201,8 @@ class SubmissionService:
                     submission_id, "ena_accession", accession, collection_id, submitted_by, str(e)
                 )
             raise
+        # After the v1 commit: a v2 failure is reported in the receipt, never rolls v1 back.
+        v2 = {} if dry_run else await self._write_through(samples, collection_id)
         return {
             "submission_id": submission_id,
             "collection_id": collection_id,
@@ -176,8 +211,40 @@ class SubmissionService:
             "status": status,
             "library_composition": composition,
             "warnings": warnings,
+            "estimate": estimate(samples),
             **counts,
+            **v2,
         }
+
+    async def _write_through(self, samples: list[dict[str, Any]], collection_id: str) -> dict[str, Any]:
+        """Register each sample and its membership in v2. Re-submitting retries a
+        failure: both sides are idempotent. A sample v2 already has keeps its
+        metadata, because v2's upsert would otherwise replace it."""
+        if not (self.v2_url and self.v2_token):
+            return {}
+        failed: list[str] = []
+        async with httpx.AsyncClient(
+            base_url=self.v2_url.rstrip("/") + "/",
+            headers={"Authorization": f"Bearer {self.v2_token}"},
+            timeout=30,
+        ) as client:
+            for s in samples:
+                try:
+                    cur = await client.get(f"samples/{s['sample_id']}")
+                    meta = cur.json().get("metadata") if cur.status_code == 200 else None
+                    resp = await client.post("samples", json={
+                        "sample_id": s["sample_id"],
+                        "ncbi_accession": s["ncbi_accession"],
+                        "biosample_id": s["biosample_id"],
+                        "metadata": meta or s["metadata"],
+                        "collection": collection_id,
+                    })
+                    resp.raise_for_status()
+                except httpx.HTTPError as e:
+                    logger.warning("submission.v2_write_failed",
+                                   extra={"sample_id": s["sample_id"], "error": str(e)})
+                    failed.append(s["sample_id"])
+        return {"v2_written": len(samples) - len(failed), "v2_failed": failed}
 
     async def _count_new(self, samples: list[dict[str, Any]]) -> dict[str, int]:
         """Preview counts for a dry run — read-only, no writes."""

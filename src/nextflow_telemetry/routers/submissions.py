@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from ..config import settings
 from ..deps import Principal, require_role_or_token
 from ..services.submission import AccessionError, SubmissionService
 
@@ -47,11 +48,21 @@ class SubmissionReceipt(BaseModel):
         default_factory=list,
         description="Advisory flags (e.g. amplicon/16S runs detected). Never blocks a submission.",
     )
+    estimate: dict[str, Any] | None = Field(
+        default=None,
+        description="Processing cost: samples, gbp, median_gbp, core_h, anvil_su, peak_scratch_gb_per_sample.",
+    )
+    v2_written: int | None = Field(
+        default=None, description="Samples written through to the v2 control plane (absent when not configured)."
+    )
+    v2_failed: list[str] = Field(
+        default_factory=list, description="sample_ids whose v2 write failed; re-submit to retry."
+    )
 
 
 def create_submissions_router(engine: AsyncEngine) -> APIRouter:
     router = APIRouter(prefix="/submissions", tags=["submissions"])
-    svc = SubmissionService(engine=engine)
+    svc = SubmissionService(engine=engine, v2_url=settings.V2_API_URL, v2_token=settings.V2_API_TOKEN)
 
     @router.post(
         "",

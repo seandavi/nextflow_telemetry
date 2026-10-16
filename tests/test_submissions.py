@@ -168,3 +168,58 @@ def test_bad_accession_records_failed_submission(db_url):
         submissions_tbl.c.accession == "SRR999"))) == "failed"
     assert _run(_scalar(db_url, select(submissions_tbl.c.samples_added).where(
         submissions_tbl.c.accession == "SRR999"))) is None
+
+
+def test_estimate_counts_both_mates_of_paired_runs():
+    rows = [
+        dict(_ENA_ROWS[0], library_layout="PAIRED", base_count="2000000000", read_count="5000000"),
+        dict(_ENA_ROWS[1], library_layout="PAIRED", base_count="1000000000", read_count="5000000"),
+        dict(_ENA_ROWS[2], library_layout="SINGLE", base_count="1000000000", read_count="10000000"),
+    ]
+    est = sub_mod.estimate(sub_mod._group_samples(rows, "PRJNA1"))
+    # SRS1 = 20 M raw reads, 3 Gbp; SRS2 = 10 M raw reads, 1 Gbp.
+    assert est["samples"] == 2 and est["gbp"] == 4.0 and est["median_gbp"] == 2.0
+    assert est["core_h"] == 48 and est["peak_scratch_gb_per_sample"] == 50
+    assert est["anvil_su"] == round(2 * 6.59 + 0.198 * 30)
+
+
+def test_write_through_posts_each_sample_and_keeps_v2_metadata(db_url, monkeypatch):
+    import httpx
+
+    async def fake_fetch(accession):
+        return _ENA_ROWS
+
+    monkeypatch.setattr(sub_mod, "_fetch_runs", fake_fetch)
+    posts: list[dict] = []
+    existing = sub_mod.srrs_to_sample_id(["SRR3"])  # v2 already knows SRS2's sample
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.headers["authorization"] == "Bearer t"
+        if req.method == "GET":
+            if req.url.path.endswith(existing):
+                return httpx.Response(200, json={"metadata": {"curated": True}})
+            return httpx.Response(404, json={})
+        posts.append(__import__("json").loads(req.content))
+        return httpx.Response(201, json={})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(sub_mod.httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+
+    async def scenario():
+        engine = create_async_engine(db_url)
+        try:
+            svc = SubmissionService(engine=engine, v2_url="http://v2/api", v2_token="t")
+            r = await svc.register_from_accession("PRJNA1", submitted_by="a@b.c")
+            assert r["v2_written"] == 2 and r["v2_failed"] == []
+            dry = await svc.register_from_accession("PRJNA1", submitted_by="a@b.c", dry_run=True)
+            assert "v2_written" not in dry
+        finally:
+            await engine.dispose()
+
+    _run(scenario())
+    assert len(posts) == 2 and {p["collection"] for p in posts} == {"PRJNA1"}
+    by_id = {p["sample_id"]: p for p in posts}
+    assert by_id[existing]["metadata"] == {"curated": True}
+    other = next(p for sid, p in by_id.items() if sid != existing)
+    assert other["metadata"]["bioproject"] == "PRJNA1" and other["biosample_id"] == "SAMN1"

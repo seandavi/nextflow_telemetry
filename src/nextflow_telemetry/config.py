@@ -53,6 +53,9 @@ class Settings:
     # v2 control-plane API (the Worker): run → workflow attribution and
     # collection membership for the historical tier.
     V2_API_URL: str
+    # Bearer token for v2 writes (GSM cdsci-nf-telemetry-v2-api-token). Empty
+    # disables the submission write-through to v2 POST /samples.
+    V2_API_TOKEN: str
 
 settings = Settings(
     SQLALCHEMY_URI=_normalize_sqlalchemy_uri(
@@ -74,4 +77,5 @@ settings = Settings(
     R2_ACCESS_KEY_ID=os.environ.get("R2_ACCESS_KEY_ID", ""),
     R2_SECRET_ACCESS_KEY=os.environ.get("R2_SECRET_ACCESS_KEY", ""),
     V2_API_URL=os.environ.get("V2_API_URL", "https://nf-telemetry.seandavi.workers.dev/api"),
+    V2_API_TOKEN=os.environ.get("V2_API_TOKEN", ""),
 )
