@@ -75,13 +75,15 @@ export NXF_TEMP=$WORKDIR/tempdir
 # removes the task directories. A site profile pointing workDir at shared
 # scratch (anvil.config) leaked them: 4.8 TB on Anvil by 2026-10-08. Disk-limited
 # clusters (Bridges-2) depend on this.
+# Tasks take task_qos, never the wrapper's qos: Alpine's cpu-long (the wrapper's, #257)
+# rejects any job asking for 24 h or less, and Alpine now requires a qos on every job.
 cat << NFOVERRIDE > nextflow_override.config
 workDir = 'work'
 process.executor = 'slurm'
 {% if max_mem_per_cpu_mb | default('') %}// The cluster rejects jobs above {{ max_mem_per_cpu_mb }} MB per core (Bridges-2 RM-shared), so raise
 // each task's cores to fit its memory. A trailing --cpus-per-task overrides Nextflow's -c.
-process.clusterOptions = { "--partition {{ partition }}{% if account | default('') %} --account {{ account }}{% endif %}{% if qos | default('') %} --qos={{ qos }}{% endif %} --output=$NF_TEL_LOGS/nf-%j.out --cpus-per-task=\${task.memory ? Math.max(task.cpus as int, Math.ceil(task.memory.toMega() / {{ max_mem_per_cpu_mb }}) as int) : task.cpus}" }
-{% else %}process.clusterOptions = '--partition {{ partition }}{% if account | default('') %} --account {{ account }}{% endif %}{% if qos | default('') %} --qos={{ qos }}{% endif %} --output=$NF_TEL_LOGS/nf-%j.out'
+process.clusterOptions = { "--partition {{ partition }}{% if account | default('') %} --account {{ account }}{% endif %}{% if task_qos | default('') %} --qos={{ task_qos }}{% endif %} --output=$NF_TEL_LOGS/nf-%j.out --cpus-per-task=\${task.memory ? Math.max(task.cpus as int, Math.ceil(task.memory.toMega() / {{ max_mem_per_cpu_mb }}) as int) : task.cpus}" }
+{% else %}process.clusterOptions = '--partition {{ partition }}{% if account | default('') %} --account {{ account }}{% endif %}{% if task_qos | default('') %} --qos={{ task_qos }}{% endif %} --output=$NF_TEL_LOGS/nf-%j.out'
 {% endif %}process.queueSize = 200
 process.time = '24h'
 params.store_dir = '$NF_TEL_STORE'

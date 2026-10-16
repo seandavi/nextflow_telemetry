@@ -168,6 +168,30 @@ def test_slurm_template_gives_each_run_its_own_pipeline_checkout() -> None:
     assert script.index("NXF_ASSETS=") < script.index("nextflow run")
 
 
+def test_slurm_template_keeps_the_wrapper_qos_off_the_tasks() -> None:
+    """#269: Alpine's cpu-long qos rejects jobs of 24 h or less, so tasks must not inherit it."""
+    from pathlib import Path
+
+    from nf_client.submission import render_submission_script
+
+    tmpl = Path(__file__).resolve().parents[3] / "templates" / "submit_slurm.sh.j2"
+    ctx = {
+        "mem": "8G", "cpus": 2, "time": "4-00:00:00", "partition": "acpu", "qos": "cpu-long",
+        "log_dir": "/l", "run_name": "r1", "sample_ids": "s", "workflow_repository": "o/r",
+        "workflow_revision": "1.0", "profile": "alpine,r2", "server_url": "u",
+        "weblog_url": "w", "workflow_id": "wf", "workflow_version": "1",
+        "metadata_tsv_content": "",
+    }
+    for extra in ({}, {"max_mem_per_cpu_mb": 2000}):
+        script = render_submission_script(tmpl, {**ctx, **extra})
+        assert "#SBATCH --qos=cpu-long" in script
+        override = script.split("> nextflow_override.config\n", 1)[1].split("NFOVERRIDE", 1)[0]
+        assert "qos" not in override and "--partition acpu" in override
+        script = render_submission_script(tmpl, {**ctx, **extra, "task_qos": "cpu-normal"})
+        override = script.split("> nextflow_override.config\n", 1)[1].split("NFOVERRIDE", 1)[0]
+        assert "--qos=cpu-normal" in override and "cpu-long" not in override
+
+
 def test_slurm_template_publishes_under_the_registered_workflow() -> None:
     """#220: the pipeline's manifest version splits one registration and merges bundles."""
     from pathlib import Path
