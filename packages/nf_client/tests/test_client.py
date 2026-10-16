@@ -94,6 +94,21 @@ async def test_fetch_next_batch_returns_none_on_204(config: ClientConfig):
 
 
 @pytest.mark.asyncio
+async def test_create_submission_uses_long_timeout(config: ClientConfig):
+    """ENA lookup plus the v2 write-through outlast the default 30 s (#269)."""
+    seen = {}
+    with respx.mock(base_url="http://test.local") as mock:
+        def capture(request):
+            seen["timeout"] = request.extensions["timeout"]["read"]
+            return httpx.Response(201, json={"submission_id": "s"})
+
+        mock.post("/submissions").mock(side_effect=capture)
+        async with JobClient(config) as client:
+            assert (await client.create_submission("PRJNA1"))["submission_id"] == "s"
+    assert seen["timeout"] == 600
+
+
+@pytest.mark.asyncio
 async def test_report_submitted_sends_correct_payload(config: ClientConfig):
     captured = {}
 
