@@ -80,8 +80,44 @@ CITATION = {
 # Metadata tables (plan §4.2), name -> (lake.cmgd_meta view, SELECT). The SELECT
 # filters to the release's samples ({samples}: the samples parquet) and puts
 # study_name and sample_key first so the tables sort and join like the rest.
-META_TABLES: dict[str, tuple[str, str]] = {}
-LICENSES: dict[str, str] = {}
+_PINNED = ("JOIN {meta}.source_releases p ON p.source = v.source AND p.release = v.release "
+           "AND p.pinned")
+# A source row belongs to a release sample when one of its runs is in the
+# sample's readset (sample_xref: one row per readset x run).
+_TO_SAMPLES = ("JOIN {meta}.sample_xref x ON list_contains(v.run_accessions, x.run_accession) "
+               "JOIN {samples} s ON s.readset_id = x.readset_id")
+META_TABLES: dict[str, tuple[str, str]] = {
+    "sample_metadata_cmd": ("sample_values", (
+        "SELECT DISTINCT s.study_name, s.sample_key, v.field, v.value, v.source_field, "
+        "v.value_raw, v.value_unit, v.value_ontology::VARCHAR AS value_ontology, v.curator, "
+        "v.source, v.release, v.sample AS source_sample "
+        f"FROM {{meta}}.sample_values v {_PINNED} {_TO_SAMPLES} WHERE v.source = 'cmd' "
+        "ORDER BY s.study_name, s.sample_key, v.field, v.sample")),
+    # evidence_quote never leaves the lake (plan D4): sample_values doesn't carry it.
+    "sample_metadata_olm": ("sample_values", (
+        "SELECT DISTINCT s.study_name, s.sample_key, v.field, v.value, v.source_field, "
+        "v.value_raw, v.value_unit, v.confidence::DOUBLE AS confidence, v.route, "
+        "v.evidence_source, v.determined_by, v.biosample, v.source, v.release, "
+        "v.sample AS source_sample "
+        f"FROM {{meta}}.sample_values v {_PINNED} {_TO_SAMPLES} WHERE v.source = 'olm' "
+        "ORDER BY s.study_name, s.sample_key, v.field, v.sample")),
+    "sample_metadata_harmonized": ("sample_harmonized", (
+        "SELECT s.study_name, s.sample_key, h.field, h.value, h.source, h.release, h.route, "
+        "h.confidence::DOUBLE AS confidence FROM {meta}.sample_harmonized h "
+        "JOIN {samples} s USING (readset_id) ORDER BY s.study_name, s.sample_key, h.field")),
+    "metadata_comparison": ("compare_cmd_olm", (
+        "SELECT study AS study_name, field, olm_rows, n_both::BIGINT AS n_both, "
+        "n_agree::BIGINT AS n_agree, n_disagree::BIGINT AS n_disagree, "
+        "n_cmd_only::BIGINT AS n_cmd_only, n_olm_only::BIGINT AS n_olm_only, "
+        "agreement::DOUBLE AS agreement FROM {meta}.compare_cmd_olm "
+        "WHERE study IN (SELECT study_name FROM {samples}) ORDER BY ALL")),
+    "metadata_sources": ("source_releases", (
+        "SELECT source, release, package_version, doi, license, url, sha256, "
+        "loaded_at::VARCHAR AS loaded_at, pinned FROM {meta}.source_releases ORDER BY ALL")),
+}
+# Olm-derived tables need attribution (plan D4); the rest is CMGD_DATA_LICENSE.
+LICENSES: dict[str, str] = {t: OLM_LICENSE for t in (
+    "sample_metadata_olm", "sample_metadata_harmonized", "metadata_comparison")}
 
 SAMPLES_TABLE = "samples"
 SAMPLES_COLUMNS = {c: "VARCHAR" for c in (
@@ -129,6 +165,35 @@ _TABLES: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "accessions, BioSample and BioProject, with the pipeline version that produced it.",
         "one row per sample",
         ("sample_key",)),
+    "sample_metadata_cmd": (
+        "Sample metadata curated by curatedMetagenomicData (curation repo, pinned commit), one "
+        "row per field. `field`/`value` are harmonized where the field map covers the field.",
+        "one row per sample, field and cMD sample record",
+        ("sample_key", "field", "source_sample")),
+    "sample_metadata_olm": (
+        "Sample metadata from the Olm lab Microbiome Repo (pinned release), one row per field, "
+        "with Olm's route and confidence; no evidence quotes. Attribution required: "
+        f"{CITATION['olm']}",
+        "one row per sample, field and Olm sample",
+        ("sample_key", "field", "source_sample")),
+    "sample_metadata_harmonized": (
+        "One value per sample and harmonized field, with the source and source release it "
+        "came from (precedence: cMD curation, then Olm R1/R2 not imported from cMD, then Olm "
+        f"R3/R4 with confidence >= 0.5). Mixes Olm-derived values; attribution required: "
+        f"{CITATION['olm']}",
+        "one row per sample and field",
+        ("sample_key", "field")),
+    "metadata_comparison": (
+        "Agreement between cMD curation and the Olm Microbiome Repo per study and field, "
+        "with Olm's cMD-imported rows included (olm_rows = all) and excluded (independent). "
+        f"Attribution required: {CITATION['olm']}",
+        "one row per study, field and olm_rows scope",
+        ("study_name", "field", "olm_rows")),
+    "metadata_sources": (
+        "The metadata source releases in the store; `pinned` marks the one the metadata "
+        "tables read.",
+        "one row per source release",
+        ("source", "release")),
 }
 
 # (description, units) per column, shared by every table that carries it.
@@ -178,6 +243,37 @@ _COLUMNS: dict[str, tuple[str, str | None]] = {
                   None),
     "bioproject": ("INSDC BioProject/study accession(s), semicolon-separated.", None),
     "completed_at": ("When the pipeline run for this sample completed (UTC, ISO 8601).", None),
+    "field": ("Metadata field: the harmonized name (age_years, sex, country, bmi, "
+              "antibiotics_current_use, health_condition) where mapped, else the source's own.",
+              None),
+    "source_field": ("The field name as the source spells it.", None),
+    "value_raw": ("The value exactly as the source gives it.", None),
+    "value_unit": ("The source's unit for value_raw, when it gives one.", None),
+    "value_ontology": ("Ontology term ids the source attaches to the value.", None),
+    "curator": ("cMD curator of the record.", None),
+    "confidence": ("Source-reported confidence (Olm routes R3/R4); NULL for curated values.",
+                   "0-1"),
+    "route": ("How the value was determined: 'curated' (cMD) or Olm's route R1-R4.", None),
+    "evidence_source": ("Olm evidence source (external.cmd = imported from cMD).", None),
+    "determined_by": ("Olm determination method.", None),
+    "source": ("Metadata source: cmd (curatedMetagenomicData curation) or olm (Microbiome "
+               "Repo).", None),
+    "release": ("Source release: cMD curation commit, or Olm release id.", None),
+    "source_sample": ("The source's own sample id (cMD sample_id, Olm sample_key).", None),
+    "olm_rows": ("Olm rows compared: all, or independent (without external.cmd).", None),
+    "n_both": ("Samples with a value in both sources.", "samples"),
+    "n_agree": ("Of n_both, values that agree (age within 1 year).", "samples"),
+    "n_disagree": ("Of n_both, values that disagree.", "samples"),
+    "n_cmd_only": ("Samples with a cMD value only.", "samples"),
+    "n_olm_only": ("Samples with an Olm value only.", "samples"),
+    "agreement": ("n_agree / n_both.", "fraction (0-1)"),
+    "package_version": ("Source data package version.", None),
+    "doi": ("Source release DOI.", None),
+    "license": ("Source licence.", None),
+    "url": ("Where the source release was loaded from.", None),
+    "sha256": ("sha256 of the loaded source file.", None),
+    "loaded_at": ("When the release was loaded into the lake (UTC).", None),
+    "pinned": ("Whether this is the release the metadata tables read.", None),
 }
 
 
@@ -207,8 +303,10 @@ def has_humann(workflow_id: str, version: str) -> bool:
     return any("humann_bundle" in s.tags for s in SPECS[(workflow_id, version)])
 
 
-def _sort_by(table: str) -> tuple[str, ...]:
-    return tuple(c for c in ("study_name", "sample_key", lake._FEATURE.get(table)) if c)
+def _sort_by(table: str, columns: dict[str, str] | None = None) -> tuple[str, ...]:
+    feature = lake._FEATURE.get(table) or ("field" if table in META_TABLES else None)
+    return tuple(c for c in ("study_name", "sample_key", feature)
+                 if c and (columns is None or c in columns))
 
 
 def table_contract(table: str, columns: dict[str, str] | None = None) -> TableContract:
@@ -220,7 +318,7 @@ def table_contract(table: str, columns: dict[str, str] | None = None) -> TableCo
         name=table, description=description, grain=grain, primary_key=pk,
         temporal_model=TemporalModel.UPSERT_LATEST_SNAPSHOT,
         owner="curatedMetagenomicData", license=LICENSES.get(table, CMGD_DATA_LICENSE),
-        sort_by=_sort_by(table),
+        sort_by=_sort_by(table, cols),
         columns=tuple(ColumnContract(name=c, arrow_type=_ARROW[t], description=_COLUMNS[c][0],
                                      nullable=True, units=_COLUMNS[c][1])
                       for c, t in cols.items()),
@@ -360,7 +458,8 @@ def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
             shutil.move(str(extra), str(release_dir / extra.name))
         source_releases = []
         if meta and _has_meta(con, "source_releases"):
-            rel = con.sql(f"SELECT * FROM lake.{META_SCHEMA}.source_releases ORDER BY ALL")
+            rel = con.sql(f"SELECT * REPLACE (loaded_at::VARCHAR AS loaded_at) "
+                          f"FROM lake.{META_SCHEMA}.source_releases WHERE pinned ORDER BY ALL")
             source_releases = [dict(zip(rel.columns, r)) for r in rel.fetchall()]
     add_provenance(release_dir, workflow_id, version, registration, manifest, source_releases)
     site.write_study_pages(release_dir, public_base_url)
