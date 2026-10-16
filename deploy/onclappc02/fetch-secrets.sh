@@ -35,6 +35,8 @@ trap 'rm -f "$tmp"' EXIT
     echo "R2_ACCOUNT_ID=$(get cdsci-r2-account-id)"
     echo "R2_ACCESS_KEY_ID=$(get cdsci-r2-access-key-id)"
     echo "R2_SECRET_ACCESS_KEY=$(get cdsci-r2-secret-access-key)"
+    # Submission write-through to the v2 Worker (POST /api/samples).
+    echo "V2_API_TOKEN=$(get cdsci-nf-telemetry-v2-api-token)"
 } > "$tmp"
 
 chmod 600 "$tmp"

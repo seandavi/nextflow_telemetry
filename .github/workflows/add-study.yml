@@ -4,6 +4,11 @@
 # Requires two repo settings:
 #   - Variable NF_TELEMETRY_URL  → the API base URL, e.g. https://nf-telemetry.cancerdatasci.org/api
 #   - Secret   NF_OPERATOR_TOKEN → mirror of GCP SM secret `cmgd-api-operator-token`
+# The v1 API writes each registered sample through to the v2 Worker (#195), whose
+# public GETs the preview reads for the queued-work total.
+#
+# An issue counts as add-study when it carries the label OR its title starts with
+# `[add-study]`: issues filed without the template's label used to be skipped (#196).
 name: add-study
 
 on:
@@ -23,13 +28,14 @@ jobs:
     # event AND a `labeled` event, which would cause this job to run twice and post
     # duplicate comments.
     if: >
-      contains(github.event.issue.labels.*.name, 'add-study') &&
+      (contains(github.event.issue.labels.*.name, 'add-study') || startsWith(github.event.issue.title, '[add-study]')) &&
       (github.event.action == 'opened' || github.event.action == 'edited')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
       NF_TELEMETRY_URL: ${{ vars.NF_TELEMETRY_URL }}
       NF_OPERATOR_TOKEN: ${{ secrets.NF_OPERATOR_TOKEN }}
+      NF_V2_URL: https://nf-telemetry.seandavi.workers.dev/api
       ISSUE_BODY: ${{ github.event.issue.body }}
       ISSUE_NUMBER: ${{ github.event.issue.number }}
     steps:
@@ -66,7 +72,7 @@ jobs:
     # A maintainer applying `approved` to an add-study issue registers it for real.
     if: >
       github.event.action == 'labeled' && github.event.label.name == 'approved' &&
-      contains(github.event.issue.labels.*.name, 'add-study')
+      (contains(github.event.issue.labels.*.name, 'add-study') || startsWith(github.event.issue.title, '[add-study]'))
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -96,11 +102,12 @@ jobs:
             SID=$(printf '%s' "$OUT" | python -c "import sys,json;print(json.load(sys.stdin)['submission_id'])")
             NEW=$(printf '%s' "$OUT" | python -c "import sys,json;print(json.load(sys.stdin)['samples_added'])")
             EXIST=$(printf '%s' "$OUT" | python -c "import sys,json;print(json.load(sys.stdin)['samples_existing'])")
-            gh issue comment "$ISSUE_NUMBER" --body "✅ **Registered \`$ACC\`** — $NEW new samples, $EXIST already present.
+            V2=$(printf '%s' "$OUT" | python -c "import sys,json;r=json.load(sys.stdin);print(f\"{r.get('v2_written')} written to v2, {len(r.get('v2_failed') or [])} failed\")")
+            gh issue comment "$ISSUE_NUMBER" --body "✅ **Registered \`$ACC\`** — $NEW new samples, $EXIST already present ($V2).
 
           Submission ID: \`$SID\`
           Track progress in telemetry: https://cmgd.cancerdatasci.org
-          Jobs are not dispatched automatically — run \`nf-client reconcile\` (or the reconcile endpoint) when ready."
+          Jobs are not dispatched automatically: a maintainer adds collection \`$ACC\` to a workflow registration's \`collections\` scope on v2, then calls \`POST /admin/reconcile-jobs\`."
             gh issue close "$ISSUE_NUMBER"
           else
             gh issue comment "$ISSUE_NUMBER" --body "❌ Registration of \`$ACC\` failed:

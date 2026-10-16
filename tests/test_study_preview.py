@@ -34,3 +34,15 @@ def test_render_no_composition_no_warnings():
     assert "found **2** samples" in out
     assert "⚠️" not in out
     assert "Library composition" not in out
+
+
+def test_render_estimate_and_queued_backlog():
+    receipt = {
+        "samples_found": 2, "samples_added": 2, "samples_existing": 0,
+        "estimate": {"samples": 2, "gbp": 5.1, "median_gbp": 2.55, "core_h": 48,
+                     "anvil_su": 35, "peak_scratch_gb_per_sample": 50},
+    }
+    out = mod.render("PRJEB3", receipt, queued=10)
+    assert "**48 core-h**" in out and "**35 Anvil SU**" in out and "5.1 Gbp" in out
+    assert "10 unfinished jobs ≈ 240 core-h" in out
+    assert "Already queued" not in mod.render("PRJEB3", receipt)
