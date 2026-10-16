@@ -223,3 +223,25 @@ def test_write_through_posts_each_sample_and_keeps_v2_metadata(db_url, monkeypat
     assert by_id[existing]["metadata"] == {"curated": True}
     other = next(p for sid, p in by_id.items() if sid != existing)
     assert other["metadata"]["bioproject"] == "PRJNA1" and other["biosample_id"] == "SAMN1"
+
+
+def test_fetch_runs_retries_ena_5xx(monkeypatch):
+    import httpx
+
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(500) if len(calls) < 3 else httpx.Response(200, json=_ENA_ROWS)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(sub_mod.httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    monkeypatch.setattr(sub_mod, "ENA_RETRY_DELAY_S", 0)
+    assert _run(sub_mod._fetch_runs("PRJNA1")) == _ENA_ROWS and len(calls) == 3
+
+    calls.clear()
+    monkeypatch.setattr(sub_mod, "ENA_ATTEMPTS", 2)
+    with pytest.raises(httpx.HTTPStatusError):
+        _run(sub_mod._fetch_runs("PRJNA1"))
+    assert len(calls) == 2
