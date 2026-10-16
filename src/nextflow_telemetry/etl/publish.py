@@ -82,25 +82,32 @@ CITATION = {
 # study_name and sample_key first so the tables sort and join like the rest.
 _PINNED = ("JOIN {meta}.source_releases p ON p.source = v.source AND p.release = v.release "
            "AND p.pinned")
-# A source row belongs to a release sample when one of its runs is in the
-# sample's readset (sample_xref: one row per readset x run).
-_TO_SAMPLES = ("JOIN {meta}.sample_xref x ON list_contains(v.run_accessions, x.run_accession) "
-               "JOIN {samples} s ON s.readset_id = x.readset_id")
+
+
+def _source_rows(source: str, cols: str) -> str:
+    """One source's pinned rows of sample_values on the release's samples. A
+    source row belongs to a sample when one of its runs is in the sample's
+    readset (sample_xref: one row per readset x run); an equi-join on the
+    unnested runs, so only the release's runs are matched."""
+    return (
+        "WITH rs AS (SELECT DISTINCT x.run_accession, s.study_name, s.sample_key "
+        "FROM {meta}.sample_xref x JOIN {samples} s ON s.readset_id = x.readset_id), "
+        "v AS (SELECT v.*, unnest(v.run_accessions) AS run FROM {meta}.sample_values v "
+        f"{_PINNED} WHERE v.source = '{source}') "
+        f"SELECT DISTINCT rs.study_name, rs.sample_key, {cols} FROM v JOIN rs ON rs.run_accession = v.run "
+        "ORDER BY rs.study_name, rs.sample_key, v.field, source_sample")
+
+
 META_TABLES: dict[str, tuple[str, str]] = {
-    "sample_metadata_cmd": ("sample_values", (
-        "SELECT DISTINCT s.study_name, s.sample_key, v.field, v.value, v.source_field, "
-        "v.value_raw, v.value_unit, v.value_ontology::VARCHAR AS value_ontology, v.curator, "
-        "v.source, v.release, v.sample AS source_sample "
-        f"FROM {{meta}}.sample_values v {_PINNED} {_TO_SAMPLES} WHERE v.source = 'cmd' "
-        "ORDER BY s.study_name, s.sample_key, v.field, v.sample")),
+    "sample_metadata_cmd": ("sample_values", _source_rows("cmd", (
+        "v.field, v.value, v.source_field, v.value_raw, v.value_unit, "
+        "v.value_ontology::VARCHAR AS value_ontology, v.curator, v.source, v.release, "
+        "v.sample AS source_sample"))),
     # evidence_quote never leaves the lake (plan D4): sample_values doesn't carry it.
-    "sample_metadata_olm": ("sample_values", (
-        "SELECT DISTINCT s.study_name, s.sample_key, v.field, v.value, v.source_field, "
-        "v.value_raw, v.value_unit, v.confidence::DOUBLE AS confidence, v.route, "
-        "v.evidence_source, v.determined_by, v.biosample, v.source, v.release, "
-        "v.sample AS source_sample "
-        f"FROM {{meta}}.sample_values v {_PINNED} {_TO_SAMPLES} WHERE v.source = 'olm' "
-        "ORDER BY s.study_name, s.sample_key, v.field, v.sample")),
+    "sample_metadata_olm": ("sample_values", _source_rows("olm", (
+        "v.field, v.value, v.source_field, v.value_raw, v.value_unit, "
+        "v.confidence::DOUBLE AS confidence, v.route, v.evidence_source, v.determined_by, "
+        "v.biosample, v.source, v.release, v.sample AS source_sample"))),
     "sample_metadata_harmonized": ("sample_harmonized", (
         "SELECT s.study_name, s.sample_key, h.field, h.value, h.source, h.release, h.route, "
         "h.confidence::DOUBLE AS confidence FROM {meta}.sample_harmonized h "
@@ -112,7 +119,7 @@ META_TABLES: dict[str, tuple[str, str]] = {
         "agreement::DOUBLE AS agreement FROM {meta}.compare_cmd_olm "
         "WHERE study IN (SELECT study_name FROM {samples}) ORDER BY ALL")),
     "metadata_sources": ("source_releases", (
-        "SELECT source, release, package_version, doi, license, url, sha256, "
+        "SELECT source, release, package_version, doi, license, sha256, "
         "loaded_at::VARCHAR AS loaded_at, pinned FROM {meta}.source_releases ORDER BY ALL")),
 }
 # Olm-derived tables need attribution (plan D4); the rest is CMGD_DATA_LICENSE.
@@ -270,8 +277,7 @@ _COLUMNS: dict[str, tuple[str, str | None]] = {
     "package_version": ("Source data package version.", None),
     "doi": ("Source release DOI.", None),
     "license": ("Source licence.", None),
-    "url": ("Where the source release was loaded from.", None),
-    "sha256": ("sha256 of the loaded source file.", None),
+    "sha256": ("sha256 of the loaded source file. (Its download URL is in provenance.json: a frozen catalog may not carry URLs.)", None),
     "loaded_at": ("When the release was loaded into the lake (UTC).", None),
     "pinned": ("Whether this is the release the metadata tables read.", None),
 }
