@@ -22,6 +22,8 @@ class Registration:
     workflow_id: str
     version: str
     params: dict = field(default_factory=dict)
+    revision: str | None = None
+    repository_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,7 @@ class CompletedJob:
     sample_id: str | None  # md5 content address; None when the key is a readset id
     readset_id: str | None
     collections: tuple[str, ...] = ()
+    run_accessions: str | None = None  # ';'-joined, as v2 stores ncbi_accession
 
     @property
     def study_name(self) -> str | None:
@@ -48,13 +51,15 @@ def job_from_item(item: dict) -> CompletedJob:
         sample_id=item.get("sample_id") or (None if rs else key),
         readset_id=item.get("readset_id") or (key if rs else None),
         collections=tuple(item.get("collections") or ()),
+        run_accessions=item.get("ncbi_accession"),
     )
 
 
 def registrations(client: httpx.Client) -> list[Registration]:
     r = client.get(f"{API_URL}/api/workflows")
     r.raise_for_status()
-    return [Registration(w["id"], w["workflow_id"], w["version"], w.get("params") or {})
+    return [Registration(w["id"], w["workflow_id"], w["version"], w.get("params") or {},
+                         w.get("revision"), w.get("repository_url"))
             for w in r.json()]
 
 

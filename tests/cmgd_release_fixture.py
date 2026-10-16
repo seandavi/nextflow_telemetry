@@ -30,6 +30,8 @@ RELEASE_DAY = date(2026, 10, 8)  # docs/data-access.md's example release id
 STUDIES = {"ArtachoA_2021": 4, "ZellerG_2014": 2}
 LEGACY = ("cmgd_nextflow", "2.2.1")
 HUMANN = ("cmgd_humann3.9", "2.3.0")
+MPA = ("cmgd_mpa4.2", "2.3.0")  # the first readset-keyed release (2026-10)
+REGS = (LEGACY, HUMANN, MPA)
 SPECIES = ["k__Bacteria|p__Bacillota|c__Clostridia|o__Eubacteriales|f__Lachnospiraceae|g__Blautia|s__Blautia_wexlerae",
            "k__Bacteria|p__Bacteroidota|c__Bacteroidia|o__Bacteroidales|f__Bacteroidaceae|g__Bacteroides|s__Bacteroides_uniformis",
            "k__Bacteria|p__Pseudomonadota|c__Gammaproteobacteria|o__Enterobacterales|f__Enterobacteriaceae|g__Escherichia|s__Escherichia_coli"]
@@ -47,11 +49,12 @@ def sample_keys(workflow_id: str, study: str) -> list[str]:
 def _rows(workflow_id: str, version: str) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {t: [] for t in lake.SCHEMAS}
     humann = (workflow_id, version) == HUMANN
+    rs = workflow_id != "cmgd_nextflow"
     run = 866581
     for study in STUDIES:
         for i, key in enumerate(sample_keys(workflow_id, study)):
-            ids = {"sample_key": key, "sample_id": None if humann else key,
-                   "readset_id": key if humann else None, "study_name": study,
+            ids = {"sample_key": key, "sample_id": None if rs else key,
+                   "readset_id": key if rs else None, "study_name": study,
                    "run_ids": f"ERR{run}", "workflow_id": workflow_id, "version": version}
             run += 1
             out["qc_metrics"].append({**ids, "reads_raw": 2_000_000 + i, "reads_decontaminated": 1_500_000,
@@ -98,7 +101,7 @@ def build_lake(root: Path) -> duckdb.DuckDBPyConnection:
     schemas = lake.SCHEMAS
     for table, cols in schemas.items():
         con.execute(f"CREATE TABLE lake.cmgd.{table} ({', '.join(f'{c} {t}' for c, t in cols.items())})")
-    for reg in (LEGACY, HUMANN):
+    for reg in REGS:
         for table, rows in _rows(*reg).items():
             if rows:
                 cols = list(schemas[table])
@@ -149,7 +152,7 @@ def public_site(tmp_path_factory):
     con = build_lake(tmp_path_factory.mktemp("lake"))
     manifests = {reg: publish.publish(con, *reg, site / "public", raw_base_url=f"{host}/raw",
                                       today=RELEASE_DAY)
-                 for reg in (LEGACY, HUMANN)}
+                 for reg in REGS}
     con.close()
     try:
         yield SimpleNamespace(root=site / "public", base=f"{host}/public", raw=f"{host}/raw",

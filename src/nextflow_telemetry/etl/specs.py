@@ -107,3 +107,17 @@ BRANCHES = ("full_data", "rarefied_data")
 # `metaphlan_profile` (pipeline default since 2.3.0; 2.2.x ran the same
 # MetaPhlAn 4.2.2 + vJan25 index).
 DEFAULT_METAPHLAN_PROFILE = "mpa4.2.2_vJan25"
+
+# Reference databases pinned in the pipeline's nextflow.config for a
+# registration (ADR-0010: params are immutable per version). Per-sample
+# manifests don't record the Kraken or CARD versions yet (plan L6), so a
+# release's provenance block reads them here. Registrations without an entry
+# publish ``databases: null``.
+DATABASES: dict[tuple[str, str], dict[str, str]] = {
+    ("cmgd_mpa4.2", "2.3.0"): {
+        "metaphlan": "4.2.6",
+        "metaphlan_index": "mpa_vJan26_CHOCOPhlAnSGB_202605",
+        "kraken2_bracken": "k2_pluspf_16_GB_20260226",
+        "card": "broadstreet-v4.0.1",
+    },
+}

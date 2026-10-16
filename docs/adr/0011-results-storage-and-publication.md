@@ -100,8 +100,41 @@ Forces:
   uploads it last, so sync every dataset you build.
 - Each release rebuilds every study's files. Rebuilding only changed studies
   waits until that is too slow.
-- The public licence is CC0-1.0, set in one place (`etl/publish.py`).
+- ~~The public licence is CC0-1.0, set in one place (`etl/publish.py`).~~
+  Superseded by the amendment below: the licence is per table.
 - `nf-etl freeze` is removed.
+
+## Amendment (2026-10-16): samples, metadata, per-table licence, discovery files
+
+Plan `docs/plans/onboarding-and-publication.md` §4–5, #270.
+
+7. **Every release has a `samples` table**: one row per sample with
+   `run_accessions`, `biosample`, `bioproject`, `pipeline_version`,
+   `git_commit`, `completed_at`. It is built from the qc snapshot, the v2
+   completed jobs and, when present, `lake.cmgd_meta.sample_xref`. It is the
+   join hub from our readset ids to INSDC accessions and metadata sources.
+8. **Metadata tables come from `lake.cmgd_meta`** (plan D1), filtered to the
+   release's samples, inside the same release and manifest as the results:
+   `sample_metadata_cmd`, `sample_metadata_olm`, `sample_metadata_harmonized`.
+   A release built before the metadata store exists simply has none.
+9. **The licence is per table** (`manifest.json` already carries one per
+   table). Pipeline outputs and `samples` are CC0-1.0; tables derived from the
+   Olm Microbiome Repo are CC-BY-4.0 with its attribution in the table
+   description and in `provenance.json`. Olm's `evidence_quote` text is never
+   published. The mapping lives in `etl/publish.py` (`LICENSES`).
+10. **`provenance.json` gains a `cmgd` block**: the registration (revision,
+    params), the pipeline version and commit the samples actually ran, the
+    reference databases pinned for the registration (`etl/specs.py`
+    `DATABASES`, until the per-sample manifest records them), the metadata
+    source releases, each table's licence, and the citations. `verify_release`
+    only checks the document is readable, so it is added after the build.
+11. **Static discovery pages, no host and no build step**: the store root gets
+    `index.html` (landing) and `llms.txt`; each release gets `index.html` and
+    `studies/<study>/index.html`. They are rendered by `etl/site.py` from the
+    release's own files, regenerated on every publish, and uploaded by `sync`
+    with the root `index.json` (no-cache). Like `studies/`, release pages are
+    not in the manifest. R2 does not map `/` to `/index.html`, so the landing
+    URL is `/index.html` until a rewrite rule exists (plan L8).
 
 ## References
 
