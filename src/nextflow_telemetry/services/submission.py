@@ -8,6 +8,7 @@ the sample list the core registers.
 """
 from __future__ import annotations
 
+import asyncio
 import statistics
 import uuid
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from ..utils import normalize_srrs, srrs_to_sample_id
 from .collection import add_to_collection
 
 ENA_FILEREPORT = "https://www.ebi.ac.uk/ena/portal/api/filereport"
+ENA_ATTEMPTS, ENA_RETRY_DELAY_S = 4, 10.0
 ENA_FIELDS = (
     "run_accession,secondary_sample_accession,sample_accession,"
     "study_accession,secondary_study_accession,sample_title,"
@@ -93,11 +95,21 @@ def classify_source(accession: str) -> str:
 
 async def _fetch_runs(accession: str) -> list[dict[str, Any]]:
     params = {"accession": accession, "result": "read_run", "fields": ENA_FIELDS, "format": "json"}
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.get(ENA_FILEREPORT, params=params)
+    async with httpx.AsyncClient(timeout=120) as client:
+        # ENA's filereport returns intermittent 500s for some projects (#269):
+        # retry 5xx and timeouts a few times before giving up.
+        for attempt in range(ENA_ATTEMPTS):
+            try:
+                resp = await client.get(ENA_FILEREPORT, params=params)
+                if resp.status_code < 500:
+                    break
+            except httpx.TransportError:
+                if attempt == ENA_ATTEMPTS - 1:
+                    raise
+            await asyncio.sleep(ENA_RETRY_DELAY_S * (attempt + 1))
+    resp.raise_for_status()  # before the empty check: a bodiless 500 is an error, not "no runs"
     if resp.status_code == 204 or not resp.content:
         return []
-    resp.raise_for_status()
     return resp.json()
 
 
