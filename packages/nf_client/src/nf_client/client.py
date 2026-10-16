@@ -13,6 +13,8 @@ import httpx
 from .config import ClientConfig
 from .models import DispatchBatchResponse, SubmittedRequest
 
+SUBMISSION_TIMEOUT_S = 600
+
 
 class JobClient:
     """Async-capable HTTP client for the dispatch protocol.
@@ -116,8 +118,11 @@ class JobClient:
 
     async def create_submission(self, accession: str, *, dry_run: bool = False) -> dict:
         """Register a study/BioProject by accession (or preview it with dry_run)."""
+        # The server waits on ENA (often 30-45 s) and then writes each sample
+        # through to v2, so the default 30 s timeout is too short.
         response = await self._client.post(
-            "submissions", json={"accession": accession, "dry_run": dry_run}
+            "submissions", json={"accession": accession, "dry_run": dry_run},
+            timeout=SUBMISSION_TIMEOUT_S,
         )
         response.raise_for_status()
         return response.json()
