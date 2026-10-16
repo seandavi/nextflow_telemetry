@@ -1,0 +1,13 @@
+source,source_field,field,unit_transform
+cmd,age,age_years,to_years
+olm,age_at_collection_days,age_years,days_to_years
+cmd,sex,sex,lower
+olm,sex,sex,lower
+cmd,country,country,country_iso2
+olm,country,country,
+cmd,bmi,bmi,round2
+olm,bmi,bmi,round2
+cmd,antibiotics_current_use,antibiotics_current_use,lower
+olm,antibiotic_exposure,antibiotics_current_use,lower
+cmd,disease,health_condition,case_control
+olm,health_condition,health_condition,case_control
