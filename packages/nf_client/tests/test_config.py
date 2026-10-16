@@ -58,5 +58,6 @@ def test_deployed_cluster_configs_load_and_gate_dispatch(monkeypatch):
     root = Path(__file__).resolve().parents[3] / "config"
     cfgs = {c: ClientConfig.from_yaml(root / f"client-{c}.yaml") for c in ("alpine", "anvil", "bridges2")}
     assert cfgs["alpine"].dispatch.workflow_id is None
+    assert cfgs["alpine"].submission.defaults["task_qos"] == "cpu-normal"  # tasks need a qos <= 24 h
     assert cfgs["anvil"].dispatch.workflow_id is None
     assert cfgs["bridges2"].submission.max_concurrent_runs == 0

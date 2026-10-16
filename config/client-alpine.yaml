@@ -26,6 +26,7 @@ submission:
     time: "4-00:00:00"      # wrapper waits on every child incl. retries; cpu-long needs >24h
     partition: "acpu"        # amilan was retired; acpu caps at 1 day
     qos: "cpu-long"          # 7-day cap via PartitionTimeLimit; cpu-normal caps at 24h
+    task_qos: "cpu-normal"   # per-task jobs (<= 24h); cpu-long rejects them and Alpine requires a qos
     account: "${NF_TEL_ACCOUNT}"
     log_dir: "${NF_TEL_LOGS}"
     publish_base: "s3://cmgd-raw"   # must match the r2 profile; results go to <base>/<workflow_id>/<version>/ (#220)
