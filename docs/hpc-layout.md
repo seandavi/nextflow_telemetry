@@ -34,11 +34,11 @@ PR, then `just deploy-clients`; never edit the file on the cluster (the next
 deploy checks out over it and refuses a dirty checkout).
 
 `dispatch.workflow_id` is the **accept list**: the daemon claims only those
-workflow ids. Omit it to claim from every *active* registration (Alpine does;
+workflow ids. Omit it to claim from every *active* registration (Alpine and Anvil do;
 pausing or retiring a registration on the server is then the gate). A revision
 bump (ADR-0004) keeps the workflow id, so it never needs an accept-list edit;
-only a brand-new workflow id does. Anvil is currently pinned to
-`[cmgd_nextflow]` (see the comment in its yaml).
+only a brand-new workflow id does. Bridges-2 claims nothing while its
+`max_concurrent_runs` is 0.
 
 Order of operations for a release: tag the pipeline, `PATCH /workflows/{pk}/revision`
 (see the `cmgd-release` skill), merge any client yaml change, then

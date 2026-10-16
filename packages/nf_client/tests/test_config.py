@@ -46,3 +46,17 @@ def test_dispatch_workflow_id_accepts_a_comma_separated_string():
     from nf_client.config import DispatchConfig
 
     assert DispatchConfig(workflow_id="cmgd_humann3.9, cmgd_mpa4.2").workflow_id == ["cmgd_humann3.9", "cmgd_mpa4.2"]
+
+
+def test_deployed_cluster_configs_load_and_gate_dispatch(monkeypatch):
+    """The tracked config/client-*.yaml files the daemons read (#269): Alpine and
+    Anvil claim from every active registration; Bridges-2 claims nothing yet."""
+    from pathlib import Path
+
+    for var in ("NF_OPERATOR_TOKEN", "NF_TEL_ACCOUNT", "NF_TEL_LOGS", "NF_TEL_REPO"):
+        monkeypatch.setenv(var, "x")
+    root = Path(__file__).resolve().parents[3] / "config"
+    cfgs = {c: ClientConfig.from_yaml(root / f"client-{c}.yaml") for c in ("alpine", "anvil", "bridges2")}
+    assert cfgs["alpine"].dispatch.workflow_id is None
+    assert cfgs["anvil"].dispatch.workflow_id is None
+    assert cfgs["bridges2"].submission.max_concurrent_runs == 0
