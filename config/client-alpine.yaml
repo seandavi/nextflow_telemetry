@@ -10,10 +10,9 @@ continuous: true
 
 dispatch:
   batch_size: 25
-  # Only cmgd_mpa4.2: the BAQLaVa registration (cmgd_humann4a2, #301) needs the
-  # HUMAnN 4 + vOct22 + BAQLaVa databases, staged only on Bridges-2. Drop the
-  # gate once they are staged here (`--databases_only`, pipeline-change skill).
-  workflow_id: [cmgd_mpa4.2]
+  # cmgd_humann4a2 DBs (HUMAnN 4, vOct22, BAQLaVa) staged 2026-10-17 via
+  # `--databases_only`. claimBatch sorts by workflow_id, so humann4a2 drains first.
+  workflow_id: [cmgd_humann4a2, cmgd_mpa4.2]
 
 submission:
   mode: slurm
