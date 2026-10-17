@@ -99,6 +99,11 @@ SPECS: dict[tuple[str, str], list[OutputSpec]] = {
     ("cmgd_humann4a1", "2.3.0"): CORE + humann(
         "humann4.0.0a1", "mpa4.1.1_vOct22",
         "out_2_genefamilies.tsv.gz", "out_4_pathabundance.tsv.gz", None),
+    # Same bundle files as a1. BAQLaVa (baqlava/<key>_BAQLaVa_profile.txt) and the
+    # reaction tables are delivered (deliver.py) but have no lake table.
+    ("cmgd_humann4a2", "2.4.2"): CORE + humann(
+        "humann4.0.0a2", "mpa4.1.1_vOct22",
+        "out_2_genefamilies.tsv.gz", "out_4_pathabundance.tsv.gz", None),
 }
 
 BRANCHES = ("full_data", "rarefied_data")
@@ -120,4 +125,48 @@ DATABASES: dict[tuple[str, str], dict[str, str]] = {
         "kraken2_bracken": "k2_pluspf_16_GB_20260226",
         "card": "broadstreet-v4.0.1",
     },
+    # cMN 2.4.2 conf/humann_bundles.config (humann4.0.0a2), conf/metaphlan_profiles.config
+    # (mpa4.1.1_vOct22) and nextflow.config. The KneadData human_genome index and the
+    # BAQLaVa DB come from their tools' download commands and are unversioned (cMN#129).
+    ("cmgd_humann4a2", "2.4.2"): {
+        "metaphlan": "4.1.1",
+        "metaphlan_index": "mpa_vOct22_CHOCOPhlAnSGB_202403",
+        "chocophlan": "full, vOct22_CHOCOPhlAnSGB_202403",
+        "uniref": "uniref90_ec_filtered_diamond, release 2019_06",
+        "utility_mapping": "full",
+        "kraken2_bracken": "k2_pluspf_16_GB_20260226",
+        "card": "broadstreet-v4.0.1",
+        "human_genome": "KneadData human_genome Bowtie 2 index (unversioned)",
+        "baqlava_db": "baqlava_database --download (unversioned)",
+    },
+}
+
+# Images a step ran in that the manifest doesn't name, by registration, from the
+# pipeline config at that revision. The manifest itself records the base image
+# (provenance.container) and software_versions.*_image; cMN#129 asks the pipeline
+# to record every image with its digest.
+CONTAINERS: dict[tuple[str, str], dict[str, str]] = {
+    ("cmgd_humann4a2", "2.4.2"): {
+        "MetaPhlAn": "quay.io/biocontainers/metaphlan:4.1.1--pyhdfd78af_0",
+        "HUMAnN": "ghcr.io/seandavi/humann-baqlava:4.0.0a2-1.2.0",
+    },
+}
+
+# Registration-scoped caveats a deliverable can't derive from its data (Markdown).
+CAVEATS: dict[tuple[str, str], list[str]] = {
+    ("cmgd_humann4a2", "2.4.2"): [
+        "**Revision moved during the run.** The registration's revision went from 2.4.2 to "
+        "2.4.3 on 2026-10-17. 2.4.3 only deletes intermediate files earlier; results are "
+        "unchanged (curatedMetagenomicsNextflow#126). `samples.tsv` gives each sample's "
+        "revision.",
+        "**Patched UniRef file name.** HUMAnN 4.0.0a2 checks that a protein database's file "
+        "names carry its expected version tag, so BAQLaVa's DIAMOND database files were "
+        "symlinked under names ending `_2019_06` (pipeline 2.4.2, #125; humann#82). The "
+        "database contents are unchanged.",
+        "**Paired-end reads merged.** All FASTQ files of a sample, both mates included, were "
+        "concatenated and processed as single-end reads (the curatedMetagenomicData "
+        "convention), so read counts in `samples.tsv` count each mate.",
+        "**Unversioned databases.** The KneadData human reference index and the BAQLaVa "
+        "database are fetched by their tools' download commands, which don't pin a release.",
+    ],
 }

@@ -183,15 +183,17 @@ def parse_humann_pathcoverage(raw: bytes) -> Iterator[dict]:
     return _humann(raw, "pathway", "coverage")
 
 
-def parse_baqlava_profile(raw: bytes) -> Iterator[dict]:
-    """BAQLaVa ``<FILENAME>_BAQLaVa_profile.txt`` (biobakery/baqlava v1.2.0 README):
-    a header row (``BAQLaVa VGB``, ``<sample>_Abundance-RPKs``, reference species,
-    taxonomy, other ICTV genomes), then per VGB a total line followed by its
-    ``|nucleotide`` / ``|translated`` lines. Only the totals are kept, which the
-    README recommends for general profiling.
+def parse_humann_reactions(raw: bytes) -> Iterator[dict]:
+    return _humann(raw, "reaction", "abundance")
 
-    ponytail: written against the README, untested on real output until a 2.4.0
-    registration runs BAQLaVa; assumes tab-delimited like other bioBakery tools."""
+
+def parse_baqlava_profile(raw: bytes) -> Iterator[dict]:
+    """BAQLaVa ``<sample>_BAQLaVa_profile.txt`` (v1.2.0-devel): a tab-separated
+    header row (``BAQLaVa VGB``, the sample name, reference species, taxonomy,
+    other ICTV genomes), then per VGB a total line followed by its
+    ``|nucleotide`` / ``|translated`` lines. Only the totals are kept, which the
+    BAQLaVa README recommends for general profiling. On cmgd_humann4a2/2.4.2
+    output the total is max(nucleotide, translated), not their sum."""
     for f in _rows(raw, comment=None):
         if len(f) < 2 or f[0].startswith("BAQLaVa") or "|" in f[0]:
             continue
