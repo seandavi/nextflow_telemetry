@@ -37,7 +37,7 @@ deploy checks out over it and refuses a dirty checkout).
 workflow ids. Omit it to claim from every *active* registration (Alpine and Anvil do;
 pausing or retiring a registration on the server is then the gate). A revision
 bump (ADR-0004) keeps the workflow id, so it never needs an accept-list edit;
-only a brand-new workflow id does. Bridges-2 claims nothing while its
+only a brand-new workflow id does. A cluster claims nothing while its
 `max_concurrent_runs` is 0.
 
 Order of operations for a release: tag the pipeline, `PATCH /workflows/{pk}/revision`
@@ -56,7 +56,7 @@ not want to wait out.
 
 | Variable | What | Alpine | Anvil | Bridges-2 |
 |---|---|---|---|---|
-| `NF_TEL_ACCOUNT` | SLURM account for wrapper and task jobs | `amc-general` | `cis240955` | `cis260344p` |
+| `NF_TEL_ACCOUNT` | SLURM account for wrapper and task jobs | `amc-general` | `cis240955` | `bio260102p` |
 | `NF_TEL_HOME` | Persistent root | `/projects/seda0001_amc/cmgd` | `/anvil/projects/x-$NF_TEL_ACCOUNT/cmgd` | `/ocean/projects/$NF_TEL_ACCOUNT/seandavi/cmgd` |
 | `NF_TEL_STORE` | Nextflow `storeDir` (DBs, refs), bound at `/keep/store` | `$NF_TEL_HOME/store` | `$NF_TEL_HOME/store` | `$NF_TEL_HOME/store` |
 | `NF_TEL_LOGS` | slurm/nf/nextflow logs per run | `$NF_TEL_HOME/job_logs` | `$NF_TEL_HOME/logs` | `$NF_TEL_HOME/logs` |
@@ -64,8 +64,8 @@ not want to wait out.
 | `NF_TEL_CONFIG` | the client yaml the daemon runs with | `$NF_TEL_REPO/config/client-alpine.yaml` | `$NF_TEL_REPO/config/client-anvil.yaml` | `$NF_TEL_REPO/config/client-bridges2.yaml` |
 | `NF_TEL_REPO` | git checkout of this repo | `$NF_TEL_DAEMON/nextflow_telemetry` | `$NF_TEL_DAEMON/nextflow_telemetry` | `$NF_TEL_DAEMON/nextflow_telemetry` |
 | `NF_TEL_NXF_HOME` | `NXF_HOME` (assets, plugins) | `/projects/seda0001_amc/nf_home` | `$HOME/nxf_home` | `$HOME/nxf_home` |
-| `NF_TEL_SCRATCH` | per-run launch dir root, ephemeral | `/scratch/alpine/seda0001_amc/nf_worker` | `/anvil/scratch/x-seandavi/cmgd_data` | `/ocean/projects/cis260344p/seandavi/scratch/cmgd_data` (not purged; counts toward quota) |
-| `NF_TEL_SIF_CACHE` | container image cache, ephemeral | `/scratch/alpine/seda0001_amc/apptainer_cache` | `/anvil/scratch/x-seandavi/singularity_cache` | `/ocean/projects/cis260344p/seandavi/scratch/singularity_cache` |
+| `NF_TEL_SCRATCH` | per-run launch dir root, ephemeral | `/scratch/alpine/seda0001_amc/nf_worker` | `/anvil/scratch/x-seandavi/cmgd_data` | `/ocean/projects/bio260102p/seandavi/scratch/cmgd_data` (not purged; counts toward quota) |
+| `NF_TEL_SIF_CACHE` | container image cache, ephemeral | `/scratch/alpine/seda0001_amc/apptainer_cache` | `/anvil/scratch/x-seandavi/singularity_cache` | `/ocean/projects/bio260102p/seandavi/scratch/singularity_cache` |
 | `NF_TEL_CREDS` | GCS service-account json (legacy `gcs` profile) | `$HOME/curatedmetagenomicdata-*.json` | same | same |
 | `NF_TEL_MODULES` | `module load` list for the submit script | `singularity git jdk/18.0.1.1` (+ `NXF_VER=25.10.8`) | none; user-space JDK 21 at `$NF_TEL_DAEMON/jdk` (+ `NXF_VER=25.10.8`) | none; user-space JDK 21 at `$NF_TEL_DAEMON/jdk` (+ `NXF_VER=25.10.8`) |
 
@@ -118,11 +118,12 @@ and check `sbatch --test-only` with the rendered script before starting the daem
 | | |
 |---|---|
 | SSH | `ssh bridges2` lands on a round-robin login node (daemon on `br012`). PSC login needs interactive auth, so non-interactive commands and `deploy-clients` ride an open `ControlMaster` session (`ControlPersist 4h` in `~/.ssh/config`). `scp` is refused; pipe files instead: `ssh bridges2 'cat > ~/f' < f` |
-| Allocation | `cis260344p`: 10,000 SU (RM, billed per core-hour) and 1000 GiB Ocean for store, SIF cache and run dirs together. `cis260183p` has no SUs |
+| Allocation | `bio260102p` (since 2026-10-17): 700,000 SU (RM, billed per core-hour) and 2 TB Ocean for store, SIF cache and run dirs together; ends 2027-08-21. Previously `cis260344p` (10,000 SU, a different project). `cis260183p` has no SUs |
 | Partition | `RM-shared`, 3-day max walltime, at most 64 cores per job |
 | Memory | Rejects any job above **2000 MB per core** ("mem-per-core higher than maximum"). The client yaml sets `max_mem_per_cpu_mb: 2000`, which makes the submit template raise each task's `--cpus-per-task` to `ceil(memory / 2000 MB)`. MetaPhlAn's 55 GiB therefore costs 29 cores, about 29 SU per hour |
 | Java / containers | System java is 1.8; Temurin 21 at `$NF_TEL_DAEMON/jdk`. `singularity`/`apptainer` are on the login and compute PATH |
-| Pipeline profile | `-profile bridges2,r2` needs `conf/profiles/bridges2.config` in the registered pipeline revision. Until then `max_concurrent_runs: 0` keeps the daemon heartbeating without claiming |
+| Pipeline profile | `-profile bridges2,r2` uses `conf/profiles/bridges2.config` (pipeline 2.3.2+). Its hardcoded `store_dir` is overridden by the submit template from `NF_TEL_STORE` |
+| Concurrency | `batch_size: 10`, `max_concurrent_runs: 3` to stay under the 2 TB Ocean quota |
 
 ## Storage facts (2026-09-21)
 

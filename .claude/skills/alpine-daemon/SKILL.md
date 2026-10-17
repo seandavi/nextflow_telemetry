@@ -44,9 +44,9 @@ remote commands with `source ~/.nf_tel.env`.
 |---|---|---|---|
 | SSH | `ssh alpine` (tailnet jump via dccapp720; BatchMode ok) | `ssh anvil` (pinned to login07; BatchMode ok) | `ssh bridges2` via an open ControlMaster session (PSC needs interactive auth; open one with a plain `ssh bridges2` first); daemon on `br012` |
 | Cluster user | `seda0001_amc` | `x-seandavi` | `seandavi` |
-| `NF_TEL_ACCOUNT` | `amc-general` | `cis240955` (ACCESS; `NF_TEL_HOME` derives from it) | `cis260344p` (10,000 SU, 1000 GiB Ocean total) |
+| `NF_TEL_ACCOUNT` | `amc-general` | `cis240955` (ACCESS; `NF_TEL_HOME` derives from it) | `bio260102p` (700,000 SU, 2 TB Ocean total; since 2026-10-17) |
 | Partition / qos | wrapper: `acpu` / `cpu-long` (4 days; needs >24h, 20-node per-user cap); child tasks: `acpu` / `cpu-normal` via `task_qos` (1 day; a qos is required, and cpu-long rejects jobs of 24 h or less); `amilan` is gone | `shared` | `RM-shared`, 3 days max; **2000 MB per core cap**, so the template raises task cores to fit memory (`max_mem_per_cpu_mb`) |
-| Nextflow `-profile` | `alpine,r2` (R2 `s3://cmgd-raw`, ADR 0008) | `anvil,r2` (since 2026-10-07); never `anvil,gcs` (new GCS writes violate ADR 0008) | `bridges2,r2` (needs a pipeline release carrying `conf/profiles/bridges2.config`; idle via `max_concurrent_runs: 0` until then) |
+| Nextflow `-profile` | `alpine,r2` (R2 `s3://cmgd-raw`, ADR 0008) | `anvil,r2` (since 2026-10-07); never `anvil,gcs` (new GCS writes violate ADR 0008) | `bridges2,r2` (pipeline 2.3.2+; 3 runs x 10 samples to fit the Ocean quota) |
 | `slurm_export_none` | `true` (login env leaks to compute) | `false` | `false` |
 | Nextflow | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, `jdk/18.0.1.1`); not the 24.04 module | 25.10.8 launcher in `$NF_TEL_DAEMON` (`NXF_VER`, user-space Temurin 21 at `$NF_TEL_DAEMON/jdk`; modules stop at Java 11) | 25.10.8 launcher, user-space Temurin 21 at `$NF_TEL_DAEMON/jdk` (system java is 1.8) |
 | Short test partition | `atesting`, qos `testing` (1 h) | — | `RM-small` (8 h) |
