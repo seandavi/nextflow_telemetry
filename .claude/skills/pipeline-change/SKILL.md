@@ -62,6 +62,45 @@ case, add it here in the same form.
 - [ ] **Test on the target cluster** with 2–3 real samples end to end before
       registering at scale; record core-h, peak memory and disk per sample.
 
+## 2b. bioBakery tools (HUMAnN, BAQLaVa, MetaPhlAn)
+
+These tools are the least predictable part of the pipeline. Treat each as a
+black box behind a pinned image, and assume nothing about its defaults.
+
+- [ ] **Pass every database path explicitly; never rely on defaults.** HUMAnN's
+      default databases are the bundled `_DEMO` sets, configured in `humann.cfg`
+      inside site-packages. The only demo guard is an input-size check, so a small
+      real input runs against demo data and silently gives wrong answers.
+- [ ] **Grep the task output for `_DEMO`.** BAQLaVa's run log prints the HUMAnN
+      database folders. If any says `_DEMO`, the task is wrong even if it exited 0.
+- [ ] **Wrappers don't forward database options.** BAQLaVa calls the `humann`
+      CLI through anadama2 without `--nucleotide-database` or
+      `--utility-database`. That is why its own depletion step is skipped
+      (`--humann-depleted-fasta` fed from our `humann` task, ADR-0020, 2.4.0) and
+      `--utility-database` goes in through its passthrough options (2.4.1).
+- [ ] **Passthrough options replace the defaults; they don't merge.** Setting
+      `--humann-passthrough-parameters-*` drops BAQLaVa's tuned values, so copy
+      them from `baqlava/configs/baqlava.cfg` at the pinned commit and re-check
+      them when the pin moves. Verify with `baqlava ... --dry-run` in the image:
+      it prints every `humann` command.
+- [ ] **HUMAnN 4.0.0a2 checks database versions by filename substring.** Protein
+      DB files must contain `2019_06` and ChocoPhlAn files `SGB`, so any non-UniRef
+      DIAMOND DB fails (BAQLaVa's did). Workaround: symlink the file with the tag
+      appended (2.4.2). Expect an alpha bump to move these checks again (a2 dropped
+      a1's MetaPhlAn version check and added this one).
+- [ ] **MetaPhlAn DB ↔ ChocoPhlAn must match exactly** (`humann_bundles.config`).
+      `--version` output isn't the pinned version (cMN#120).
+- [ ] **Real errors are buried.** anadama2 exits with `RunFailed`; the cause is in
+      `.command.out` under "Task N failed". Read it via `/api/task-logs`.
+- [ ] **Outputs are named after the input file.** BAQLaVa strips
+      `_bowtie2_unaligned.fa`, so link the input as `<sample>_bowtie2_unaligned.fa`
+      to get `<sample>_BAQLaVa_profile.txt`. HUMAnN 4 numbers its tables
+      (`out_2_genefamilies`, `out_3_reactions`, `out_4_pathabundance`); a
+      HUMAnN 3 reader won't find them.
+- [ ] **Smoke test with real-sized input, on the cluster.** The demo-sized test
+      passes all of the above. Each of the three BAQLaVa bugs (2.4.0 → 2.4.2) only
+      showed on a real sample, roughly 1 h per round trip on Bridges-2.
+
 ## 3. Tag and register
 
 - [ ] **Lockstep:** `manifest.version` == git tag == registration `revision`.
