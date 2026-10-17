@@ -13,6 +13,8 @@ every registration with an OutputSpec is processed, narrowed by ``--workflow`` /
   nf-etl publish --registration W/V [--out DIR]     build a public release into the local store
   nf-etl publish --registration W/V --sync          upload the built dataset to r2:cmgd-public
   nf-etl mirror  --registration W/V --to zenodo|hf  copy a built release (Zenodo draft / HF repo)
+  nf-etl deliver --registration W/V --collection C [--collection ...] --name N [--sync]
+                                                    scoped, expiring wide-TSV hand-off (#302)
 """
 from __future__ import annotations
 
@@ -161,6 +163,24 @@ def cmd_mirror(a) -> None:
     print(json.dumps(out, indent=2))
 
 
+def cmd_deliver(a) -> None:
+    """Build a scoped deliverable (#302) locally; with --sync also upload it to
+    <remote>/deliverables/<name>/<date>/ (--dry-run: print the rclone command)."""
+    from . import deliver
+
+    workflow_id, version = publish.parse_registration(a.registration)
+    with httpx.Client(timeout=60) as client:
+        reg = next((r for r in v2.registrations(client)
+                    if (r.workflow_id, r.version) == (workflow_id, version)), None)
+        if reg is None:
+            raise SystemExit(f"{a.registration}: not registered in v2")
+        items = v2.jobs(client, reg)
+    d = deliver.build(reg, items, a.collection, a.name, a.out)
+    print(f"{a.name} -> {d}: {', '.join(sorted(p.name for p in d.iterdir()))}")
+    if a.sync or a.dry_run:
+        deliver.sync(d, a.name, a.remote, dry_run=a.dry_run or not a.sync)
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="nf-etl", description="cMD output-catalog ETL")
     p.add_argument("--workflow", default=None, help="registration workflow_id (default: all with a spec)")
@@ -200,9 +220,20 @@ def main(argv: list[str] | None = None) -> None:
     mir.add_argument("--public", action="store_true", help="hf: create the repo public")
     mir.add_argument("--dry-run", action="store_true", help="print the upload set, upload nothing")
 
+    dl = sub.add_parser("deliver", help="scoped, time-limited wide-TSV deliverable (not a release)")
+    dl.add_argument("--registration", required=True, help="<workflow_id>/<version>")
+    dl.add_argument("--collection", required=True, action="append", help="repeatable")
+    dl.add_argument("--name", required=True, help="deliverable name (the URL path segment)")
+    dl.add_argument("--out", default=f"{publish.PUBLISH_ROOT}/deliverables",
+                    help="local root; writes <out>/<name>/<date>/")
+    dl.add_argument("--sync", action="store_true", help="also upload to --remote")
+    dl.add_argument("--remote", default=publish.SYNC_REMOTE)
+    dl.add_argument("--dry-run", action="store_true", help="print the rclone command, upload nothing")
+
     a = p.parse_args(argv)
     {"status": cmd_status, "ingest": cmd_ingest, "tick": cmd_tick, "parse": cmd_parse,
-     "volumes": cmd_volumes, "publish": cmd_publish, "mirror": cmd_mirror}[a.cmd](a)
+     "volumes": cmd_volumes, "publish": cmd_publish, "mirror": cmd_mirror,
+     "deliver": cmd_deliver}[a.cmd](a)
 
 
 if __name__ == "__main__":

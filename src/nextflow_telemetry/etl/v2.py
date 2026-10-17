@@ -63,16 +63,21 @@ def registrations(client: httpx.Client) -> list[Registration]:
             for w in r.json()]
 
 
-def completed_jobs(client: httpx.Client, reg: Registration) -> list[CompletedJob]:
-    """Every completed job of one registration, oldest job id first."""
-    out: list[CompletedJob] = []
+def jobs(client: httpx.Client, reg: Registration, status: str | None = None) -> list[dict]:
+    """A registration's raw job items (every status when ``status`` is None), oldest job id first."""
+    out: list[dict] = []
     after = 0
     while True:
-        r = client.get(f"{API_URL}/api/workflows/{reg.pk}/jobs",
-                       params={"status": "completed", "after": after, "limit": PAGE})
+        params: dict = {"after": after, "limit": PAGE} | ({"status": status} if status else {})
+        r = client.get(f"{API_URL}/api/workflows/{reg.pk}/jobs", params=params)
         r.raise_for_status()
         items = r.json()["items"]
-        out.extend(job_from_item(i) for i in items)
+        out.extend(items)
         if len(items) < PAGE:
             return out
         after = items[-1]["job_id"]
+
+
+def completed_jobs(client: httpx.Client, reg: Registration) -> list[CompletedJob]:
+    """Every completed job of one registration, oldest job id first."""
+    return [job_from_item(i) for i in jobs(client, reg, "completed")]

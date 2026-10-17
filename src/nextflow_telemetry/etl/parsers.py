@@ -183,6 +183,25 @@ def parse_humann_pathcoverage(raw: bytes) -> Iterator[dict]:
     return _humann(raw, "pathway", "coverage")
 
 
+def parse_baqlava_profile(raw: bytes) -> Iterator[dict]:
+    """BAQLaVa ``<FILENAME>_BAQLaVa_profile.txt`` (biobakery/baqlava v1.2.0 README):
+    a header row (``BAQLaVa VGB``, ``<sample>_Abundance-RPKs``, reference species,
+    taxonomy, other ICTV genomes), then per VGB a total line followed by its
+    ``|nucleotide`` / ``|translated`` lines. Only the totals are kept, which the
+    README recommends for general profiling.
+
+    ponytail: written against the README, untested on real output until a 2.4.0
+    registration runs BAQLaVa; assumes tab-delimited like other bioBakery tools."""
+    for f in _rows(raw, comment=None):
+        if len(f) < 2 or f[0].startswith("BAQLaVa") or "|" in f[0]:
+            continue
+        v = _as_float(f[1])
+        if v is None:
+            continue
+        yield {"vgb": f[0].strip(), "abundance": v,
+               "reference_species": f[2].strip() if len(f) > 2 else None}
+
+
 def parse_qc(raw: bytes) -> Iterator[dict]:
     """manifest.json → one qc_metrics row (per sample, no data_type)."""
     d = json.loads(raw)
