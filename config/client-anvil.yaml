@@ -10,10 +10,11 @@ continuous: true
 
 dispatch:
   batch_size: 25             # smaller batches finish inside the wrapper walltime; same as Alpine
-  # No workflow_id: claim from every active registration, like Alpine (#249);
-  # pausing or retiring a registration on the server is the gate. Anvil's
+  # Only cmgd_mpa4.2, as on Alpine: the BAQLaVa databases are staged only on
+  # Bridges-2 (#301). Anvil's
   # 2026-10-16..26 power work takes node subsets out by reservation, so SLURM
   # schedules around it.
+  workflow_id: [cmgd_mpa4.2]
 
 submission:
   mode: slurm

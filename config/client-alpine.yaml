@@ -10,9 +10,10 @@ continuous: true
 
 dispatch:
   batch_size: 25
-  # No workflow_id: claim from every active registration. Pausing or retiring a
-  # registration on the server is the gate (#249). Set a list here only for a
-  # cluster that can't run everything.
+  # Only cmgd_mpa4.2: the BAQLaVa registration (cmgd_humann4a2, #301) needs the
+  # HUMAnN 4 + vOct22 + BAQLaVa databases, staged only on Bridges-2. Drop the
+  # gate once they are staged here (`--databases_only`, pipeline-change skill).
+  workflow_id: [cmgd_mpa4.2]
 
 submission:
   mode: slurm

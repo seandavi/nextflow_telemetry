@@ -13,6 +13,9 @@ dispatch:
   # quota (batch_size x max_concurrent_runs x 50 GB + ~85 GB store). Raise both
   # once the quota grows.
   batch_size: 10
+  # Dedicated to the BAQLaVa registration for the RA/MS cohorts (#301, #303);
+  # the HUMAnN 4 / vOct22 / BAQLaVa databases are staged only here.
+  workflow_id: [cmgd_humann4a2]
 
 submission:
   mode: slurm
