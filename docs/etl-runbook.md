@@ -175,6 +175,28 @@ every dataset built in the local store, so sync each dataset you build. It
 never deletes anything in the bucket.
 
 
+## Deliverables (#302)
+
+`nf-etl deliver` builds a scoped, expiring hand-off for a requester: one
+registration, some collections, completed samples only. It is **not a release**
+(no DOI, may be deleted; the README states an expiry 90 days out). It reads the
+v2 jobs API and `cmgd-raw`, plus cMD curated metadata from `lake.cmgd_meta` when
+the lake is reachable (otherwise `samples.tsv` has no metadata and it warns), and
+never touches the lake's result tables, releases or `index.json`.
+
+```sh
+export CU_OPENALEX_LAKE_BACKEND=postgres
+uv run nf-etl deliver --registration cmgd_mpa4.2/2.3.0 --collection PRJNA749645 \
+  --collection HMP_2012 --name ra-test --out /data/davsean/cmgd/publish/deliverables
+#   -> <out>/ra-test/<YYYY-MM-DD>/: metaphlan_<profile>.tsv [humann4_*.tsv, baqlava_vgb.tsv],
+#      samples.tsv, coverage.tsv, README.md, MANIFEST.sha256, ra-test-<date>.tar.gz
+uv run nf-etl deliver ... --sync --dry-run   # print the rclone copy to r2:cmgd-public/deliverables/ra-test/<date>/
+uv run nf-etl deliver ... --sync             # build and upload
+```
+
+A same-day rebuild replaces that day's folder; earlier dates are left alone.
+
+
 ## Sample metadata (nf-meta, ADR 0012)
 
 `nf-meta` loads metadata sources into `lake.cmgd_meta.*`. It uses the same
