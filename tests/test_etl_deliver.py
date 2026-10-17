@@ -76,24 +76,47 @@ def test_versions_and_readme_flag_mixed_versions():
     assert "directly comparable" in same and "**not included**" in same
 
 
+def _sha(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
+
 def test_manifest_and_tarball(tmp_path):
-    (tmp_path / "a.tsv").write_text("x\n")
+    (tmp_path / "a.tsv").write_text("readset_id\tf\nRS.a\t1\nRS.b\t2\n")
     (tmp_path / "README.md").write_text("r\n")
     deliver.write_manifest(tmp_path, "t", TODAY)
+    tsv = (tmp_path / "MANIFEST.tsv").read_bytes()
+    assert tsv.decode().splitlines() == [
+        "file\tbytes\tsha256\trows\tcols",
+        f"README.md\t2\t{_sha(b'r' + chr(10).encode())}\t\t",
+        f"a.tsv\t27\t{_sha((tmp_path / 'a.tsv').read_bytes())}\t2\t2"]
     lines = (tmp_path / "MANIFEST.sha256").read_text().splitlines()
-    assert lines == [f"{hashlib.sha256(b'r' + chr(10).encode()).hexdigest()}  README.md",
-                     f"{hashlib.sha256(b'x' + chr(10).encode()).hexdigest()}  a.tsv"]
+    assert lines == [f"{_sha(tsv)}  MANIFEST.tsv",
+                     f"{_sha(b'r' + chr(10).encode())}  README.md",
+                     f"{_sha((tmp_path / 'a.tsv').read_bytes())}  a.tsv"]
     with tarfile.open(tmp_path / "t-2026-10-17.tar.gz") as t:
-        assert sorted(t.getnames()) == ["t-2026-10-17/MANIFEST.sha256", "t-2026-10-17/README.md",
-                                        "t-2026-10-17/a.tsv"]
+        assert sorted(t.getnames()) == ["t-2026-10-17/MANIFEST.sha256", "t-2026-10-17/MANIFEST.tsv",
+                                        "t-2026-10-17/README.md", "t-2026-10-17/a.tsv"]
+
+
+# Real-shaped BAQLaVa v1.2.0-devel output (cmgd_humann4a2/2.4.2, trimmed): the sample
+# column is named after the sample, and the total is max(nucleotide, translated).
+BAQLAVA = (
+    "BAQLaVa VGB\t{key}\tReference Species\tTaxonomy\tOther ICTV Genomes in VGB\n"
+    "VGB_1\t62.5775156082\tCanhaevirus hiberniae\tr__duplodnaviria;k__heunggongvirae;"
+    "p__uroviricota\tCanhaevirus hiberniae, Culoivirus faecalis\n"
+    "VGB_1|translated\t62.5775156082\tCanhaevirus hiberniae\tr__duplodnaviria\t\n"
+    "VGB_100062\t26.4528426797\tVGB_100062\tr__viruses_unclassified\t\n"
+    "VGB_100062|nucleotide\t26.4528426797\tVGB_100062\tr__viruses_unclassified\t\n"
+    "VGB_1593\t43.5\tVGB_1593\tr__a\t\n"
+    "VGB_1593|nucleotide\t13.1\tVGB_1593\tr__a\t\n"
+    "VGB_1593|translated\t43.5\tVGB_1593\tr__a\t\n")
 
 
 def test_parse_baqlava_profile_keeps_vgb_totals():
-    raw = (b"BAQLaVa VGB\tdemo_Abundance-RPKs\tReference Species\tTaxonomy\tOther\n"
-           b"VGB_1593\t43.5\tVGB_1593\tr__a;k__b\t\n"
-           b"VGB_1593|nucleotide\t13.1\tVGB_1593\tr__a;k__b\t\n"
-           b"VGB_1593|translated\t43.5\tVGB_1593\tr__a;k__b\t\n")
+    raw = BAQLAVA.format(key="RS.6ZeJGceRLYkm8H0zYj50aGrQ06BaYKZK").encode()
     assert list(parsers.parse_baqlava_profile(raw)) == [
+        {"vgb": "VGB_1", "abundance": 62.5775156082, "reference_species": "Canhaevirus hiberniae"},
+        {"vgb": "VGB_100062", "abundance": 26.4528426797, "reference_species": "VGB_100062"},
         {"vgb": "VGB_1593", "abundance": 43.5, "reference_species": "VGB_1593"}]
 
 
@@ -114,8 +137,9 @@ def test_build_writes_only_present_outputs(tmp_path, monkeypatch):
 
     assert d == tmp_path / "t" / "2026-10-17"
     assert sorted(p.name for p in d.iterdir()) == [
-        "MANIFEST.sha256", "README.md", "coverage.tsv", "metaphlan_mpa4.2.6_vJan26.tsv",
-        "samples.tsv", "t-2026-10-17.tar.gz"]
+        "MANIFEST.sha256", "MANIFEST.tsv", "METHODS.md", "README.md", "coverage.tsv",
+        "index.html", "metaphlan_mpa4.2.6_vJan26.tsv", "samples.tsv", "t-2026-10-17.tar.gz"]
+    assert "Includes UNCLASSIFIED" in (d / "README.md").read_text()
     mpa = list(csv.reader((d / "metaphlan_mpa4.2.6_vJan26.tsv").open(), delimiter="\t"))
     assert mpa[0] == ["readset_id", "UNCLASSIFIED", "k__Archaea", "k__Bacteria", "k__Bacteria|s__X"]
     assert mpa[2] == ["RS.b", "40.0", "60.0", "0", "0"]
@@ -127,3 +151,139 @@ def test_build_writes_only_present_outputs(tmp_path, monkeypatch):
     cov = list(csv.DictReader((d / "coverage.tsv").open(), delimiter="\t"))
     assert [(c["collection"], c["completed"], c["delivered"]) for c in cov] == [
         ("S1", "2", "2"), ("S2", "2", "1")]
+
+
+REG4 = Registration(14, "cmgd_humann4a2", "2.4.2",
+                    {"metaphlan_profile": "mpa4.1.1_vOct22", "humann_bundle": "humann4.0.0a2",
+                     "skip_baqlava": False}, "2.4.3",
+                    "https://github.com/seandavi/curatedMetagenomicsNextflow")
+H4 = "humann/humann4.0.0a2/"
+H4_FILES = {
+    f"{H4}out_4_pathabundance.tsv.gz": "# Pathway HUMAnN v4.0.0.alpha.2\tout_Abundance\n"
+                                       "UNMAPPED\t20\nUNINTEGRATED\t70\nPWY-1: a\t6\n"
+                                       "PWY-1: a|s__X\t6\nPWY-2: b\t4\n",
+    f"{H4}out_4_pathabundance_relab_unstratified.tsv.gz": (
+        "# Pathway HUMAnN v4.0.0.alpha.2\tout_Abundance\nUNMAPPED\t0.2\nUNINTEGRATED\t0.7\n"
+        "PWY-1: a\t0.06\nPWY-2: b\t0.04\n"),
+    f"{H4}out_3_reactions_unstratified.tsv.gz": "# Reaction HUMAnN v4.0.0.alpha.2\tout\n"
+                                                "UNMAPPED\t10\nUNGROUPED\t30\nRXN-1\t10\n",
+}
+VERSIONS4 = {"RS.p": ("2.4.2", "06f4f47aaaa"), "RS.q": ("2.4.3", "94b9ea9bbbb")}
+
+
+def _manifest4(key: str, version: str, commit: str) -> bytes:
+    return json.dumps({
+        "provenance": {"pipeline_version": version, "git_commit": commit, "git_revision": version,
+                       "nextflow_version": "25.10.8", "run_name": f"r-{key}",
+                       "start_time": "2026-10-17T15:40:14-04:00",
+                       "container": "docker://ghcr.io/seandavi/curatedmetagenomics:metaphlan4.2.6"},
+        "parameters": {"metaphlan_profile": "mpa4.1.1_vOct22", "humann_bundle": "humann4.0.0a2"},
+        "read_accounting": {"raw": {"number_reads": 60_000_000},
+                            "decontaminated": {"number_reads": 57_000_000},
+                            "reads_surviving_fraction": 0.95},
+        "software_versions": {"awscli": "aws-cli/1", "fastqc": "v0.12.1", "fasterq-dump": "3.2.1",
+                              "kneaddata": "v0.12.3", "trimmomatic": "0.39", "kraken2": "2.1.3",
+                              "metaphlan": "4.1.1", "bowtie2": "2.5.4",
+                              "humann": "v4.0.0.alpha.2", "baqlava": "v1.2.0-devel",
+                              "baqlava_image": "ghcr.io/seandavi/humann-baqlava:4.0.0a2-1.2.0"},
+    }).encode()
+
+
+def _build4(tmp_path, monkeypatch):
+    fetched = []
+
+    def fetch(prefix, sub):
+        key = prefix.rsplit("/", 1)[1]
+        fetched.append(sub)
+        if sub == "manifest.json":
+            return _manifest4(key, *VERSIONS4[key])
+        if sub == "full_data/metaphlan_markers/marker_rel_ab_w_read_stats.tsv.gz":
+            return gzip.compress(b"#mpa_vOct22_CHOCOPhlAnSGB_202403\nk__Bacteria\t2\t100.0\t-\t9\n")
+        if sub == f"baqlava/{key}_BAQLaVa_profile.txt":
+            return BAQLAVA.format(key=key).encode()
+        return gzip.compress(H4_FILES[sub].encode()) if sub in H4_FILES else None
+
+    items = [_item("RS.p", "completed", "ZhangX_2015"), _item("RS.q", "completed", "baqlava_test")]
+    items[0]["completed_at"] = "2026-10-17T20:44:05Z"
+    monkeypatch.setattr(source, "locate", lambda w, v, k: f"r2:cmgd-raw/{w}/{v}/{k}")
+    monkeypatch.setattr(source, "fetch", fetch)
+    monkeypatch.setattr(deliver, "metadata", lambda samples: ({}, []))
+    monkeypatch.setattr(deliver, "digest", lambda image: "sha256:f00" if "quay" in image else None)
+    return deliver.build(REG4, items, ["ZhangX_2015", "baqlava_test"], "p", tmp_path,
+                         today=TODAY), fetched
+
+
+def _tsv(path):
+    return list(csv.reader(path.open(), delimiter="\t"))
+
+
+def test_build_humann4a2_pilot(tmp_path, monkeypatch):
+    """cmgd_humann4a2/2.4.2: BAQLaVa at its key-templated path, HUMAnN raw + relab
+    pathway and reaction tables, run/raw links, MANIFEST.tsv and index.html."""
+    d, fetched = _build4(tmp_path, monkeypatch)
+
+    assert _tsv(d / "baqlava_vgb.tsv")[0] == ["readset_id", "VGB_1", "VGB_100062", "VGB_1593"]
+    assert fetched.count(f"{H4}out_3_reactions_unstratified.tsv.gz") == 2  # once per sample
+    assert _tsv(d / "humann4_pathabundance.tsv")[1] == ["RS.p", "6.0", "4.0", "70.0", "20.0"]
+    assert _tsv(d / "humann4_pathabundance_relab.tsv")[0][1:] == [
+        "PWY-1: a", "PWY-2: b", "UNINTEGRATED", "UNMAPPED"]
+    rxn = _tsv(d / "humann4_reactions_relab.tsv")
+    assert rxn[0] == ["readset_id", "RXN-1", "UNGROUPED", "UNMAPPED"]
+    assert [float(v) for v in rxn[1][1:]] == [0.2, 0.6, 0.2]
+    assert _tsv(d / "humann4_reactions.tsv")[1] == ["RS.p", "10.0", "30.0", "10.0"]
+
+    s = {r["readset_id"]: r for r in csv.DictReader((d / "samples.tsv").open(), delimiter="\t")}
+    raw = "https://cmgd-raw.cancerdatasci.org/cmgd_humann4a2/2.4.2/RS.p/"
+    assert s["RS.p"]["raw_url"] == raw and s["RS.p"]["completed_at"] == "2026-10-17T20:44:05Z"
+    assert s["RS.p"]["genefamilies_url"] == f"{raw}{H4}out_2_genefamilies_unstratified.tsv.gz"
+    assert s["RS.p"]["run_url"] == "https://cmgd.cancerdatasci.org/runs/r-RS.p"
+    assert s["RS.q"]["git_revision"] == "2.4.3"
+
+    readme = (d / "README.md").read_text()
+    assert "no UNCLASSIFIED row" in readme and "registration's current" in readme
+    assert "UNMAPPED is 20.0–20.0% of the row total" in readme
+    assert "humann v4.0.0.alpha.2" in readme and "baqlava v1.2.0-devel" in readme  # pre-release
+    assert "Patched UniRef file name" in readme  # specs.CAVEATS
+
+    # MANIFEST.tsv covers every file but itself, the .sha256 and the tarball, with real dims.
+    man = {r["file"]: r for r in csv.DictReader((d / "MANIFEST.tsv").open(), delimiter="\t")}
+    assert set(man) == {p.name for p in d.iterdir()} - {
+        "MANIFEST.tsv", "MANIFEST.sha256", "p-2026-10-17.tar.gz"}
+    for f, r in man.items():
+        assert int(r["bytes"]) == (d / f).stat().st_size
+        assert r["sha256"] == _sha((d / f).read_bytes())
+        if f.endswith(".tsv"):
+            rows = _tsv(d / f)
+            assert (int(r["rows"]), int(r["cols"])) == (len(rows) - 1, len(rows[0]))
+        else:
+            assert r["rows"] == r["cols"] == ""
+    assert f"{_sha((d / 'MANIFEST.tsv').read_bytes())}  MANIFEST.tsv" in (
+        d / "MANIFEST.sha256").read_text()
+
+    html = (d / "index.html").read_text()
+    missing = [f for f in [*man, "MANIFEST.tsv", "MANIFEST.sha256", "p-2026-10-17.tar.gz"]
+               if f'href="{f}"' not in html and f != "index.html"]
+    assert not missing
+    assert "sha256:f00 (tag resolved on 2026-10-17)" in html and "not recorded" in html
+
+
+def test_methods_names_every_manifest_version(tmp_path, monkeypatch):
+    """Drift guard: every version string in the manifests appears in METHODS.md, so
+    a template slot can't silently point at the wrong key."""
+    d, _ = _build4(tmp_path, monkeypatch)
+    text = (d / "METHODS.md").read_text()
+    for key, (version, commit) in VERSIONS4.items():
+        m = json.loads(_manifest4(key, version, commit))
+        wanted = {m["provenance"]["pipeline_version"], m["provenance"]["git_commit"][:7],
+                  m["provenance"]["nextflow_version"], *m["parameters"].values(),
+                  *(v for k, v in m["software_versions"].items() if k not in deliver.IGNORED_TOOLS)}
+        assert not [v for v in wanted if v not in text]
+    prose = text.split("## 1. Methods text")[1].split("## 2.")[0]
+    for v in ("fasterq-dump 3.2.1", "Trimmomatic 0.39", "Bowtie 2 2.5.4", "KneadData v0.12.3",
+              "MetaPhlAn 4.1.1 using the mpa_vOct22_CHOCOPhlAnSGB_202403",
+              "HUMAnN v4.0.0.alpha.2", "BAQLaVa v1.2.0-devel", "Nextflow 25.10.8",
+              "v2.4.2, commit 06f4f47 (1 sample)"):
+        assert v in prose
+    assert "not recorded" not in prose
+    assert "releases/tag/v1.2.0-devel" in text and "doi:10.1093/nar/gkz862" in text
+    assert "Kraken" not in text.split("## 5. How to cite")[1]  # run, but not delivered or cited
