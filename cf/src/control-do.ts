@@ -429,6 +429,11 @@ export class ControlDO extends DurableObject<Env> {
    * ponytail: if that earliest row is outside a scoped registration's
    * collections while a duplicate is inside, the readset gets no job. Pick
    * the earliest row within scope if duplicate run sets ever show up.
+   *
+   * The scope check is EXISTS keyed on s.sample_id, not `s.sample_id in
+   * (... json_each(w.collections))`: SQLite rebuilds a correlated IN list per
+   * outer row, so that form was samples x collection_samples and timed out
+   * at ~6k samples. This one is a few index probes per sample.
    */
   reconcileJobs(): number {
     const now = iso();
@@ -437,9 +442,9 @@ export class ControlDO extends DurableObject<Env> {
        select s.sample_id, w.id, w.workflow_id, w.version, 'pending', 0, ?
          from samples s cross join workflows w
         where w.status = 'active'
-          and (w.collections is null or s.sample_id in (
-                select cs.sample_id from collection_samples cs
-                  join json_each(w.collections) c on c.value = cs.collection_id))
+          and (w.collections is null or exists (
+                select 1 from json_each(w.collections) c
+                  join collection_samples cs on cs.collection_id = c.value and cs.sample_id = s.sample_id))
           and (w.sample_key = 'sample_id'
                or s.id = (select min(s2.id) from samples s2 where s2.readset_id = s.readset_id))`,
       now,

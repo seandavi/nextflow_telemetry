@@ -696,3 +696,43 @@ describe("run classification", () => {
   });
 
 });
+
+describe("reconcile at scale", () => {
+  // Production timed out at ~6k samples when the scope check was a correlated
+  // IN list (rebuilt per sample: samples x collection_samples). Own DO, so the
+  // bulk rows stay out of the shared "v1" corpus.
+  it("reconciles scoped and unscoped registrations over 6k samples quickly", async () => {
+    const stub = env.CONTROL.get(env.CONTROL.idFromName("reconcile-scale"));
+    await runInDurableObject(stub, (instance: ControlDO, state) => {
+      const sql = state.storage.sql;
+      const t = new Date().toISOString();
+      const N = 6000;
+      for (let i = 0; i < N; i++) {
+        // The last 50 rows repeat an earlier row's readset.
+        sql.exec(
+          `insert into samples (sample_id, readset_id, created_at, updated_at) values (?, ?, ?, ?)`,
+          `s${i}`, `RS.${i % (N - 50)}`, t, t,
+        );
+        sql.exec(`insert into collection_samples values (?, ?, ?)`, `C${i % 40}`, `s${i}`, t);
+      }
+      const wf = `insert into workflows (workflow_id, version, repository_url, revision, status, created_at, updated_at, collections, sample_key)
+                  values (?, '1', 'r', 'r', ?, ?, ?, ?, ?)`;
+      sql.exec(wf, "scoped", "active", t, t, JSON.stringify(Array.from({ length: 36 }, (_, i) => `C${i}`)), "readset_id");
+      sql.exec(wf, "all", "active", t, t, null, "sample_id");
+      sql.exec(wf, "old", "retired", t, t, null, "sample_id");
+
+      const t0 = Date.now();
+      const n = instance.reconcileJobs();
+      expect(Date.now() - t0).toBeLessThan(2000);
+      // Scoped + readset-keyed: one job per readset, on its earliest row, in C0..C35.
+      let scoped = 0;
+      for (let i = 0; i < N - 50; i++) if (i % 40 < 36) scoped++;
+      const per = Object.fromEntries(
+        sql.exec(`select workflow_id, count(*) as n from jobs group by workflow_id`).toArray().map((r: any) => [r.workflow_id, r.n]),
+      );
+      expect(per).toEqual({ scoped, all: N });
+      expect(n).toBe(scoped + N);
+      expect(instance.reconcileJobs()).toBe(0);
+    });
+  });
+});
