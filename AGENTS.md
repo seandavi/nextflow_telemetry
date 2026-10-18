@@ -1,5 +1,12 @@
 # Repository Guidelines
 
+## Metadata source catalog
+- `src/nextflow_telemetry/meta/catalog/`: source/asset inventory and immutable
+  whole-file snapshots, independent of processing and lake field-value loads.
+- Read its local `AGENTS.md` and `docs/source-catalog.md` for work in this area.
+- Run `uv run pytest tests/test_source_catalog.py` and
+  `uv run mypy src/nextflow_telemetry`; do not run production migrations or seed sources.
+
 ## Project Structure & Module Organization
 - `nextflow_telemetry/`: FastAPI application code.
   - `main.py` defines routes (`/health`, `/telemetry`) and database table setup.

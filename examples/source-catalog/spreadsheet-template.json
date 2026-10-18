@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "source": {
+    "source_id": "example-study-tracker",
+    "title": "Example study/metadata inventory (replace before applying)",
+    "kind": "google_sheet",
+    "url": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_PRIVATE_ID/edit",
+    "description": "Template only. Keep the real descriptor outside a public repo when its title, URL or notes are sensitive.",
+    "access": "restricted",
+    "data_license": null
+  },
+  "assets": [
+    {
+      "asset_id": "tab-0",
+      "locator": "gid=0",
+      "role": "inventory",
+      "description": "Study list, external metadata pointers and curation/access notes; not necessarily a table of clinical sample values.",
+      "access": "restricted",
+      "data_license": null
+    }
+  ]
+}

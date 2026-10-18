@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "source": {
+    "source_id": "olm-microbiome-repo",
+    "title": "Olm Lab Microbiome Repo data packages",
+    "kind": "git_repository",
+    "url": "https://github.com/OlmLab/microbiome_repo-data",
+    "description": "Upstream versioned human-gut catalog. Human-only scope belongs to this source, not to the compendium.",
+    "maintainer": "Olm Lab",
+    "access": "public",
+    "data_license": "CC-BY-4.0"
+  },
+  "assets": [
+    {
+      "asset_id": "data-package",
+      "locator": "GitHub Releases: data_package_<package_version>.zip",
+      "role": "sample_metadata",
+      "description": "Whole release package; includes source study inventory, run crosswalks, metadata, determinations and profiles. Capture receipt identifies exact version and bytes.",
+      "access": "public",
+      "data_license": "CC-BY-4.0"
+    }
+  ]
+}
