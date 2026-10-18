@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "source": {
+    "source_id": "zoe-predict-open",
+    "title": "ZOE PREDICT open metadata and MetaPhlAn profiles",
+    "kind": "zenodo",
+    "url": "https://zenodo.org/records/15308000",
+    "description": "Public age, sex and BMI metadata plus profiles for PREDICT 1/2/3. Does not imply access to the separate encrypted phenotype bundle or METHOD metadata.",
+    "access": "public",
+    "data_license": "CC-BY-4.0"
+  },
+  "assets": [
+    {"asset_id": "p1-metadata", "locator": "P1_metadata.tsv.bz2", "role": "sample_metadata", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p2-metadata", "locator": "P2_metadata.tsv.bz2", "role": "sample_metadata", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p3-us21-metadata", "locator": "P3_US21_metadata.tsv.bz2", "role": "sample_metadata", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p3-us22a-metadata", "locator": "P3_US22A_metadata.tsv.bz2", "role": "sample_metadata", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p3-uk22a-metadata", "locator": "P3_UK22A_metadata.tsv.bz2", "role": "sample_metadata", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p3-uk23art-metadata", "locator": "P3_UK23ART_metadata.tsv.bz2", "role": "sample_metadata", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p1-profiles", "locator": "P1_metaphlan_profile.tsv.bz2", "role": "profiles", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p2-profiles", "locator": "P2_metaphlan_profile.tsv.bz2", "role": "profiles", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p3-us21-profiles", "locator": "P3_US21_metaphlan_profile.tsv.bz2", "role": "profiles", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p3-us22a-profiles", "locator": "P3_US22A_metaphlan_profile.tsv.bz2", "role": "profiles", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p3-uk22a-profiles", "locator": "P3_UK22A_metaphlan_profile.tsv.bz2", "role": "profiles", "access": "public", "data_license": "CC-BY-4.0"},
+    {"asset_id": "p3-uk23art-profiles", "locator": "P3_UK23ART_metaphlan_profile.tsv.bz2", "role": "profiles", "access": "public", "data_license": "CC-BY-4.0"}
+  ]
+}

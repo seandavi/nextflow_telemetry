@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "source": {
+    "source_id": "cmd-curation",
+    "title": "curatedMetagenomicData curation",
+    "kind": "git_repository",
+    "url": "https://github.com/waldronlab/curatedMetagenomicDataCuration",
+    "description": "Authoritative curated study/sample metadata; capture an upstream commit archive before interpretation.",
+    "maintainer": "waldronlab/curatedMetagenomicDataCuration",
+    "access": "public",
+    "data_license": null
+  },
+  "assets": [
+    {
+      "asset_id": "curation-archive",
+      "locator": "inst/curated/ (repository archive at an exact commit SHA)",
+      "role": "sample_metadata",
+      "description": "Full repository archive, including both legacy and current TSV layouts. Recording it does not invoke the existing nf-meta loader.",
+      "access": "public",
+      "data_license": null
+    }
+  ]
+}

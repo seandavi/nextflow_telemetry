@@ -1,4 +1,6 @@
-"""nf-meta — sample metadata sources into ``lake.cmgd_meta`` (ADR-0012).
+"""nf-meta — source catalog and versioned sample metadata (ADR-0012).
+
+  nf-meta sources --help                              source inventory (Postgres, no lake)
 
 Backend and credentials as for nf-etl (cdsci-lake ``CU_OPENALEX_*`` settings,
 docs/etl-runbook.md).
@@ -13,13 +15,14 @@ from __future__ import annotations
 import argparse
 import json
 
-from . import store
+from .catalog import cli as catalog_cli
 
 
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="nf-meta", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    catalog_cli.add_parser(sub)
     load = sub.add_parser("load")
     src = load.add_subparsers(dest="source", required=True)
     olm = src.add_parser("olm")
@@ -32,6 +35,12 @@ def main(argv: list[str] | None = None) -> None:
     src.add_parser("xref")
     sub.add_parser("views")
     a = p.parse_args(argv)
+    if a.cmd == "sources":
+        catalog_cli.run(a)
+        return
+
+    # Catalog operations must not initialize the lake (or its credentials).
+    from . import store
 
     con = store.connect()
     try:

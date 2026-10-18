@@ -6,10 +6,13 @@ without pulling in the full FastAPI application.
 from __future__ import annotations
 
 from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     MetaData,
@@ -22,6 +25,52 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 
 metadata = MetaData()
+
+# Metadata inventory: independent of samples, collections and processing jobs.
+metadata_sources_tbl = Table(
+    "metadata_sources", metadata,
+    Column("source_id", String(80), primary_key=True),
+    Column("descriptor", JSONB, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+metadata_assets_tbl = Table(
+    "metadata_source_assets", metadata,
+    Column("source_id", String(80), ForeignKey("metadata_sources.source_id"), primary_key=True),
+    Column("asset_id", String(80), primary_key=True),
+    Column("descriptor", JSONB, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+metadata_snapshots_tbl = Table(
+    "metadata_source_snapshots", metadata,
+    Column("source_id", String(80), primary_key=True),
+    Column("asset_id", String(80), primary_key=True),
+    Column("version", String(300), primary_key=True),
+    Column("sha256", String(64), nullable=False),
+    Column("size_bytes", BigInteger, nullable=False),
+    Column("artifact_uri", Text, nullable=False),
+    # Freeze the descriptive context as well as the bytes: later descriptor edits
+    # must not retrospectively change a capture's locator/access/license.
+    Column("source_descriptor", JSONB, nullable=False),
+    Column("asset_descriptor", JSONB, nullable=False),
+    Column("captured_at", DateTime(timezone=True), nullable=False),
+    Column("captured_by", String(300), nullable=False),
+    ForeignKeyConstraint(["source_id", "asset_id"],
+                         ["metadata_source_assets.source_id", "metadata_source_assets.asset_id"]),
+    CheckConstraint("size_bytes >= 0", name="ck_metadata_snapshot_size"),
+)
+metadata_source_events_tbl = Table(
+    "metadata_source_events", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("source_id", String(80), ForeignKey("metadata_sources.source_id"), nullable=False),
+    Column("asset_id", String(80), nullable=True),
+    Column("actor", String(300), nullable=False),
+    Column("before", JSONB, nullable=True),
+    Column("after", JSONB, nullable=False),
+    Column("recorded_at", DateTime(timezone=True), nullable=False),
+    Index("ix_metadata_source_events_source", "source_id"),
+)
 
 # ---------------------------------------------------------------------------
 # Raw weblog events — append-only, one row per Nextflow event POST

@@ -8,6 +8,10 @@ presents the results through a live React dashboard.
 > request an SRA study/BioProject by accession, and how maintainers review the preview,
 > approve, and dispatch.
 
+**Cataloging metadata sources?** See [Metadata source catalog](docs/source-catalog.md)
+for repositories, spreadsheets and Zenodo assets, descriptor history and immutable
+snapshots. `nf-meta sources` works independently of sample registration and processing.
+
 ![Dashboard overview](docs/dashboard-overview.png)
 
 ---
