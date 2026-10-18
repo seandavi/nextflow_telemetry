@@ -7,10 +7,12 @@ The build reads the v2 jobs API and ``cmgd-raw`` (``source``), plus cMD's curate
 sample metadata from ``lake.cmgd_meta`` when the lake is reachable. It never
 touches the lake's result tables, ``releases/`` or ``index.json``.
 
-  <out>/<name>/<YYYY-MM-DD>/  index.html, README.md, METHODS.md, samples.tsv,
-                              coverage.tsv, metaphlan_<profile>.tsv, [humann4_*.tsv,
-                              baqlava_vgb.tsv], MANIFEST.tsv, MANIFEST.sha256,
-                              <name>-<date>.tar.gz
+  <out>/<name>/<YYYY-MM-DD>/  index.html, README.md, METHODS.md, samples.tsv.gz,
+                              coverage.tsv.gz, metaphlan_<profile>.tsv.gz,
+                              [humann4_*.tsv.gz, baqlava_vgb.tsv.gz], MANIFEST.tsv,
+                              MANIFEST.sha256, <name>-<date>.tar.gz
+
+Every table is gzipped with mtime 0, so the same data rebuilds to the same sha256.
 
 Gene families stay per-sample files on cmgd-raw, linked from samples.tsv and
 index.html. ``--sync`` copies that folder to ``<remote>/deliverables/<name>/<date>/``.
@@ -18,7 +20,9 @@ index.html. ``--sync`` copies that folder to ``<remote>/deliverables/<name>/<dat
 from __future__ import annotations
 
 import csv
+import gzip
 import hashlib
+import io
 import json
 import re
 import shutil
@@ -33,6 +37,7 @@ from datetime import date, timedelta
 from html import escape
 from pathlib import Path
 from statistics import median
+from typing import TextIO
 
 import httpx
 
@@ -60,9 +65,10 @@ FIRST_FIELDS = ("study_condition", "disease", "age", "age_years", "age_category"
                 "country", "subject_id", "body_site")
 QC_COLUMNS = ("reads_raw", "reads_decontaminated", "reads_surviving_fraction",
               "pipeline_version", "git_commit")
-SAMPLE_COLUMNS = ("readset_id", "run_accessions", "collection", *QC_COLUMNS, "git_revision",
-                  "run_name", "run_started", "completed_at", "run_url", "raw_url",
-                  "genefamilies_url")
+SAMPLE_COLUMNS = ("readset_id", "run_accessions", "collection", *QC_COLUMNS,
+                  "qc_low_feature_tables", "git_revision", "run_name", "run_started",
+                  "completed_at", "run_url", "raw_url", "genefamilies_url")
+LOW_FEATURE_LIST = 20  # samples the low-feature caveat names; all are in samples.tsv.gz
 REGISTRY_ACCEPT = ", ".join((
     "application/vnd.oci.image.index.v1+json",
     "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -99,7 +105,7 @@ def outputs(reg: Registration) -> list[Output]:
     for s in SPECS[(reg.workflow_id, reg.version)]:
         if s.table == "taxonomic_profile_metaphlan" and s.branched:
             out.append(Output(
-                f"metaphlan_{profile}.tsv", f"full_data/{s.subpath}", s.parser, "clade_name",
+                f"metaphlan_{profile}.tsv.gz", f"full_data/{s.subpath}", s.parser, "clade_name",
                 "relative_abundance",
                 f"MetaPhlAn relative abundance in percent ({profile}, all quality-controlled "
                 "reads, main pass), as reported (`rel_ab_w_read_stats`, not renormalized). "
@@ -113,7 +119,7 @@ def outputs(reg: Registration) -> list[Output]:
             totals = ("Community totals only: the per-taxon strata (`FEATURE|s__…`) are "
                       "dropped; each sample's stratified tables are under its `raw_url`.")
             out.append(Output(
-                f"{stem}.tsv", s.subpath, s.parser, "pathway",
+                f"{stem}.tsv.gz", s.subpath, s.parser, "pathway",
                 "abundance" if kind == "pathabundance" else "coverage",
                 f"HUMAnN {kind} ({bundle}), MetaCyc pathways in HUMAnN's native units, "
                 "unnormalized: values scale with sequencing depth, so normalize before "
@@ -121,9 +127,9 @@ def outputs(reg: Registration) -> list[Output]:
                 "UNINTEGRATED (gene families in no pathway) are kept as columns."))
             if kind == "pathabundance":
                 out.append(Output(
-                    f"{stem}_relab.tsv", s.subpath.replace(".tsv.gz", "_relab_unstratified.tsv.gz"),
+                    f"{stem}_relab.tsv.gz", s.subpath.replace(".tsv.gz", "_relab_unstratified.tsv.gz"),
                     s.parser, "pathway", "abundance",
-                    f"The pipeline's relative-abundance version of `{stem}.tsv` "
+                    f"The pipeline's relative-abundance version of `{stem}.tsv.gz` "
                     "(`humann_renorm_table --units relab`): each row sums to 1 including "
                     "UNMAPPED and UNINTEGRATED; drop those and rescale for pathway-only "
                     f"proportions. {totals}"))
@@ -132,18 +138,18 @@ def outputs(reg: Registration) -> list[Output]:
                 doc = (f"HUMAnN reactions ({bundle}): gene families grouped into reactions "
                        f"with the utility mapping. {totals}")
                 out.append(Output(
-                    f"{stem.removesuffix('_pathabundance')}_reactions.tsv", sub,
+                    f"{stem.removesuffix('_pathabundance')}_reactions.tsv.gz", sub,
                     parsers.parse_humann_reactions, "reaction", "abundance",
                     f"{doc} Native units, unnormalized. UNMAPPED (reads matching no gene "
                     "family) and UNGROUPED (gene families in no reaction) are kept as columns."))
                 out.append(Output(
-                    f"{stem.removesuffix('_pathabundance')}_reactions_relab.tsv", sub,
+                    f"{stem.removesuffix('_pathabundance')}_reactions_relab.tsv.gz", sub,
                     _relab(parsers.parse_humann_reactions), "reaction", "abundance",
                     f"{doc} Rescaled here to sum to 1 per sample including UNMAPPED and "
                     "UNGROUPED (the pipeline writes no relab reactions table), as "
                     "`humann_renorm_table --units relab` does."))
     out.append(Output(
-        "baqlava_vgb.tsv", BAQLAVA_SUBPATH, parsers.parse_baqlava_profile, "vgb", "abundance",
+        "baqlava_vgb.tsv.gz", BAQLAVA_SUBPATH, parsers.parse_baqlava_profile, "vgb", "abundance",
         "BAQLaVa abundance in RPK (reads per kilobase) per viral genome bin (VGB): the "
         "total line, which is the larger of the nucleotide and translated estimates, not "
         "their sum; unnormalized. Input is only the reads HUMAnN's nucleotide search left "
@@ -177,10 +183,17 @@ def wide(profiles: dict[str, dict[str, float]]) -> tuple[list[str], list[list]]:
 
 
 def write_tsv(path: Path, header: Sequence[str], rows: Iterable[Sequence]) -> None:
-    with path.open("w", newline="") as f:
-        w = csv.writer(f, delimiter="\t", lineterminator="\n")
-        w.writerow(header)
-        w.writerows(["" if v is None else v for v in r] for r in rows)
+    """A TSV, gzipped with mtime 0 (reproducible bytes) when ``path`` ends in ``.gz``."""
+    with path.open("wb") as raw:
+        gz = gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) if path.suffix == ".gz" else None
+        with io.TextIOWrapper(gz or raw, encoding="utf-8", newline="") as f:
+            w = csv.writer(f, delimiter="\t", lineterminator="\n")
+            w.writerow(header)
+            w.writerows(["" if v is None else v for v in r] for r in rows)
+
+
+def read_text(p: Path) -> TextIO:
+    return gzip.open(p, "rt") if p.suffix == ".gz" else p.open()
 
 
 def versions(manifests: Iterable[dict]) -> dict[str, Counter]:
@@ -219,10 +232,29 @@ def table_notes(header: Sequence[str], rows: Sequence[Sequence]) -> str:
     return " ".join(notes)
 
 
+def low_features(tables: dict[str, tuple[list[str], list[list]]]
+                 ) -> tuple[dict[str, float], dict[str, list[str]]]:
+    """Per table (relab tables skipped: same non-zero features as the raw one) the
+    median sample's non-zero column count; per sample the tables where it reports
+    fewer than half that (samples.tsv's ``qc_low_feature_tables``)."""
+    mids: dict[str, float] = {}
+    low: dict[str, list[str]] = defaultdict(list)
+    for f, (_, rows) in tables.items():
+        if "_relab" in f:
+            continue
+        n = {r[0]: sum(1 for v in r[1:] if v) for r in rows}
+        mids[f] = mid = median(n.values()) if n else 0
+        for k, v in n.items():
+            if v < 0.5 * mid:
+                low[k].append(f)
+    return mids, dict(low)
+
+
 def caveats(reg: Registration, vers: dict[str, Counter], expires: date,
-            tables: dict[str, tuple[list[str], list[list]]]) -> list[str]:
+            mids: dict[str, float], low: dict[str, list[str]]) -> list[str]:
     """Generated caveats (pre-release tools, mixed versions, samples with few
-    features), then the registration's hand-written CAVEATS and the expiry."""
+    features: ``low_features``), then the registration's hand-written CAVEATS and
+    the expiry."""
     out = []
     pre = sorted(f"{t} {v}" for t, c in vers.items() if t not in NOT_TOOLS
                  and not t.endswith("_image") for v in c if PRERELEASE.search(v))
@@ -232,16 +264,20 @@ def caveats(reg: Registration, vers: dict[str, Counter], expires: date,
     mixed = sorted(t for t, c in vers.items() if len(c) > 1)
     if mixed:
         out.append(f"**Mixed versions:** {', '.join(f'{t} {methods.joined(vers[t])}' for t in mixed)}.")
-    for f, (header, rows) in tables.items():
-        if "_relab" in f:  # same non-zero features as the raw table
-            continue
-        n = {r[0]: sum(1 for v in r[1:] if v) for r in rows}
-        mid = median(n.values()) if n else 0
-        low = sorted(k for k, v in n.items() if v < 0.5 * mid)
-        if low:
-            out.append(f"**Few features in `{f}`:** the median sample reports {mid:g} non-zero "
-                       f"columns; {', '.join(f'{k} reports {n[k]}' for k in low)}. Check these "
-                       "samples before analysis, or exclude them.")
+    if low:
+        per = Counter(f for fs in low.values() for f in fs)
+        multi = sorted(k for k, fs in low.items() if len(fs) > 1)
+        named = ", ".join(f"{k} ({', '.join(f'`{f}`' for f in low[k])})"
+                          for k in multi[:LOW_FEATURE_LIST])
+        more = f" and {len(multi) - LOW_FEATURE_LIST} more" if len(multi) > LOW_FEATURE_LIST else ""
+        out.append(
+            "**Few features:** samples reporting fewer than half the median sample's non-zero "
+            "columns: " + "; ".join(f"{per[f]} in `{f}` (median {mids[f]:g})" for f in mids
+                                    if per[f]) +
+            ". Usually shallow or low-diversity samples rather than failures; each sample's "
+            "flagged tables are in `samples.tsv.gz` (`qc_low_feature_tables`). "
+            + (f"Flagged in two or more tables: {named}{more}; check these before analysis."
+               if multi else "No sample is flagged in more than one table."))
     out += CAVEATS.get((reg.workflow_id, reg.version), [])
     out.append(f"**Not a release.** No DOI; expires on {expires}. For a permanent record cite a "
                "curatedMetagenomicData release once one covers these samples.")
@@ -290,9 +326,29 @@ def containers(reg: Registration, manifests: Sequence[dict], today: date) -> lis
     return out
 
 
+def sample_summary(samples: Sequence[dict], cov: list[dict]) -> list[list[str]]:
+    """README's and index.html's stand-in for a per-sample table, so their size
+    doesn't grow with the sample count (Markdown cells)."""
+    reads = [float(s["reads_decontaminated"]) for s in samples if s.get("reads_decontaminated")]
+    revs = Counter(str(s.get("pipeline_version") or "unknown") for s in samples)
+    flagged = sum(1 for s in samples if s.get("qc_low_feature_tables"))
+    return [
+        ["samples", f"{len(samples)} delivered, one row each in `samples.tsv.gz`"],
+        ["per collection (delivered / completed / registered)",
+         "; ".join(f"{c['collection']} {c['delivered']} / {c['completed']} / {c['registered']}"
+                   for c in cov)],
+        ["reads after QC and host removal",
+         f"median {median(reads) / 1e6:.1f} million (range {min(reads) / 1e6:.1f}–"
+         f"{max(reads) / 1e6:.1f} million)" if reads else "not recorded"],
+        ["pipeline version", methods.joined(revs) if revs else "–"],
+        ["few-features flag", f"{flagged} samples (`qc_low_feature_tables`; see Caveats)"],
+    ]
+
+
 def readme(name: str, today: date, reg: Registration, cov: list[dict],
            vers: dict[str, Counter], files: list[tuple[str, str]],
-           meta_releases: Sequence[str], notes: Sequence[str] = ()) -> str:
+           meta_releases: Sequence[str], notes: Sequence[str] = (),
+           samples: Sequence[dict] = ()) -> str:
     expires = today + timedelta(days=EXPIRY_DAYS)
     mixed = sorted(t for t, c in vers.items() if len(c) > 1)
     comparability = (
@@ -317,12 +373,19 @@ citable, durable data use the releases at {publish.PUBLIC_BASE_URL}/.
 
 - Registration: `{reg.workflow_id}/{reg.version}` (registration id {reg.pk})
 - Pipeline: {reg.repository_url or 'curatedMetagenomicsNextflow'}; the registration's current
-  revision is `{reg.revision or 'unknown'}`, but each sample's own revision is in `samples.tsv`
+  revision is `{reg.revision or 'unknown'}`, but each sample's own revision is in `samples.tsv.gz`
   (`pipeline_version`, `git_commit`) and the Versions table below.
 - Collections: {', '.join(c['collection'] for c in cov)}
-- Samples: completed jobs only; `coverage.tsv` says how many of each collection that is.
+- Samples: completed jobs only; `coverage.tsv.gz` says how many of each collection that is.
 
 {md_table(list(cov[0]), [list(c.values()) for c in cov]) if cov else ''}
+
+## Samples
+
+{md_table(["", ""], sample_summary(samples, cov))}
+
+Per-sample runs, read counts, links and metadata are in `samples.tsv.gz`; file
+checksums and dimensions in `MANIFEST.tsv`.
 
 ## Versions
 
@@ -346,16 +409,19 @@ bundles or pipeline versions) are not directly comparable with these.
 
 {md_table(["file", "contents"], files)}
 
-All TSVs are tab-separated with a header row. The profile tables are samples x
-features: one row per sample (`readset_id`), one column per feature.
+Every table is a gzipped TSV (`.tsv.gz`, tab-separated with a header row; `zcat` it, or
+read it directly with R or pandas). The profile tables are samples x features: one row
+per sample (`readset_id`), one column per feature.
 
-## Columns of samples.tsv
+## Columns of samples.tsv.gz
 
 - `readset_id`: the sample's readset id (RS.…), the row key of every table here.
 - `run_accessions`: semicolon-separated SRA/ENA runs the sample was built from.
 - `collection`: the requested collection(s) (study) the sample belongs to.
 - `reads_raw`, `reads_decontaminated`, `reads_surviving_fraction`: reads before and
   after host decontamination, and their ratio.
+- `qc_low_feature_tables`: comma-separated tables in which the sample reports fewer than
+  half the median sample's non-zero columns; empty when none.
 - `pipeline_version`, `git_commit`, `git_revision`: the pipeline that produced the sample.
 - `run_name`, `run_started`, `completed_at`, `run_url`: the Nextflow run, when it started,
   when the job completed, and its page on the dashboard.
@@ -366,7 +432,7 @@ features: one row per sample (`readset_id`), one column per feature.
   exactly as the curation sheet gives it (several values are `;`-joined). Source:
   {meta}.
 
-## coverage.tsv
+## coverage.tsv.gz
 
 `registered`: jobs of this registration in the collection; `completed`: finished;
 `delivered`: completed and found in the output store (only these are in the tables);
@@ -392,7 +458,8 @@ def index_html(name: str, today: date, reg: Registration, cov: list[dict], d: Pa
                vers: dict[str, Counter], conts: list[list[str]], notes: Sequence[str],
                samples: list[dict]) -> str:
     """The landing page: the README's and METHODS' content, every file linked
-    explicitly (cmgd-public can't be listed) and per-sample run/raw links."""
+    explicitly (cmgd-public can't be listed) and a summary of the samples; the
+    per-sample run/raw links are in samples.tsv.gz, so the page stays small."""
     expires = today + timedelta(days=EXPIRY_DAYS)
     dbs = DATABASES.get((reg.workflow_id, reg.version)) or {}
 
@@ -428,11 +495,10 @@ def index_html(name: str, today: date, reg: Registration, cov: list[dict], d: Pa
         "<h2>Caveats</h2>",
         "<ol>" + "".join(f"<li>{_inline(c)}</li>" for c in notes) + "</ol>",
         "<h2>Samples</h2>",
-        site._table(["readset_id", "collection", "revision", "run", "raw", "gene families"],
-                    [[f'<span class="mono">{escape(s["readset_id"])}</span>',
-                      escape(s["collection"]), escape(str(s["pipeline_version"] or "")),
-                      link(s["run_url"], s["run_name"] or "run"), link(s["raw_url"], "folder"),
-                      link(s["genefamilies_url"], "unstratified")] for s in samples]),
+        site._table(["", ""], [[_inline(k), _inline(v)] for k, v in sample_summary(samples, cov)]),
+        f"<p>Per-sample runs, read counts, run and cmgd-raw links and metadata: "
+        f"{link('samples.tsv.gz', 'samples.tsv.gz')}. Checksums and dimensions: "
+        f"{link('MANIFEST.tsv', 'MANIFEST.tsv')}.</p>",
         "<h2>How to cite</h2>",
         site._table(["tool / database", "citation"],
                     [[escape(n), escape(c)] for n, c in methods.citations(vers)]),
@@ -444,7 +510,8 @@ def index_html(name: str, today: date, reg: Registration, cov: list[dict], d: Pa
 
 def write_manifest(d: Path, name: str, today: date) -> None:
     """``MANIFEST.tsv`` (file, bytes, sha256, rows, cols; rows exclude the header,
-    cols include ``readset_id``; blank for non-TSVs) and ``MANIFEST.sha256``
+    cols include ``readset_id``, counted inside a ``.tsv.gz``; blank for non-TSVs;
+    bytes and sha256 are of the file as shipped) and ``MANIFEST.sha256``
     (``sha256sum -c`` format) over every file, then ``<name>-<date>.tar.gz`` of
     them all, manifests included."""
     skip = {"MANIFEST.sha256", "MANIFEST.tsv"}
@@ -458,8 +525,8 @@ def write_manifest(d: Path, name: str, today: date) -> None:
     rows = []
     for p in files:
         n = c = None
-        if p.suffix == ".tsv":
-            with p.open() as f:
+        if p.name.endswith((".tsv", ".tsv.gz")):
+            with read_text(p) as f:
                 c = f.readline().count("\t") + 1
                 n = sum(1 for _ in f)
         rows.append([p.name, p.stat().st_size, sha(p), n, c])
@@ -566,7 +633,7 @@ def build(reg: Registration, items: list[dict], collections: Sequence[str], name
     for o in outs:
         profiles = {k: r[1][o.file] for k, (_, r) in got.items() if o.file in r[1]}
         if not profiles:
-            if got and (o.file != "baqlava_vgb.tsv" or reg.params.get("skip_baqlava") is False):
+            if got and (o.file != "baqlava_vgb.tsv.gz" or reg.params.get("skip_baqlava") is False):
                 print(f"warning: no sample has {o.subpath}; {o.file} not written",
                       file=sys.stderr)
             continue
@@ -579,6 +646,7 @@ def build(reg: Registration, items: list[dict], collections: Sequence[str], name
     meta, meta_releases = metadata([(cs[0], k, k) for k, cs in in_scope.items()])
     fields = sorted({f for m in meta.values() for f in m},
                     key=lambda f: (FIRST_FIELDS.index(f) if f in FIRST_FIELDS else len(FIRST_FIELDS), f))
+    mids, low = low_features(tables)
     samples, qc_rows, manifests = [], [], []
     for k, (i, (raw, _, prefix)) in sorted(got.items(), key=lambda kv: (in_scope[kv[0]], kv[0])):
         manifest = json.loads(raw)
@@ -588,16 +656,19 @@ def build(reg: Registration, items: list[dict], collections: Sequence[str], name
         samples.append({"readset_id": k, "run_accessions": i.get("ncbi_accession"),
                         "collection": ";".join(in_scope[k]),
                         **{c: qc.get(c) for c in QC_COLUMNS},
+                        "qc_low_feature_tables": ",".join(low.get(k, ())),
                         **_links(reg, i, prefix, manifest),
                         **{f: ";".join(sorted(meta.get(k, {}).get(f, ()))) for f in fields}})
-    write_tsv(d / "samples.tsv", [*SAMPLE_COLUMNS, *fields], [list(s.values()) for s in samples])
+    write_tsv(d / "samples.tsv.gz", [*SAMPLE_COLUMNS, *fields],
+              [list(s.values()) for s in samples])
     cov = coverage(items, collections, set(got))
-    write_tsv(d / "coverage.tsv", list(cov[0]), [list(c.values()) for c in cov])
+    write_tsv(d / "coverage.tsv.gz", list(cov[0]), [list(c.values()) for c in cov])
     profile_files = list(files)
-    files += [("samples.tsv", "One row per delivered sample: runs, collection, read counts, "
-                              "pipeline revision, run and cmgd-raw links, curated sample metadata."),
-              ("coverage.tsv", "Per collection: how many samples are registered, completed, "
-                               "delivered, dead-lettered, pending and running."),
+    files += [("samples.tsv.gz", "One row per delivered sample: runs, collection, read counts, "
+                                 "few-features QC flag, pipeline revision, run and cmgd-raw "
+                                 "links, curated sample metadata."),
+              ("coverage.tsv.gz", "Per collection: how many samples are registered, completed, "
+                                  "delivered, dead-lettered, pending and running."),
               ("index.html", "This deliverable as a web page, every file linked."),
               ("README.md", "Scope, versions, caveats and column definitions."),
               ("METHODS.md", "Methods text, software/containers/databases, how to read each "
@@ -608,10 +679,11 @@ def build(reg: Registration, items: list[dict], collections: Sequence[str], name
               (f"{name}-{today}.tar.gz", "Everything above in one archive.")]
     vers = versions(manifests)
     dbs = DATABASES.get((reg.workflow_id, reg.version)) or {}
-    notes = caveats(reg, vers, expires, tables)
+    notes = caveats(reg, vers, expires, mids, low)
     paragraphs = methods.prose(manifests, vers, dbs, qc_rows)
     conts = containers(reg, manifests, today)
-    (d / "README.md").write_text(readme(name, today, reg, cov, vers, files, meta_releases, notes))
+    (d / "README.md").write_text(readme(name, today, reg, cov, vers, files, meta_releases, notes,
+                                              samples))
     (d / "METHODS.md").write_text(methods.render(name, today, expires, reg, cov, len(samples),
                                                  paragraphs, vers, conts, dbs, profile_files,
                                                  notes))

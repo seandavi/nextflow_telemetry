@@ -163,7 +163,7 @@ How the tables in this deliverable were produced, for writing a Methods section
 and analysing the data. Versions and counts were read from the delivered
 samples' `manifest.json` files at build time; step parameters are those of the
 pipeline revision that ran. Where they disagree, the per-sample values in
-`samples.tsv` are authoritative.
+`samples.tsv.gz` are authoritative.
 
 Registration `{reg.workflow_id}/{reg.version}` (id {reg.pk}). {n_samples} samples from
 collections {', '.join(f"{c['collection']} ({c['delivered']})" for c in cov)}. Built
@@ -191,9 +191,9 @@ Cite the tools and databases in section 5, and curatedMetagenomicData.
 
 ## 3. The tables
 
-Every profile table is tab-separated, one row per sample (`readset_id`) and one
+Every profile table is a gzipped TSV, one row per sample (`readset_id`) and one
 column per feature; 0 means *not reported*, which is not a measured absence. Join
-every table to `samples.tsv` on `readset_id`.
+every table to `samples.tsv.gz` on `readset_id`.
 
 {chr(10).join(f"- `{f}`: {doc}" for f, doc in files)}
 

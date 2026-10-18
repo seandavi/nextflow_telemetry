@@ -98,6 +98,36 @@ def test_manifest_and_tarball(tmp_path):
                                         "t-2026-10-17/README.md", "t-2026-10-17/a.tsv"]
 
 
+def test_gzipped_tsv_is_reproducible_and_counted_inside(tmp_path):
+    p = tmp_path / "b.tsv.gz"
+    deliver.write_tsv(p, ["readset_id", "f", "g"], [["RS.a", 1, None], ["RS.b", 2, 3]])
+    first = p.read_bytes()
+    deliver.write_tsv(p, ["readset_id", "f", "g"], [["RS.a", 1, None], ["RS.b", 2, 3]])
+    assert p.read_bytes() == first  # mtime 0: same data, same sha256
+    assert gzip.decompress(first) == b"readset_id\tf\tg\nRS.a\t1\t\nRS.b\t2\t3\n"
+    deliver.write_manifest(tmp_path, "t", TODAY)
+    row = (tmp_path / "MANIFEST.tsv").read_text().splitlines()[1].split("\t")
+    assert row == ["b.tsv.gz", str(len(first)), _sha(first), "2", "3"]
+
+
+def test_low_features_flag_column_and_capped_caveat(monkeypatch):
+    def table(counts):  # sample -> number of non-zero features out of 4
+        return ["readset_id", *"wxyz"], [[k, *([1] * n + [0] * (4 - n))] for k, n in counts.items()]
+    tables = {"a.tsv.gz": table({"RS.1": 4, "RS.2": 4, "RS.3": 1, "RS.4": 1, "RS.5": 4}),
+              "a_relab.tsv.gz": table({"RS.1": 0, "RS.2": 0, "RS.3": 0}),  # skipped
+              "b.tsv.gz": table({"RS.1": 4, "RS.2": 1, "RS.3": 1, "RS.4": 1, "RS.5": 4,
+                                 "RS.6": 4, "RS.7": 4})}
+    mids, low = deliver.low_features(tables)
+    assert mids == {"a.tsv.gz": 4, "b.tsv.gz": 4}
+    assert low == {"RS.3": ["a.tsv.gz", "b.tsv.gz"], "RS.4": ["a.tsv.gz", "b.tsv.gz"],
+                   "RS.2": ["b.tsv.gz"]}
+    monkeypatch.setattr(deliver, "LOW_FEATURE_LIST", 1)
+    text = " ".join(deliver.caveats(REG, {}, TODAY, mids, low))
+    assert "2 in `a.tsv.gz` (median 4); 3 in `b.tsv.gz` (median 4)" in text
+    assert "RS.3 (`a.tsv.gz`, `b.tsv.gz`) and 1 more" in text
+    assert "RS.2" not in text and "RS.4" not in text  # in samples.tsv.gz only
+
+
 # Real-shaped BAQLaVa v1.2.0-devel output (cmgd_humann4a2/2.4.2, trimmed): the sample
 # column is named after the sample, and the total is max(nucleotide, translated).
 BAQLAVA = (
@@ -137,18 +167,18 @@ def test_build_writes_only_present_outputs(tmp_path, monkeypatch):
 
     assert d == tmp_path / "t" / "2026-10-17"
     assert sorted(p.name for p in d.iterdir()) == [
-        "MANIFEST.sha256", "MANIFEST.tsv", "METHODS.md", "README.md", "coverage.tsv",
-        "index.html", "metaphlan_mpa4.2.6_vJan26.tsv", "samples.tsv", "t-2026-10-17.tar.gz"]
+        "MANIFEST.sha256", "MANIFEST.tsv", "METHODS.md", "README.md", "coverage.tsv.gz",
+        "index.html", "metaphlan_mpa4.2.6_vJan26.tsv.gz", "samples.tsv.gz", "t-2026-10-17.tar.gz"]
     assert "Includes UNCLASSIFIED" in (d / "README.md").read_text()
-    mpa = list(csv.reader((d / "metaphlan_mpa4.2.6_vJan26.tsv").open(), delimiter="\t"))
+    mpa = list(csv.reader(deliver.read_text(d / "metaphlan_mpa4.2.6_vJan26.tsv.gz"), delimiter="\t"))
     assert mpa[0] == ["readset_id", "UNCLASSIFIED", "k__Archaea", "k__Bacteria", "k__Bacteria|s__X"]
     assert mpa[2] == ["RS.b", "40.0", "60.0", "0", "0"]
-    samples = list(csv.DictReader((d / "samples.tsv").open(), delimiter="\t"))
+    samples = list(csv.DictReader(deliver.read_text(d / "samples.tsv.gz"), delimiter="\t"))
     assert [(s["readset_id"], s["collection"], s["disease"]) for s in samples] == [
         ("RS.a", "S1", "healthy"), ("RS.b", "S1;S2", "")]
     assert list(samples[0])[-2:] == ["disease", "zfield"]  # FIRST_FIELDS first, rest sorted
     assert samples[0]["reads_raw"] == "100"
-    cov = list(csv.DictReader((d / "coverage.tsv").open(), delimiter="\t"))
+    cov = list(csv.DictReader(deliver.read_text(d / "coverage.tsv.gz"), delimiter="\t"))
     assert [(c["collection"], c["completed"], c["delivered"]) for c in cov] == [
         ("S1", "2", "2"), ("S2", "2", "1")]
 
@@ -214,7 +244,7 @@ def _build4(tmp_path, monkeypatch):
 
 
 def _tsv(path):
-    return list(csv.reader(path.open(), delimiter="\t"))
+    return list(csv.reader(deliver.read_text(path), delimiter="\t"))
 
 
 def test_build_humann4a2_pilot(tmp_path, monkeypatch):
@@ -222,22 +252,22 @@ def test_build_humann4a2_pilot(tmp_path, monkeypatch):
     pathway and reaction tables, run/raw links, MANIFEST.tsv and index.html."""
     d, fetched = _build4(tmp_path, monkeypatch)
 
-    assert _tsv(d / "baqlava_vgb.tsv")[0] == ["readset_id", "VGB_1", "VGB_100062", "VGB_1593"]
+    assert _tsv(d / "baqlava_vgb.tsv.gz")[0] == ["readset_id", "VGB_1", "VGB_100062", "VGB_1593"]
     assert fetched.count(f"{H4}out_3_reactions_unstratified.tsv.gz") == 2  # once per sample
-    assert _tsv(d / "humann4_pathabundance.tsv")[1] == ["RS.p", "6.0", "4.0", "70.0", "20.0"]
-    assert _tsv(d / "humann4_pathabundance_relab.tsv")[0][1:] == [
+    assert _tsv(d / "humann4_pathabundance.tsv.gz")[1] == ["RS.p", "6.0", "4.0", "70.0", "20.0"]
+    assert _tsv(d / "humann4_pathabundance_relab.tsv.gz")[0][1:] == [
         "PWY-1: a", "PWY-2: b", "UNINTEGRATED", "UNMAPPED"]
-    rxn = _tsv(d / "humann4_reactions_relab.tsv")
+    rxn = _tsv(d / "humann4_reactions_relab.tsv.gz")
     assert rxn[0] == ["readset_id", "RXN-1", "UNGROUPED", "UNMAPPED"]
     assert [float(v) for v in rxn[1][1:]] == [0.2, 0.6, 0.2]
-    assert _tsv(d / "humann4_reactions.tsv")[1] == ["RS.p", "10.0", "30.0", "10.0"]
+    assert _tsv(d / "humann4_reactions.tsv.gz")[1] == ["RS.p", "10.0", "30.0", "10.0"]
 
-    s = {r["readset_id"]: r for r in csv.DictReader((d / "samples.tsv").open(), delimiter="\t")}
+    s = {r["readset_id"]: r for r in csv.DictReader(deliver.read_text(d / "samples.tsv.gz"), delimiter="\t")}
     raw = "https://cmgd-raw.cancerdatasci.org/cmgd_humann4a2/2.4.2/RS.p/"
     assert s["RS.p"]["raw_url"] == raw and s["RS.p"]["completed_at"] == "2026-10-17T20:44:05Z"
     assert s["RS.p"]["genefamilies_url"] == f"{raw}{H4}out_2_genefamilies_unstratified.tsv.gz"
     assert s["RS.p"]["run_url"] == "https://cmgd.cancerdatasci.org/runs/r-RS.p"
-    assert s["RS.q"]["git_revision"] == "2.4.3"
+    assert s["RS.q"]["git_revision"] == "2.4.3" and s["RS.q"]["qc_low_feature_tables"] == ""
 
     readme = (d / "README.md").read_text()
     assert "no UNCLASSIFIED row" in readme and "registration's current" in readme
@@ -252,7 +282,7 @@ def test_build_humann4a2_pilot(tmp_path, monkeypatch):
     for f, r in man.items():
         assert int(r["bytes"]) == (d / f).stat().st_size
         assert r["sha256"] == _sha((d / f).read_bytes())
-        if f.endswith(".tsv"):
+        if f.endswith(".tsv.gz"):
             rows = _tsv(d / f)
             assert (int(r["rows"]), int(r["cols"])) == (len(rows) - 1, len(rows[0]))
         else:
@@ -265,6 +295,9 @@ def test_build_humann4a2_pilot(tmp_path, monkeypatch):
                if f'href="{f}"' not in html and f != "index.html"]
     assert not missing
     assert "sha256:f00 (tag resolved on 2026-10-17)" in html and "not recorded" in html
+    assert "runs/r-RS.p" not in html  # summary, not a per-sample table
+    assert "ZhangX_2015 1 / 1 / 1; baqlava_test 1 / 1 / 1" in html
+    assert "median 57.0 million" in html and "2.4.2 (1 sample) / 2.4.3 (1 sample)" in html
 
 
 def test_methods_names_every_manifest_version(tmp_path, monkeypatch):
