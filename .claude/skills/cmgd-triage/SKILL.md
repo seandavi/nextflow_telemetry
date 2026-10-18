@@ -142,6 +142,15 @@ No active daemon claims this workflow_id.
 - Does the daemon's `dispatch.workflow_id` filter include this workflow?
 - Ignore `nf_testing` in the stuck list — that's the retired onclappc02 daemon.
 
+## Failure-mode ledger (`failure-mode` label)
+
+One GitHub issue per distinct failure cause, open or closed:
+`gh issue list --label failure-mode --state all`. Before calling a failure new,
+match its stderr / log line against the **Fingerprint** blocks there.
+New cause → file one with the same sections: Fingerprint (process, exit code,
+log pattern, trigger), Cause, Fix (PR + version), Impact / recovery. Close when
+fixed; closed issues stay in the ledger.
+
 ## Container / pipeline failure fingerprints (hard-won)
 
 - **`manifest unknown` at image pull** → a biocontainer tag that doesn't exist.
