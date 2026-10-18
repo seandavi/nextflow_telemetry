@@ -157,7 +157,7 @@ CAVEATS: dict[tuple[str, str], list[str]] = {
     ("cmgd_humann4a2", "2.4.2"): [
         "**Revision moved during the run.** The registration's revision went from 2.4.2 to "
         "2.4.3 on 2026-10-17. 2.4.3 only deletes intermediate files earlier; results are "
-        "unchanged (curatedMetagenomicsNextflow#126). `samples.tsv` gives each sample's "
+        "unchanged (curatedMetagenomicsNextflow#126). `samples.tsv.gz` gives each sample's "
         "revision.",
         "**Patched UniRef file name.** HUMAnN 4.0.0a2 checks that a protein database's file "
         "names carry its expected version tag, so BAQLaVa's DIAMOND database files were "
@@ -165,7 +165,7 @@ CAVEATS: dict[tuple[str, str], list[str]] = {
         "database contents are unchanged.",
         "**Paired-end reads merged.** All FASTQ files of a sample, both mates included, were "
         "concatenated and processed as single-end reads (the curatedMetagenomicData "
-        "convention), so read counts in `samples.tsv` count each mate.",
+        "convention), so read counts in `samples.tsv.gz` count each mate.",
         "**Unversioned databases.** The KneadData human reference index and the BAQLaVa "
         "database are fetched by their tools' download commands, which don't pin a release.",
     ],

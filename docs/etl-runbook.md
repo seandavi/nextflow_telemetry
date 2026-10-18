@@ -181,20 +181,25 @@ never deletes anything in the bucket.
 registration, some collections, completed samples only. It is **not a release**
 (no DOI, may be deleted; the README states an expiry 90 days out). It reads the
 v2 jobs API and `cmgd-raw`, plus cMD curated metadata from `lake.cmgd_meta` when
-the lake is reachable (otherwise `samples.tsv` has no metadata and it warns), and
+the lake is reachable (otherwise `samples.tsv.gz` has no metadata and it warns), and
 never touches the lake's result tables, releases or `index.json`.
 
 ```sh
 export CU_OPENALEX_LAKE_BACKEND=postgres
 uv run nf-etl deliver --registration cmgd_mpa4.2/2.3.0 --collection PRJNA749645 \
   --collection HMP_2012 --name ra-test --out /data/davsean/cmgd/publish/deliverables
-#   -> <out>/ra-test/<YYYY-MM-DD>/: metaphlan_<profile>.tsv [humann4_*.tsv, baqlava_vgb.tsv],
-#      samples.tsv, coverage.tsv, README.md, MANIFEST.sha256, ra-test-<date>.tar.gz
+#   -> <out>/ra-test/<YYYY-MM-DD>/: metaphlan_<profile>.tsv.gz [humann4_*.tsv.gz,
+#      baqlava_vgb.tsv.gz], samples.tsv.gz, coverage.tsv.gz, index.html, README.md,
+#      METHODS.md, MANIFEST.tsv, MANIFEST.sha256, ra-test-<date>.tar.gz
 uv run nf-etl deliver ... --sync --dry-run   # print the rclone copy to r2:cmgd-public/deliverables/ra-test/<date>/
 uv run nf-etl deliver ... --sync             # build and upload
 ```
 
 A same-day rebuild replaces that day's folder; earlier dates are left alone.
+Every table is gzipped with mtime 0, so a rebuild of the same data gives the same
+checksums. `index.html` and the README summarize the samples rather than listing
+them; the per-sample rows, including the `qc_low_feature_tables` flag, are in
+`samples.tsv.gz`.
 
 
 ## Sample metadata (nf-meta, ADR 0012)
