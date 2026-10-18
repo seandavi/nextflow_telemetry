@@ -135,9 +135,17 @@ def prose(manifests: Sequence[dict], vers: dict[str, Counter], dbs: dict[str, st
     return [p for p in (f"{head} {qc_steps}".strip() + tail, profiling) if p]
 
 
-def citations(vers: dict[str, Counter]) -> list[tuple[str, str]]:
-    """(name, citation) for the tools in the manifests, curatedMetagenomicData first."""
+# Olm's Microbiome Repo, the source of a deliverable's olm_* columns (CC-BY-4.0).
+OLM_CITATION = ("Microbiome Repo, release R2026.25 (data package 1.20.0), OlmLab, 2026-10-12, "
+                "CC-BY-4.0")
+
+
+def citations(vers: dict[str, Counter], olm: bool = False) -> list[tuple[str, str]]:
+    """(name, citation) for the tools in the manifests, curatedMetagenomicData first
+    (then Olm's Microbiome Repo when ``olm``: the deliverable has ``olm_*`` columns)."""
     out = {"curatedMetagenomicData": publish.CITATION["cmgd"]}
+    if olm:
+        out["Microbiome Repo (`olm_*` sample metadata)"] = OLM_CITATION
     for k, cites in CITATIONS.items():
         if k == "pipeline" or k in vers:
             for name, text in cites:
@@ -155,7 +163,7 @@ def md_table(header: Sequence[str], rows: Iterable[Sequence]) -> str:
 def render(name: str, today: date, expires: date, reg: Registration, cov: list[dict],
            n_samples: int, paragraphs: Sequence[str], vers: dict[str, Counter],
            containers: Sequence[Sequence[str]], dbs: dict[str, str],
-           files: Sequence[tuple[str, str]], caveats: Sequence[str]) -> str:
+           files: Sequence[tuple[str, str]], caveats: Sequence[str], olm: bool = False) -> str:
     quote = "\n>\n".join("> " + p for p in paragraphs)
     return f"""# Methods: curatedMetagenomicData deliverable {name} ({today})
 
@@ -203,5 +211,5 @@ every table to `samples.tsv.gz` on `readset_id`.
 
 ## 5. How to cite
 
-{md_table(["tool / database", "citation"], citations(vers))}
+{md_table(["tool / database", "citation"], citations(vers, olm))}
 """

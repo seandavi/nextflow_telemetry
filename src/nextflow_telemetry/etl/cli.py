@@ -13,7 +13,7 @@ every registration with an OutputSpec is processed, narrowed by ``--workflow`` /
   nf-etl publish --registration W/V [--out DIR]     build a public release into the local store
   nf-etl publish --registration W/V --sync          upload the built dataset to r2:cmgd-public
   nf-etl mirror  --registration W/V --to zenodo|hf  copy a built release (Zenodo draft / HF repo)
-  nf-etl deliver --registration W/V --collection C [--collection ...] --name N [--sync]
+  nf-etl deliver --registration W/V --collection C [--collection ...] --name N [--olm-cache P] [--sync]
                                                     scoped, expiring wide-TSV hand-off (#302)
 """
 from __future__ import annotations
@@ -22,6 +22,7 @@ import argparse
 import json
 from collections import defaultdict
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 from cdsci.lake import ops  # type: ignore[import-untyped]
@@ -175,7 +176,11 @@ def cmd_deliver(a) -> None:
         if reg is None:
             raise SystemExit(f"{a.registration}: not registered in v2")
         items = v2.jobs(client, reg)
-    d = deliver.build(reg, items, a.collection, a.name, a.out)
+        bs = v2.biosamples(client, a.collection) if not a.no_olm else {}
+    for i in items:
+        i.setdefault("biosample_id", bs.get(i.get("sample_id") or ""))
+    olm = None if a.no_olm else deliver.olm_source(a.olm_cache)
+    d = deliver.build(reg, items, a.collection, a.name, a.out, olm=olm)
     print(f"{a.name} -> {d}: {', '.join(sorted(p.name for p in d.iterdir()))}")
     if a.sync or a.dry_run:
         deliver.sync(d, a.name, a.remote, dry_run=a.dry_run or not a.sync)
@@ -226,6 +231,9 @@ def main(argv: list[str] | None = None) -> None:
     dl.add_argument("--name", required=True, help="deliverable name (the URL path segment)")
     dl.add_argument("--out", default=f"{publish.PUBLISH_ROOT}/deliverables",
                     help="local root; writes <out>/<name>/<date>/")
+    dl.add_argument("--olm-cache", type=Path, help="local copy of Olm's wide table "
+                    "(downloaded there if missing); default: read it over HTTPS each build")
+    dl.add_argument("--no-olm", action="store_true", help="no olm_* metadata columns")
     dl.add_argument("--sync", action="store_true", help="also upload to --remote")
     dl.add_argument("--remote", default=publish.SYNC_REMOTE)
     dl.add_argument("--dry-run", action="store_true", help="print the rclone command, upload nothing")

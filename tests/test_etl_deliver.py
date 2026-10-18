@@ -320,3 +320,40 @@ def test_methods_names_every_manifest_version(tmp_path, monkeypatch):
     assert "not recorded" not in prose
     assert "releases/tag/v1.2.0-devel" in text and "doi:10.1093/nar/gkz862" in text
     assert "Kraken" not in text.split("## 5. How to cite")[1]  # run, but not delivered or cited
+
+
+def test_olm_columns_for_uncurated_samples_by_biosample_or_run(tmp_path, monkeypatch):
+    import duckdb
+
+    wide = tmp_path / "wide.parquet"
+    duckdb.connect().execute(f"""COPY (SELECT * FROM (VALUES
+        ('SAMN1', 'healthy', 0.9, 'llm', 'adult'),
+        ('SRRb', 'disease', 0.5, 'curated', 'infant'),
+        ('SAMN9', 'never', 1.0, 'x', 'adult'))
+        t(sample_key, health_condition, health_condition__confidence,
+          health_condition__route, age_category)) TO '{wide}' (FORMAT parquet)""")
+
+    def fetch(prefix, sub):
+        key = prefix.rsplit("/", 1)[1]
+        return _manifest(key, "c1") if sub == "manifest.json" else None
+
+    monkeypatch.setattr(source, "locate", lambda w, v, k: f"r2:x/{k}")
+    monkeypatch.setattr(source, "fetch", fetch)
+    monkeypatch.setattr(deliver, "metadata", lambda samples: ({"RS.g": {"disease": {"cmd"}}}, ["abc"]))
+    items = [{**_item("RS.a", "completed", "S1"), "biosample_id": "SAMN1"},  # by BioSample
+             _item("RS.b", "completed", "S1"),                                # by run (SRRb)
+             _item("RS.g", "completed", "S1")]                                # cMD-curated: no olm_*
+    d = deliver.build(REG, items, ["S1"], "t", tmp_path, today=TODAY,
+                      olm=deliver.olm_source(tmp_path / "cache" / "w.parquet", str(wide)))
+
+    samples = {s["readset_id"]: s for s in
+               csv.DictReader(deliver.read_text(d / "samples.tsv.gz"), delimiter="\t")}
+    assert list(samples["RS.a"])[-4:] == ["olm_health_condition", "olm_health_condition__confidence",
+                                          "olm_health_condition__route", "olm_age_category"]
+    assert (samples["RS.a"]["olm_health_condition"], samples["RS.a"]["olm_age_category"]) == (
+        "healthy", "adult")
+    assert samples["RS.b"]["olm_health_condition__route"] == "curated"
+    assert samples["RS.g"]["olm_health_condition"] == "" and samples["RS.g"]["disease"] == "cmd"
+    assert (tmp_path / "cache" / "w.parquet").exists()
+    assert deliver.OLM_RELEASE in (d / "README.md").read_text()
+    assert deliver.OLM_CITATION in (d / "METHODS.md").read_text()
