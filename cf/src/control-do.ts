@@ -704,21 +704,17 @@ export class ControlDO extends DurableObject<Env> {
   }
 
   requeueDeadLetter(): number {
-    const rows = this.all(`select id, job_id from dead_letter where resolved_at is null`);
-    if (!rows.length) return 0;
-    const ids = rows.map((r) => r.job_id);
+    // Subqueries, not bound id lists: DO SQLite caps a statement at 100 bound
+    // parameters, so a list of >100 dead-lettered ids 500'd.
+    const n = this.first(`select count(*) as n from dead_letter where resolved_at is null`)!.n as number;
+    if (!n) return 0;
     this.run(
       `update jobs set status = 'pending', retry_count = 0, run_name = null,
                        failed_at = null, failure_reason = null
-        where id in (${ids.map(() => "?").join(",")})`,
-      ...ids,
+        where id in (select job_id from dead_letter where resolved_at is null)`,
     );
-    this.run(
-      `update dead_letter set resolved_at = ? where id in (${rows.map(() => "?").join(",")})`,
-      iso(),
-      ...rows.map((r) => r.id),
-    );
-    return rows.length;
+    this.run(`update dead_letter set resolved_at = ? where resolved_at is null`, iso());
+    return n;
   }
 
   resetJobsToPending(workflowPk: number, fromStatuses: string[]): number {
