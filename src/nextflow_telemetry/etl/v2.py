@@ -8,6 +8,7 @@ registrations keyed that way.
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import httpx
@@ -76,6 +77,24 @@ def jobs(client: httpx.Client, reg: Registration, status: str | None = None) -> 
         if len(items) < PAGE:
             return out
         after = items[-1]["job_id"]
+
+
+def biosamples(client: httpx.Client, collections: Sequence[str]) -> dict[str, str]:
+    """sample_id -> BioSample for the samples of ``collections`` that have one
+    (job items don't carry it)."""
+    out: dict[str, str] = {}
+    for c in collections:
+        offset = 0
+        while True:
+            r = client.get(f"{API_URL}/api/samples",
+                           params={"collection": c, "limit": 1000, "offset": offset})
+            r.raise_for_status()
+            page = r.json()
+            out |= {s["sample_id"]: s["biosample_id"] for s in page["items"] if s.get("biosample_id")}
+            offset += len(page["items"])
+            if not page["items"] or offset >= page["total"]:
+                break
+    return out
 
 
 def completed_jobs(client: httpx.Client, reg: Registration) -> list[CompletedJob]:

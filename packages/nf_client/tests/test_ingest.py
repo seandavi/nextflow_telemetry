@@ -36,7 +36,7 @@ async def test_ingest_rows_skips_non_accession_and_falls_back_to_study_name(conf
     rows = [
         {"ncbi_accession": "SRR100", "study_name": "StudyA"},
         {"ncbi_accession": "Not applicable", "study_name": "StudyA"},  # skipped
-        {"ncbi_accession": "SRR200;SRR201", "study_name": "StudyB"},
+        {"ncbi_accession": "SRR200;SRR201", "study_name": "StudyB", "biosample": "SAMN1"},
     ]
     with respx.mock(base_url="http://test.local") as mock:
         route = mock.post("/samples").mock(return_value=httpx.Response(201, json={}))
@@ -48,6 +48,7 @@ async def test_ingest_rows_skips_non_accession_and_falls_back_to_study_name(conf
     # collection falls back to each row's study_name when --collection is not given
     assert bodies[0]["collection"] == "StudyA"
     assert bodies[1]["collection"] == "StudyB"
+    assert "biosample_id" not in bodies[0] and bodies[1]["biosample_id"] == "SAMN1"
 
 
 @pytest.mark.asyncio

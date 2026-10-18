@@ -4,7 +4,8 @@ as wide TSVs a requester can open without the lake.
 Not a release (ADR-0011): no DOI, not immutable, and it may be deleted (an R2
 lifecycle rule on ``deliverables/`` expires it; the README states the date).
 The build reads the v2 jobs API and ``cmgd-raw`` (``source``), plus cMD's curated
-sample metadata from ``lake.cmgd_meta`` when the lake is reachable. It never
+sample metadata from ``lake.cmgd_meta`` when the lake is reachable, and Olm's
+Microbiome Repo wide table for samples cMD hasn't curated (``olm_*`` columns). It never
 touches the lake's result tables, ``releases/`` or ``index.json``.
 
   <out>/<name>/<YYYY-MM-DD>/  index.html, README.md, METHODS.md, samples.tsv.gz,
@@ -69,6 +70,14 @@ SAMPLE_COLUMNS = ("readset_id", "run_accessions", "collection", *QC_COLUMNS,
                   "qc_low_feature_tables", "git_revision", "run_name", "run_started",
                   "completed_at", "run_url", "raw_url", "genefamilies_url")
 LOW_FEATURE_LIST = 20  # samples the low-feature caveat names; all are in samples.tsv.gz
+# Olm's Microbiome Repo per-sample table (CC-BY-4.0), for samples with no cMD curation.
+OLM_WIDE_URL = "https://microbiomerepo.com/data/gut_sample_metadata_wide.parquet"
+# ponytail: pinned by hand; read VERSION.json beside the parquet if releases move often.
+OLM_RELEASE = "R2026.25"
+OLM_CITATION = methods.OLM_CITATION
+OLM_FIELDS = ("health_condition", "health_condition_detail", "age_category",
+              "age_at_collection_days", "sex", "country", "antibiotic_exposure", "subject_id",
+              "timepoint_label")
 REGISTRY_ACCEPT = ", ".join((
     "application/vnd.oci.image.index.v1+json",
     "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -348,7 +357,7 @@ def sample_summary(samples: Sequence[dict], cov: list[dict]) -> list[list[str]]:
 def readme(name: str, today: date, reg: Registration, cov: list[dict],
            vers: dict[str, Counter], files: list[tuple[str, str]],
            meta_releases: Sequence[str], notes: Sequence[str] = (),
-           samples: Sequence[dict] = ()) -> str:
+           samples: Sequence[dict] = (), olm_n: int = 0) -> str:
     expires = today + timedelta(days=EXPIRY_DAYS)
     mixed = sorted(t for t, c in vers.items() if len(c) > 1)
     comparability = (
@@ -361,6 +370,11 @@ def readme(name: str, today: date, reg: Registration, cov: list[dict],
     meta = (f"cMD curation commit {', '.join(meta_releases)} (the pinned release in "
             "`lake.cmgd_meta`)" if meta_releases else
             "**not included**: the metadata store was unreachable when this was built")
+    olm = (f"""
+- `olm_*` columns ({olm_n} samples without cMD curation): Olm's Microbiome Repo
+  values, release `{OLM_RELEASE}`, matched on BioSample or run. Each field has
+  `__confidence` and `__route` columns, as Olm gives them; `;` joins several values.
+  Source: {OLM_CITATION}.""" if olm_n else "")
     return f"""# curatedMetagenomicData deliverable: {name} ({today})
 
 **This is not a release.** It has no DOI, it is not immutable and it **may be
@@ -430,7 +444,7 @@ per sample (`readset_id`), one column per feature.
   unstratified (`_relab_unstratified`, `_stratified` and `_cpm` siblings sit next to it).
 - Every further column is a curatedMetagenomicData curation field, named and valued
   exactly as the curation sheet gives it (several values are `;`-joined). Source:
-  {meta}.
+  {meta}.{olm}
 
 ## coverage.tsv.gz
 
@@ -442,7 +456,7 @@ claimed, submitted or running.
 ## How to cite
 
 {publish.CITATION["cmgd"]}
-
+{f"{chr(10)}For the `olm_*` columns: {OLM_CITATION}.{chr(10)}" if olm_n else ""}
 Cite the tools too: `METHODS.md` section 5.
 """
 
@@ -592,6 +606,53 @@ def metadata(samples: list[tuple[str, str, str]]) -> tuple[dict[str, dict[str, s
     return out, sorted({r[3] for r in rows})
 
 
+def olm_source(cache: Path | str | None, url: str = OLM_WIDE_URL) -> str:
+    """Where to read Olm's wide table: ``cache`` (downloaded there first if missing),
+    else ``url`` over httpfs."""
+    if cache is None:
+        return url
+    cache = Path(cache)
+    if not cache.exists():
+        import duckdb
+
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache.with_suffix(".part")
+        duckdb.connect().execute(f"COPY (FROM read_parquet('{url}')) TO '{tmp}' (FORMAT parquet)")
+        tmp.rename(cache)
+    return str(cache)
+
+
+def olm_metadata(samples: list[tuple[str, str | None, str | None]],
+                 src: str) -> dict[str, dict[str, str]]:
+    """Olm wide-table values per sample (``samples``: (key, ';'-joined runs, BioSample)),
+    as ``olm_<field>``, ``olm_<field>__confidence`` and ``olm_<field>__route`` columns.
+    Olm keys a row by its BioSample, or by its run when it has none, so a sample
+    matches on either. Empty, with a warning, when the table can't be read."""
+    if not samples:
+        return {}
+    try:
+        import duckdb
+
+        con = duckdb.connect()
+        try:
+            have = {r[0] for r in con.execute(f"DESCRIBE FROM read_parquet('{src}')").fetchall()}
+            cols = [c for f in OLM_FIELDS for c in (f, f"{f}__confidence", f"{f}__route")
+                    if c in have]
+            con.execute("CREATE TEMP TABLE want (key VARCHAR, olm_key VARCHAR)")
+            con.executemany("INSERT INTO want VALUES (?, ?)", [
+                (k, a) for k, runs, bs in samples for a in {*(runs or "").split(";"), bs} if a])
+            sel = ", ".join(f'string_agg(DISTINCT w."{c}"::VARCHAR, \';\' ORDER BY w."{c}"::VARCHAR)'
+                            for c in cols)
+            rows = con.execute(f"SELECT want.key, {sel} FROM want JOIN read_parquet('{src}') w "
+                               "ON w.sample_key = want.olm_key GROUP BY want.key").fetchall()
+        finally:
+            con.close()
+    except Exception as e:  # noqa: BLE001 -- metadata is optional here
+        print(f"warning: no Olm metadata ({src}: {e})", file=sys.stderr)
+        return {}
+    return {r[0]: {f"olm_{c}": v for c, v in zip(cols, r[1:]) if v is not None} for r in rows}
+
+
 def _links(reg: Registration, item: dict, prefix: str, manifest: dict) -> dict:
     """samples.tsv's run and cmgd-raw columns for one sample."""
     prov = manifest.get("provenance") or {}
@@ -608,9 +669,10 @@ def _links(reg: Registration, item: dict, prefix: str, manifest: dict) -> dict:
 
 
 def build(reg: Registration, items: list[dict], collections: Sequence[str], name: str,
-          out: Path | str, today: date | None = None) -> Path:
+          out: Path | str, today: date | None = None, olm: str | None = None) -> Path:
     """Write the deliverable into ``<out>/<name>/<date>/`` (replacing a same-day
-    build) and return that directory."""
+    build) and return that directory. ``olm`` (a parquet path or URL, see
+    ``olm_source``) adds Olm's metadata for samples without cMD curation."""
     for n in (name, *collections):
         if not export.SAFE_NAME.match(n):
             raise ValueError(f"bad name {n!r}")
@@ -646,6 +708,11 @@ def build(reg: Registration, items: list[dict], collections: Sequence[str], name
     meta, meta_releases = metadata([(cs[0], k, k) for k, cs in in_scope.items()])
     fields = sorted({f for m in meta.values() for f in m},
                     key=lambda f: (FIRST_FIELDS.index(f) if f in FIRST_FIELDS else len(FIRST_FIELDS), f))
+    olm_meta = olm_metadata([(k, i.get("ncbi_accession"), i.get("biosample_id"))
+                             for k, (i, _) in got.items() if k not in meta], olm) if olm else {}
+    olm_fields = [c for f in OLM_FIELDS for c in (f"olm_{f}", f"olm_{f}__confidence",
+                                                  f"olm_{f}__route")
+                  if any(c in m for m in olm_meta.values())]
     mids, low = low_features(tables)
     samples, qc_rows, manifests = [], [], []
     for k, (i, (raw, _, prefix)) in sorted(got.items(), key=lambda kv: (in_scope[kv[0]], kv[0])):
@@ -658,8 +725,9 @@ def build(reg: Registration, items: list[dict], collections: Sequence[str], name
                         **{c: qc.get(c) for c in QC_COLUMNS},
                         "qc_low_feature_tables": ",".join(low.get(k, ())),
                         **_links(reg, i, prefix, manifest),
-                        **{f: ";".join(sorted(meta.get(k, {}).get(f, ()))) for f in fields}})
-    write_tsv(d / "samples.tsv.gz", [*SAMPLE_COLUMNS, *fields],
+                        **{f: ";".join(sorted(meta.get(k, {}).get(f, ()))) for f in fields},
+                        **{f: olm_meta.get(k, {}).get(f) for f in olm_fields}})
+    write_tsv(d / "samples.tsv.gz", [*SAMPLE_COLUMNS, *fields, *olm_fields],
               [list(s.values()) for s in samples])
     cov = coverage(items, collections, set(got))
     write_tsv(d / "coverage.tsv.gz", list(cov[0]), [list(c.values()) for c in cov])
@@ -682,11 +750,12 @@ def build(reg: Registration, items: list[dict], collections: Sequence[str], name
     notes = caveats(reg, vers, expires, mids, low)
     paragraphs = methods.prose(manifests, vers, dbs, qc_rows)
     conts = containers(reg, manifests, today)
+    olm_n = len(olm_meta) if olm_fields else 0
     (d / "README.md").write_text(readme(name, today, reg, cov, vers, files, meta_releases, notes,
-                                              samples))
+                                              samples, olm_n))
     (d / "METHODS.md").write_text(methods.render(name, today, expires, reg, cov, len(samples),
                                                  paragraphs, vers, conts, dbs, profile_files,
-                                                 notes))
+                                                 notes, olm=bool(olm_n)))
     (d / "index.html").write_text(index_html(name, today, reg, cov, d, files, paragraphs, vers,
                                              conts, notes, samples))
     write_manifest(d, name, today)

@@ -499,7 +499,8 @@ async def _ingest_rows(
 ) -> dict:
     """Register curation-TSV rows as samples, attaching each to a collection.
 
-    Each row needs an ``ncbi_accession`` column. ``collection`` (if given) is
+    Each row needs an ``ncbi_accession`` column; an optional ``biosample`` column
+    is stored as the sample's BioSample. ``collection`` (if given) is
     used for every row; otherwise the row's ``study_name`` column names the
     collection. Rows without a real run accession are skipped (curation TSVs
     carry placeholders like "Not applicable"). Membership goes through the
@@ -517,14 +518,15 @@ async def _ingest_rows(
         coll = collection or (row.get("study_name") or "").strip() or None
         if coll is None:
             unattached += 1  # registered to the catalog but in no collection
-        await client.register_sample(sample_id, ncbi_accession=acc, collection=coll)
+        await client.register_sample(sample_id, ncbi_accession=acc, collection=coll,
+                                     biosample_id=(row.get("biosample") or "").strip() or None)
         registered += 1
     return {"registered": registered, "skipped": skipped, "unattached": unattached}
 
 
 @app.command(name="add-samples")
 def add_samples(
-    tsv: Path = typer.Option(..., "--tsv", help="Path to a sample TSV (columns: ncbi_accession, study_name)."),
+    tsv: Path = typer.Option(..., "--tsv", help="Path to a sample TSV (columns: ncbi_accession, study_name, optional biosample)."),
     collection: str | None = typer.Option(None, "--collection", help="Collection to attach every sample to. If omitted, each row's study_name column is used."),
     limit: int | None = typer.Option(None, "--limit", help="Register at most this many samples."),
     reconcile_after: bool = typer.Option(False, "--reconcile", help="After registering, create pending jobs (POST /admin/reconcile-jobs)."),
