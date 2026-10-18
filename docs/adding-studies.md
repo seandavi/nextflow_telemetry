@@ -101,6 +101,33 @@ nf-client reconcile
 Or against the HTTP API: `POST /api/submissions {"accession": "…", "dry_run": true}`
 to preview, then without `dry_run` to register, then `POST /api/admin/reconcile-jobs`.
 
+## Finding candidate studies (Olm Microbiome Repo)
+
+Olm Lab's Microbiome Repo (microbiomerepo.com) curates per-sample metadata for
+~600k human gut shotgun samples / ~2.9k studies. A pinned release is loaded in
+`lake.cmgd_meta` (`olm_samples_wide`, `olm_runs`, `olm_studies`,
+`olm_sample_values`; loading and refresh in `etl-runbook.md`, `nf-meta load olm`).
+Use it to seed new collections instead of keyword-searching SRA:
+
+```sql
+-- CU_OPENALEX_LAKE_BACKEND=postgres; connect via nextflow_telemetry.meta.store.connect()
+SELECT study_accession, count(*) AS n_samples,
+       string_agg(DISTINCT health_condition_detail, '; ') AS conditions
+FROM lake.cmgd_meta.olm_samples_wide
+WHERE health_condition_detail ILIKE '%lupus%'   -- health_condition is coarse; filter on _detail
+GROUP BY 1 ORDER BY 2 DESC;
+```
+
+- Runs per study come from `olm_runs` (`run_accession`, `sample_accession`,
+  `library_strategy`, `base_count`). Build the `add-samples` TSV from it and
+  include a `biosample` column so deliverables can join Olm rows back.
+- Olm's labels are model-assisted: check `__confidence` / `__route`, and read the
+  study before registering (2026-10-18 autoimmune pass dropped mislabelled,
+  VLP-prep and amplicon-only BioProjects).
+- Primary PMIDs/DOIs: `https://microbiomerepo.com/api/projects.json`.
+- Olm-derived data is CC-BY-4.0: cite the release (name, package version, DOI in
+  `cmgd_meta.source_releases`).
+
 ## Notes
 
 - **Sample identity** is content-addressed: a sample's id is the md5 of its
