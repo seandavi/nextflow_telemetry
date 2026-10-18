@@ -9,9 +9,8 @@ profile: "bridges2,r2"   # R2 output (ADR 0008); needs ~/.nf_tel.r2 and Nextflow
 continuous: true
 
 dispatch:
-  # ponytail: small batches x 3 runs keep peak Ocean disk ~1.5 TB under the 2 TB
-  # quota (batch_size x max_concurrent_runs x 50 GB + ~85 GB store). Raise both
-  # once the quota grows.
+  # ponytail: batch_size x max_concurrent_runs bounds peak Ocean disk (see
+  # submission.max_concurrent_runs).
   batch_size: 10
   # Dedicated to the BAQLaVa registration for the RA/MS cohorts (#301, #303);
   # the HUMAnN 4 / vOct22 / BAQLaVa databases are staged only here.
@@ -20,11 +19,11 @@ dispatch:
 submission:
   mode: slurm
   template_path: "${NF_TEL_REPO}/templates/submit_slurm.sh.j2"
-  # Ocean disk is the limit, not SUs: the pipeline deletes nothing mid-run, so a
-  # run holds about 50 GB per sample (fastq + kneaddata, measured on Anvil
-  # 2026-10-13) until it ends. Peak disk ~ batch_size x max_concurrent_runs x 50 GB,
-  # plus the ~85 GB store.
-  max_concurrent_runs: 3
+  # Ocean disk is the limit, not SUs (2 TB quota, ~85 GB store). Measured on
+  # 2.4.2/2.4.4 (2026-10-18, 500 tasks): fasterq_dump writes 1.9 GB median /
+  # 6 GB p95, kneaddata 3.4 / 14 GB; 3 runs x 10 samples held ~135 GB. At 6 x 10
+  # the all-p95 worst case is ~1.3 TB. No daemon disk guard: watch `projects`.
+  max_concurrent_runs: 6
   slurm_export_none: false   # login env does not leak modules into jobs here (no modules loaded)
 
   defaults:
