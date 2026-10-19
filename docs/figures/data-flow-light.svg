@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1580 740" width="1580" height="740" role="img" aria-label="Data flow and publication routes. nf-etl ingests finished pipeline outputs from cmgd-raw; metadata sources are captured into the source catalog and loaded by nf-meta. Both write to the shared DuckLake, which feeds public releases (mirrored to Zenodo or Hugging Face) and scoped deliverables (which read outputs from cmgd-raw and metadata from the lake). Gene-family files are served straight from cmgd-raw.">
+<title>Data flow and publication routes. nf-etl ingests finished pipeline outputs from cmgd-raw; metadata sources are captured into the source catalog and loaded by nf-meta. Both write to the shared DuckLake, which feeds public releases (mirrored to Zenodo or Hugging Face) and scoped deliverables (which read outputs from cmgd-raw and metadata from the lake). Gene-family files are served straight from cmgd-raw.</title>
+<defs><marker id="ah-MUTED" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4a5a6c"/></marker><marker id="ah-BLUE" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f7fc4"/></marker><marker id="ah-GREEN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f8f17"/></marker><marker id="ah-AMBER" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b87a00"/></marker><marker id="ah-CORAL" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#cc4733"/></marker><marker id="ah-VIOLET" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6e4fd0"/></marker></defs>
+<rect x="20" y="60" width="340" height="610" rx="16" fill="none" stroke="#b87a00" stroke-width="1.5" stroke-dasharray="4 6"/>
+<text x="36" y="50" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#b87a00" font-weight="700" text-anchor="start" xml:space="preserve">SOURCES</text>
+<rect x="40" y="80" width="300" height="100" rx="12" fill="#6e4fd01a" stroke="#6e4fd0" stroke-width="2"/>
+<text x="56" y="110" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">Pipeline outputs</text>
+<text x="56" y="140" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">r2:cmgd-raw/&lt;wf&gt;/&lt;ver&gt;/</text>
+<text x="56" y="162" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">one prefix per sample</text>
+<rect x="40" y="198" width="300" height="100" rx="12" fill="#b87a001a" stroke="#b87a00" stroke-width="2"/>
+<text x="56" y="228" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">cMD curation</text>
+<text x="56" y="258" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">waldronlab GitHub repo</text>
+<rect x="40" y="316" width="300" height="100" rx="12" fill="#b87a001a" stroke="#b87a00" stroke-width="2"/>
+<text x="56" y="346" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">Olm Microbiome Repo</text>
+<text x="56" y="376" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">Zenodo data packages</text>
+<rect x="40" y="434" width="300" height="100" rx="12" fill="#b87a001a" stroke="#b87a00" stroke-width="2"/>
+<text x="56" y="464" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">ZOE PREDICT, ENA</text>
+<text x="56" y="494" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">Zenodo; ENA filereport</text>
+<rect x="40" y="552" width="300" height="100" rx="12" fill="#b87a001a" stroke="#b87a00" stroke-width="2"/>
+<text x="56" y="582" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">ASAP-MAC, tracker</text>
+<text x="56" y="612" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">cataloged, not loaded</text>
+<rect x="440" y="80" width="320" height="110" rx="12" fill="#4f8f171a" stroke="#4f8f17" stroke-width="2"/>
+<text x="456" y="110" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">nf-etl ingest</text>
+<text x="456" y="140" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">completed jobs from v2</text>
+<text x="456" y="162" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">500-sample batches</text>
+<rect x="440" y="300" width="320" height="120" rx="12" fill="#6e4fd01a" stroke="#6e4fd0" stroke-width="2"/>
+<text x="456" y="330" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">Source catalog</text>
+<text x="456" y="360" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">Postgres descriptors</text>
+<text x="456" y="382" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">snapshots: cmgd-private</text>
+<rect x="440" y="510" width="320" height="120" rx="12" fill="#4f8f171a" stroke="#4f8f17" stroke-width="2"/>
+<text x="456" y="540" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">nf-meta load / link</text>
+<text x="456" y="570" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">values per source release</text>
+<text x="456" y="592" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">sample IDs -&gt; ENA</text>
+<path d="M340,130 L435,135" fill="none" stroke="#6e4fd0" stroke-width="2.2" marker-end="url(#ah-VIOLET)"/>
+<path d="M362,360 L435,360" fill="none" stroke="#b87a00" stroke-width="2.2" marker-end="url(#ah-AMBER)"/>
+<rect x="361.79" y="308.0" width="72.42" height="44" rx="6" fill="#ffffff" stroke="#b87a00" stroke-width="1"/>
+<text x="398" y="326.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#b87a00" font-weight="500" text-anchor="middle" xml:space="preserve">capture</text>
+<text x="398" y="344.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#b87a00" font-weight="500" text-anchor="middle" xml:space="preserve">all</text>
+<path d="M362,570 L435,570" fill="none" stroke="#b87a00" stroke-width="2.2" marker-end="url(#ah-AMBER)"/>
+<rect x="357.76" y="516.0" width="80.48" height="44" rx="6" fill="#ffffff" stroke="#b87a00" stroke-width="1"/>
+<text x="398" y="534.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#b87a00" font-weight="500" text-anchor="middle" xml:space="preserve">load</text>
+<text x="398" y="552.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#b87a00" font-weight="500" text-anchor="middle" xml:space="preserve">cMD, Olm</text>
+<path d="M600,420 L600,505" fill="none" stroke="#6e4fd0" stroke-width="2.2" marker-end="url(#ah-VIOLET)"/>
+<rect x="555.73" y="449.0" width="88.54" height="26" rx="6" fill="#ffffff" stroke="#6e4fd0" stroke-width="1"/>
+<text x="600" y="467.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#6e4fd0" font-weight="500" text-anchor="middle" xml:space="preserve">snapshots</text>
+<rect x="840" y="260" width="300" height="200" rx="12" fill="#6e4fd01a" stroke="#6e4fd0" stroke-width="2"/>
+<text x="856" y="290" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">Shared DuckLake</text>
+<text x="856" y="320" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">lake.cmgd.*</text>
+<text x="856" y="342" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">  results</text>
+<text x="856" y="364" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">lake.cmgd_meta.*</text>
+<text x="856" y="386" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">  sample metadata</text>
+<path d="M760,135 L835,300" fill="none" stroke="#4f8f17" stroke-width="2.2" marker-end="url(#ah-GREEN)"/>
+<path d="M760,570 L835,420" fill="none" stroke="#4f8f17" stroke-width="2.2" marker-end="url(#ah-GREEN)"/>
+<rect x="1200" y="60" width="360" height="610" rx="16" fill="none" stroke="#1f7fc4" stroke-width="1.5" stroke-dasharray="4 6"/>
+<text x="1216" y="50" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#1f7fc4" font-weight="700" text-anchor="start" xml:space="preserve">PUBLICATION ROUTES</text>
+<rect x="1220" y="80" width="320" height="110" rx="12" fill="#1f7fc41a" stroke="#1f7fc4" stroke-width="2"/>
+<text x="1236" y="110" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">Public releases</text>
+<text x="1236" y="140" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">nf-etl publish --sync</text>
+<text x="1236" y="162" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">cmgd-public.cancerdatasci.org</text>
+<rect x="1220" y="228" width="320" height="90" rx="12" fill="#1f7fc41a" stroke="#1f7fc4" stroke-width="2"/>
+<text x="1236" y="258" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">Mirrors</text>
+<text x="1236" y="288" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">nf-etl mirror --to zenodo|hf</text>
+<rect x="1220" y="356" width="320" height="110" rx="12" fill="#1f7fc41a" stroke="#1f7fc4" stroke-width="2"/>
+<text x="1236" y="386" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">Deliverables</text>
+<text x="1236" y="416" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">nf-etl deliver, 90-day expiry</text>
+<text x="1236" y="438" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">outputs read from cmgd-raw</text>
+<rect x="1220" y="504" width="320" height="110" rx="12" fill="#1f7fc41a" stroke="#1f7fc4" stroke-width="2"/>
+<text x="1236" y="534" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#14202e" font-weight="650" text-anchor="start" xml:space="preserve">Gene-family files</text>
+<text x="1236" y="564" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">straight from cmgd-raw</text>
+<text x="1236" y="586" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#4a5a6c" font-weight="400" text-anchor="start" xml:space="preserve">cmgd-raw.cancerdatasci.org</text>
+<path d="M1140,320 L1215,140" fill="none" stroke="#1f7fc4" stroke-width="2.2" marker-end="url(#ah-BLUE)"/>
+<rect x="1133.79" y="207.0" width="72.42" height="26" rx="6" fill="#ffffff" stroke="#1f7fc4" stroke-width="1"/>
+<text x="1170" y="225.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#1f7fc4" font-weight="500" text-anchor="middle" xml:space="preserve">publish</text>
+<path d="M1380,190 L1380,223" fill="none" stroke="#1f7fc4" stroke-width="2.2" marker-end="url(#ah-BLUE)"/>
+<path d="M1140,400 L1215,410" fill="none" stroke="#1f7fc4" stroke-width="2.2" marker-end="url(#ah-BLUE)"/>
+<rect x="1134.76" y="422.0" width="80.48" height="26" rx="6" fill="#ffffff" stroke="#1f7fc4" stroke-width="1"/>
+<text x="1175" y="440.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#1f7fc4" font-weight="500" text-anchor="middle" xml:space="preserve">metadata</text>
+<text x="30" y="719" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#4a5a6c" font-weight="600" text-anchor="start" xml:space="preserve">Legend:</text>
+<rect x="110" y="700" width="89.44" height="26" rx="13.0" fill="#b87a0022" stroke="#b87a00"/>
+<text x="154.72" y="717" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#b87a00" font-weight="600" text-anchor="middle" xml:space="preserve">external</text>
+<rect x="219.44" y="700" width="89.44" height="26" rx="13.0" fill="#4f8f1722" stroke="#4f8f17"/>
+<text x="264.15999999999997" y="717" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#4f8f17" font-weight="600" text-anchor="middle" xml:space="preserve">our CLIs</text>
+<rect x="328.88" y="700" width="193.6" height="26" rx="13.0" fill="#1f7fc422" stroke="#1f7fc4"/>
+<text x="425.68" y="717" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#1f7fc4" font-weight="600" text-anchor="middle" xml:space="preserve">services / published</text>
+<rect x="542.48" y="700" width="72.08" height="26" rx="13.0" fill="#6e4fd022" stroke="#6e4fd0"/>
+<text x="578.52" y="717" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#6e4fd0" font-weight="600" text-anchor="middle" xml:space="preserve">stores</text>
+</svg>

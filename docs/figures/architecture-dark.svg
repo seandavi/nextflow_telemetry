@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1420 720" width="1420" height="720" role="img" aria-label="System architecture. nf-client daemons on the HPC login nodes claim work from the v2 Cloudflare control plane and submit SLURM wrapper jobs that run Nextflow; telemetry flows back to the Worker and outputs land in R2. The Postgres catalog service writes registrations through to v2. The dashboard reads both. nf-etl and nf-meta load outputs and metadata into the shared DuckLake.">
+<title>System architecture. nf-client daemons on the HPC login nodes claim work from the v2 Cloudflare control plane and submit SLURM wrapper jobs that run Nextflow; telemetry flows back to the Worker and outputs land in R2. The Postgres catalog service writes registrations through to v2. The dashboard reads both. nf-etl and nf-meta load outputs and metadata into the shared DuckLake.</title>
+<defs><marker id="ah-MUTED" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a9b8ca"/></marker><marker id="ah-BLUE" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4aa8e8"/></marker><marker id="ah-GREEN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9fd05a"/></marker><marker id="ah-AMBER" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f2b441"/></marker><marker id="ah-CORAL" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ff7a66"/></marker><marker id="ah-VIOLET" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b49cff"/></marker></defs>
+<rect x="20" y="60" width="380" height="400" rx="16" fill="none" stroke="#f2b441" stroke-width="1.5" stroke-dasharray="4 6"/>
+<text x="36" y="50" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#f2b441" font-weight="700" text-anchor="start" xml:space="preserve">HPC: ALPINE, ANVIL, BRIDGES-2</text>
+<rect x="40" y="90" width="340" height="120" rx="12" fill="#9fd05a1a" stroke="#9fd05a" stroke-width="2"/>
+<text x="56" y="120" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#e8eef6" font-weight="650" text-anchor="start" xml:space="preserve">nf-client daemon</text>
+<text x="56" y="150" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">login node, outbound only</text>
+<text x="56" y="172" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">claims batches, sbatch</text>
+<rect x="40" y="300" width="340" height="130" rx="12" fill="#9fd05a1a" stroke="#9fd05a" stroke-width="2"/>
+<text x="56" y="330" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#e8eef6" font-weight="650" text-anchor="start" xml:space="preserve">SLURM wrapper job</text>
+<text x="56" y="360" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">run-wrapper -&gt; nextflow</text>
+<text x="56" y="382" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">per-sample SLURM tasks</text>
+<path d="M210,210 L210,295" fill="none" stroke="#9fd05a" stroke-width="2.2" marker-end="url(#ah-GREEN)"/>
+<rect x="177.82" y="239.0" width="64.36" height="26" rx="6" fill="#020617" stroke="#9fd05a" stroke-width="1"/>
+<text x="210" y="257.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#9fd05a" font-weight="500" text-anchor="middle" xml:space="preserve">sbatch</text>
+<rect x="520" y="90" width="380" height="150" rx="12" fill="#4aa8e81a" stroke="#4aa8e8" stroke-width="2"/>
+<text x="536" y="120" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#e8eef6" font-weight="650" text-anchor="start" xml:space="preserve">v2 control plane (cf/)</text>
+<text x="536" y="150" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">Worker + Durable Objects</text>
+<text x="536" y="172" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">dispatch, runs, timers</text>
+<text x="536" y="194" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">event sink, task logs</text>
+<rect x="520" y="330" width="380" height="130" rx="12" fill="#b49cff1a" stroke="#b49cff" stroke-width="2"/>
+<text x="536" y="360" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#e8eef6" font-weight="650" text-anchor="start" xml:space="preserve">R2</text>
+<text x="536" y="390" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">cmgd-raw: pipeline outputs</text>
+<text x="536" y="412" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">events, ledger, logs</text>
+<path d="M380,150 L515,150" fill="none" stroke="#9fd05a" stroke-width="2.2" marker-end="url(#ah-GREEN)"/>
+<rect x="383.58" y="112.0" width="128.84" height="26" rx="6" fill="#020617" stroke="#9fd05a" stroke-width="1"/>
+<text x="448" y="130.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#9fd05a" font-weight="500" text-anchor="middle" xml:space="preserve">claim / report</text>
+<path d="M380,330 L515,220" fill="none" stroke="#9fd05a" stroke-width="2.2" marker-end="url(#ah-GREEN)"/>
+<rect x="399.7" y="240.0" width="96.6" height="44" rx="6" fill="#020617" stroke="#9fd05a" stroke-width="1"/>
+<text x="448" y="258.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#9fd05a" font-weight="500" text-anchor="middle" xml:space="preserve">weblog,</text>
+<text x="448" y="276.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#9fd05a" font-weight="500" text-anchor="middle" xml:space="preserve">run events</text>
+<path d="M380,410 L515,410" fill="none" stroke="#9fd05a" stroke-width="2.2" marker-end="url(#ah-GREEN)"/>
+<rect x="399.7" y="397.0" width="96.6" height="26" rx="6" fill="#020617" stroke="#9fd05a" stroke-width="1"/>
+<text x="448" y="415.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#9fd05a" font-weight="500" text-anchor="middle" xml:space="preserve">publishDir</text>
+<path d="M710,240 L710,325" fill="none" stroke="#4aa8e8" stroke-width="2.2" marker-end="url(#ah-BLUE)"/>
+<rect x="1010" y="90" width="390" height="150" rx="12" fill="#4aa8e81a" stroke="#4aa8e8" stroke-width="2"/>
+<text x="1026" y="120" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#e8eef6" font-weight="650" text-anchor="start" xml:space="preserve">Catalog service</text>
+<text x="1026" y="150" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">FastAPI + Postgres</text>
+<text x="1026" y="172" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">studies, samples, submissions</text>
+<text x="1026" y="194" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">curation, source catalog</text>
+<rect x="1010" y="330" width="390" height="130" rx="12" fill="#4aa8e81a" stroke="#4aa8e8" stroke-width="2"/>
+<text x="1026" y="360" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#e8eef6" font-weight="650" text-anchor="start" xml:space="preserve">React dashboard</text>
+<text x="1026" y="390" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">cmgd.cancerdatasci.org</text>
+<text x="1026" y="412" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">progress, failures, runs</text>
+<path d="M1005,130 L905,130" fill="none" stroke="#4aa8e8" stroke-width="2.2" marker-end="url(#ah-BLUE)"/>
+<rect x="894.61" y="59.0" width="120.78" height="26" rx="6" fill="#020617" stroke="#4aa8e8" stroke-width="1"/>
+<text x="955" y="77.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#4aa8e8" font-weight="500" text-anchor="middle" xml:space="preserve">write-through</text>
+<path d="M905,210 L1005,360" fill="none" stroke="#4aa8e8" stroke-width="2.2" marker-end="url(#ah-BLUE)"/>
+<rect x="906.7" y="272.0" width="96.6" height="26" rx="6" fill="#020617" stroke="#4aa8e8" stroke-width="1"/>
+<text x="955" y="290.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#4aa8e8" font-weight="500" text-anchor="middle" xml:space="preserve">live state</text>
+<path d="M1205,240 L1205,325" fill="none" stroke="#4aa8e8" stroke-width="2.2" marker-end="url(#ah-BLUE)"/>
+<rect x="1168.79" y="269.0" width="72.42" height="26" rx="6" fill="#020617" stroke="#4aa8e8" stroke-width="1"/>
+<text x="1205" y="287.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#4aa8e8" font-weight="500" text-anchor="middle" xml:space="preserve">studies</text>
+<rect x="520" y="540" width="380" height="110" rx="12" fill="#9fd05a1a" stroke="#9fd05a" stroke-width="2"/>
+<text x="536" y="570" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#e8eef6" font-weight="650" text-anchor="start" xml:space="preserve">nf-etl, nf-meta</text>
+<text x="536" y="600" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">onclappc02</text>
+<rect x="1010" y="540" width="390" height="110" rx="12" fill="#b49cff1a" stroke="#b49cff" stroke-width="2"/>
+<text x="1026" y="570" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#e8eef6" font-weight="650" text-anchor="start" xml:space="preserve">Shared DuckLake</text>
+<text x="1026" y="600" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">lake.cmgd, lake.cmgd_meta</text>
+<text x="1026" y="622" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#a9b8ca" font-weight="400" text-anchor="start" xml:space="preserve">releases: Figure 2</text>
+<path d="M710,460 L710,535" fill="none" stroke="#b49cff" stroke-width="2.2" marker-end="url(#ah-VIOLET)"/>
+<rect x="673.79" y="484.0" width="72.42" height="26" rx="6" fill="#020617" stroke="#b49cff" stroke-width="1"/>
+<text x="710" y="502.0" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#b49cff" font-weight="500" text-anchor="middle" xml:space="preserve">outputs</text>
+<path d="M900,595 L1005,595" fill="none" stroke="#9fd05a" stroke-width="2.2" marker-end="url(#ah-GREEN)"/>
+<text x="30" y="699" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#a9b8ca" font-weight="600" text-anchor="start" xml:space="preserve">Legend:</text>
+<rect x="110" y="680" width="89.44" height="26" rx="13.0" fill="#f2b44122" stroke="#f2b441"/>
+<text x="154.72" y="697" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#f2b441" font-weight="600" text-anchor="middle" xml:space="preserve">external</text>
+<rect x="219.44" y="680" width="89.44" height="26" rx="13.0" fill="#9fd05a22" stroke="#9fd05a"/>
+<text x="264.15999999999997" y="697" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#9fd05a" font-weight="600" text-anchor="middle" xml:space="preserve">our CLIs</text>
+<rect x="328.88" y="680" width="193.6" height="26" rx="13.0" fill="#4aa8e822" stroke="#4aa8e8"/>
+<text x="425.68" y="697" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#4aa8e8" font-weight="600" text-anchor="middle" xml:space="preserve">services / published</text>
+<rect x="542.48" y="680" width="72.08" height="26" rx="13.0" fill="#b49cff22" stroke="#b49cff"/>
+<text x="578.52" y="697" font-family="'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" fill="#b49cff" font-weight="600" text-anchor="middle" xml:space="preserve">stores</text>
+</svg>
