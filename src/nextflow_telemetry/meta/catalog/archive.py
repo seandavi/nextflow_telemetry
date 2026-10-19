@@ -74,6 +74,23 @@ def verify(uri: str, expected: Artifact) -> None:
         raise ValueError(f"retained snapshot checksum mismatch: {uri}")
 
 
+def fetch(uri: str, dest: Path, expected: Artifact) -> Path:
+    """Copy a retained blob to ``dest`` (a new file) and require the receipt's bytes.
+
+    The only way loaders read source bytes: a load can't silently use anything but
+    what the catalog says was captured."""
+    if uri.startswith("file:"):
+        src = Path(unquote(urlsplit(uri).path))
+        dest.write_bytes(src.read_bytes())
+    elif (r := _rclone("copyto", uri, str(dest))).returncode:
+        raise ValueError(f"cannot fetch {uri}: {r.stderr.decode(errors='replace').strip()[-300:]}")
+    got = _local_hash(dest)
+    if got != (expected.sha256, expected.size_bytes):
+        dest.unlink(missing_ok=True)
+        raise ValueError(f"retained snapshot checksum mismatch: {uri}")
+    return dest
+
+
 def _local_hash(path: Path) -> tuple[str, int]:
     with path.open("rb") as f:
         return _copy_hash(f)

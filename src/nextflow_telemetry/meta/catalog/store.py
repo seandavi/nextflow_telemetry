@@ -110,6 +110,16 @@ class SourceCatalog:
                     snapshots.c.asset_id, snapshots.c.captured_at, snapshots.c.version))).mappings()]
             return {**dict(row), "assets": asset_rows, "snapshots": captures}
 
+    async def snapshot(self, source_id: str, asset_id: str, version: str) -> dict:
+        """One capture receipt, or CatalogError. Loaders start here."""
+        async with self.engine.connect() as con:
+            row = (await con.execute(select(snapshots).where(
+                snapshots.c.source_id == source_id, snapshots.c.asset_id == asset_id,
+                snapshots.c.version == version))).mappings().one_or_none()
+        if row is None:
+            raise CatalogError(f"no snapshot {source_id}/{asset_id}@{version}; capture it first")
+        return dict(row)
+
     async def history(self, source_id: str) -> list[dict]:
         async with self.engine.connect() as con:
             if (await con.execute(select(sources.c.source_id).where(
