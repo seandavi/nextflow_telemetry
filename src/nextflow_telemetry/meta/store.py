@@ -51,6 +51,9 @@ SOURCES = (
     ops.Source(name="cmgd_meta_cmd", lake_schema=SCHEMA,
                description="curatedMetagenomicData curated sample TSVs, unpivoted, per commit",
                cadence="manual", distribution="github-repo", license="CC0-1.0"),
+    ops.Source(name="cmgd_meta_zoe", lake_schema=SCHEMA,
+               description="ZOE PREDICT open metadata (age, sex, BMI) per catalog snapshot",
+               cadence="manual", distribution="zenodo", license="CC-BY-4.0"),
     ops.Source(name="cmgd_meta", lake_schema=SCHEMA,
                description="cmgd sample metadata: readset xref, field map, harmonized views",
                cadence="manual", distribution="cmgd-public", license="CC0-1.0"),
@@ -71,8 +74,8 @@ _CMD_ID_COLS = ("study_name", "sample_id", "ncbi_accession", "curator")
 _SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
-def connect() -> duckdb.DuckDBPyConnection:
-    con = lake_connect(get_settings())
+def connect(settings=None) -> duckdb.DuckDBPyConnection:
+    con = lake_connect(settings or get_settings())
     ops.register_sources(con, writer=etl_lake.WRITER, sources=SOURCES)
     con.execute(f"CREATE SCHEMA IF NOT EXISTS {S}")
     con.execute(f"""CREATE TABLE IF NOT EXISTS {S}.source_releases (

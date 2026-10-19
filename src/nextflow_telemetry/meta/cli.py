@@ -7,6 +7,7 @@ docs/etl-runbook.md).
 
   nf-meta load olm ZIP_URL_OR_PATH [--doi DOI] [--pin]   one Olm data package release
   nf-meta load cmd [REF] [--pin]                         cMD curation at a commit (default master)
+  nf-meta load zoe [--version V]                         ZOE open metadata from catalog snapshots
   nf-meta load xref                                      rebuild sample_xref (v2 + pinned sources)
   nf-meta views                                          seeds + sample_values/_harmonized/compare_cmd_olm
 """
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 
 from .catalog import cli as catalog_cli
 
@@ -32,6 +34,8 @@ def main(argv: list[str] | None = None) -> None:
     cmd = src.add_parser("cmd")
     cmd.add_argument("ref", nargs="?", default="master")
     cmd.add_argument("--pin", action="store_true")
+    zoe_p = src.add_parser("zoe", help="ZOE open metadata from catalog snapshots")
+    zoe_p.add_argument("--version", default="zenodo-15308000-v1")
     src.add_parser("xref")
     sub.add_parser("views")
     a = p.parse_args(argv)
@@ -48,6 +52,11 @@ def main(argv: list[str] | None = None) -> None:
             out: object = store.create_views(con)
         elif a.source == "olm":
             out = store.load_olm(con, a.zip, doi=a.doi, pin=a.pin)
+        elif a.source == "zoe":
+            from . import zoe
+
+            out = zoe.load_zoe(con, os.environ["SQLALCHEMY_URI"].replace(
+                "postgresql://", "postgresql+asyncpg://", 1), a.version)
         elif a.source == "cmd":
             out = store.load_cmd(con, a.ref, pin=a.pin)
         else:
