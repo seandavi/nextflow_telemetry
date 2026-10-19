@@ -184,6 +184,10 @@ def cmd_deliver(a) -> None:
     print(f"{a.name} -> {d}: {', '.join(sorted(p.name for p in d.iterdir()))}")
     if a.sync or a.dry_run:
         deliver.sync(d, a.name, a.remote, dry_run=a.dry_run or not a.sync)
+    if a.sync and not a.dry_run:
+        con = lake.connect()
+        print(json.dumps(deliver.record(con, d, a.name, reg, a.collection, a.recipient, a.issue),
+                         default=str))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -237,6 +241,8 @@ def main(argv: list[str] | None = None) -> None:
     dl.add_argument("--sync", action="store_true", help="also upload to --remote")
     dl.add_argument("--remote", default=publish.SYNC_REMOTE)
     dl.add_argument("--dry-run", action="store_true", help="print the rclone command, upload nothing")
+    dl.add_argument("--recipient", help="with --sync: who it is for (lake.cmgd.deliveries)")
+    dl.add_argument("--issue", help="with --sync: tracking issue URL (lake.cmgd.deliveries)")
 
     a = p.parse_args(argv)
     {"status": cmd_status, "ingest": cmd_ingest, "tick": cmd_tick, "parse": cmd_parse,

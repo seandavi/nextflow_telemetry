@@ -34,7 +34,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from html import escape
 from pathlib import Path
 from statistics import median
@@ -775,3 +775,39 @@ def sync(d: Path, name: str, remote: str = publish.SYNC_REMOTE, dry_run: bool = 
         print(" ".join(cmd))
         if not dry_run:
             subprocess.run(cmd, check=True)
+
+
+def url(d: Path, name: str) -> str:
+    return f"{publish.PUBLIC_BASE_URL}/{PREFIX}/{name}/{d.name}/index.html"
+
+
+DELIVERIES = "deliveries"
+DELIVERIES_COLS = {"name": "VARCHAR", "built": "DATE", "registration": "VARCHAR",
+                   "collections": "VARCHAR[]", "n_samples": "INTEGER", "url": "VARCHAR",
+                   "expires": "DATE", "manifest_sha256": "VARCHAR", "recipient": "VARCHAR",
+                   "issue": "VARCHAR", "delivered_at": "TIMESTAMPTZ"}
+
+
+def record(con, d: Path, name: str, reg: Registration, collections: list[str],
+           recipient: str | None = None, issue: str | None = None) -> dict:
+    """One ``lake.cmgd.deliveries`` row per synced deliverable, keyed (name, built):
+    a same-day re-sync replaces it, as the upload replaces the files."""
+    from cdsci.lake import ops  # type: ignore[import-untyped]
+
+    from . import lake as etl_lake
+    t = f"lake.{etl_lake.SCHEMA}.{DELIVERIES}"
+    built = date.fromisoformat(d.name)
+    with gzip.open(d / "samples.tsv.gz", "rt") as f:
+        n = sum(1 for _ in f) - 1
+    row = {"name": name, "built": built, "registration": f"{reg.workflow_id}/{reg.version}",
+           "collections": sorted(collections), "n_samples": n, "url": url(d, name),
+           "expires": built + timedelta(days=EXPIRY_DAYS),
+           "manifest_sha256": hashlib.sha256((d / "MANIFEST.sha256").read_bytes()).hexdigest(),
+           "recipient": recipient, "issue": issue, "delivered_at": datetime.now(UTC)}
+    con.execute(f"CREATE TABLE IF NOT EXISTS {t} ("
+                + ", ".join(f"{c} {ty}" for c, ty in DELIVERIES_COLS.items()) + ")")
+    with ops.run(con, source=etl_lake.SOURCE.name, target=t, version=f"{name}/{d.name}") as r:
+        con.execute(f"DELETE FROM {t} WHERE name = ? AND built = ?", [name, built])
+        con.execute(f"INSERT INTO {t} VALUES ({', '.join('?' * len(row))})", list(row.values()))
+        r.rows = 1
+    return row
