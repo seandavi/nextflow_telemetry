@@ -9,7 +9,6 @@ import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -120,7 +119,7 @@ class SourceCatalog:
                 events.c.source_id == source_id).order_by(events.c.id))).mappings()]
 
     async def capture(self, source_id: str, asset_id: str, *, version: str, file: Path,
-                      archive_dir: Path, actor: str, commit: bool = False) -> dict:
+                      archive_dir: str | Path, actor: str, commit: bool = False) -> dict:
         """Capture a whole local file, retaining its bytes before receipt commit.
 
         A version is operator-supplied: a commit SHA, Zenodo record/file version,
@@ -147,11 +146,7 @@ class SourceCatalog:
                 if commit:
                     # The first capture's URI is authoritative. Don't silently relocate
                     # receipts if someone chooses a different archive root on a repeat.
-                    uri = urlsplit(old["artifact_uri"])
-                    existing = Path(unquote(uri.path))
-                    actual = await asyncio.to_thread(archive.inspect_file, existing, existing.parent.parent)
-                    if (actual.sha256, actual.size_bytes) != (inspected.sha256, inspected.size_bytes):
-                        raise CatalogError("retained snapshot checksum mismatch")
+                    await asyncio.to_thread(archive.verify, old["artifact_uri"], inspected)
                 return {"committed": commit, "action": "unchanged", "snapshot": dict(old)}
             row = {
                 "source_id": source_id, "asset_id": asset_id, "version": version,

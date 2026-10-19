@@ -35,8 +35,9 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     cap.add_argument("asset_id")
     cap.add_argument("--version", required=True)
     cap.add_argument("--file", type=Path, required=True)
-    cap.add_argument("--archive-dir", type=Path, required=True,
-                     help="private persistent directory (not a temporary download cache)")
+    cap.add_argument("--archive-dir", required=True,
+                     help="private persistent directory, or an rclone path such as "
+                          "r2:cmgd-private/metadata-sources (not a temporary download cache)")
     cap.add_argument("--actor", required=True)
     cap.add_argument("--commit", action="store_true", help="write (default: preview only)")
 
