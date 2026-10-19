@@ -357,3 +357,35 @@ def test_olm_columns_for_uncurated_samples_by_biosample_or_run(tmp_path, monkeyp
     assert (tmp_path / "cache" / "w.parquet").exists()
     assert deliver.OLM_RELEASE in (d / "README.md").read_text()
     assert deliver.OLM_CITATION in (d / "METHODS.md").read_text()
+
+
+def test_record_delivery_replaces_same_day_row(tmp_path):
+    from cdsci.lake import Settings
+
+    from nextflow_telemetry.etl import lake
+
+    con = lake.connect(Settings(lake_backend="local", storage_base_uri=f"file://{tmp_path}/lake"))
+    d = tmp_path / "x" / "2026-10-19"
+    d.mkdir(parents=True)
+    with gzip.open(d / "samples.tsv.gz", "wt") as f:
+        f.write("readset_id\nRS.a\nRS.b\n")
+    (d / "MANIFEST.sha256").write_text("abc  samples.tsv.gz\n")
+    deliver.record(con, d, "x", REG, ["B", "A"], recipient="Long")
+    row = deliver.record(con, d, "x", REG, ["B", "A"], recipient="Long", issue="seandavi/curatedMetagenomicsNextflow#35")
+    assert row["url"].endswith("/deliverables/x/2026-10-19/index.html")
+    got = con.execute("SELECT n_samples, collections, expires::VARCHAR, issue "
+                      "FROM lake.cmgd.deliveries").fetchall()
+    assert got == [(2, ["A", "B"], "2027-01-17",
+                    "https://github.com/seandavi/curatedMetagenomicsNextflow/issues/35")]
+
+
+def test_issue_url_needs_a_repo():
+    u = "https://github.com/seandavi/curatedMetagenomicsNextflow/issues/35"
+    assert deliver.issue_url("seandavi/curatedMetagenomicsNextflow#35") == u
+    assert deliver.issue_url(u) == u
+    for bad in ("#35", "35", "cMN#35", "https://example.com/a/b/issues/3"):
+        try:
+            deliver.issue_url(bad)
+        except ValueError:
+            continue
+        raise AssertionError(bad)
