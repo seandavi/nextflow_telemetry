@@ -1,4 +1,7 @@
-"""Whole-file snapshots in a private, content-addressed local archive.
+"""Whole-file snapshots in a private, content-addressed archive.
+
+The root is a local directory or an rclone path (``r2:cmgd-private/metadata-sources``,
+via the repo's existing rclone remotes). Blobs are keyed ``sha256/<digest>`` either way.
 
 No downloader or file-type interpretation. A caller supplies bytes it is entitled
  to retain. Placement is atomic and never overwrites an existing blob.
@@ -7,10 +10,12 @@ from __future__ import annotations
 
 import hashlib
 import os
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
+from typing import IO
+from urllib.parse import unquote, urlsplit
 
 
 @dataclass(frozen=True)
@@ -20,7 +25,7 @@ class Artifact:
     uri: str
 
 
-def _copy_hash(src: BinaryIO, dest: BinaryIO | None = None) -> tuple[str, int]:
+def _copy_hash(src: IO[bytes], dest: IO[bytes] | None = None) -> tuple[str, int]:
     digest, size = hashlib.sha256(), 0
     for block in iter(lambda: src.read(1 << 20), b""):
         digest.update(block)
@@ -30,20 +35,71 @@ def _copy_hash(src: BinaryIO, dest: BinaryIO | None = None) -> tuple[str, int]:
     return digest.hexdigest(), size
 
 
-def inspect_file(path: Path, root: Path) -> Artifact:
+def is_remote(root: str | Path) -> bool:
+    """``remote:path`` (rclone) vs a filesystem path. Absolute/relative paths never match."""
+    r = str(root)
+    return ":" in r.split("/", 1)[0] and not r.startswith(("file:", "/", "."))
+
+
+def _rclone(*args: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(["rclone", *args], capture_output=True)
+
+
+def _remote_hash(uri: str) -> tuple[str, int]:
+    """Stream the stored object and hash it: R2's own checksums are not sha256."""
+    with subprocess.Popen(["rclone", "cat", uri], stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL) as p:
+        assert p.stdout is not None
+        got = _copy_hash(p.stdout)
+        if p.wait() != 0:
+            raise ValueError(f"cannot read retained snapshot: {uri}")
+    return got
+
+
+def inspect_file(path: Path, root: str | Path) -> Artifact:
     with path.open("rb") as f:
         sha, size = _copy_hash(f)
-    return Artifact(sha, size, (root.resolve() / "sha256" / sha).as_uri())
+    if is_remote(root):
+        return Artifact(sha, size, f"{str(root).rstrip('/')}/sha256/{sha}")
+    return Artifact(sha, size, (Path(root).resolve() / "sha256" / sha).as_uri())
 
 
-def retain(path: Path, root: Path, expected: Artifact) -> Artifact:
+def verify(uri: str, expected: Artifact) -> None:
+    """Re-read a retained blob and require the receipt's bytes (local or remote)."""
+    if uri.startswith("file:"):
+        got = _local_hash(Path(unquote(urlsplit(uri).path)))
+    else:
+        got = _remote_hash(uri)
+    if got != (expected.sha256, expected.size_bytes):
+        raise ValueError(f"retained snapshot checksum mismatch: {uri}")
+
+
+def _local_hash(path: Path) -> tuple[str, int]:
+    with path.open("rb") as f:
+        return _copy_hash(f)
+
+
+def _retain_remote(path: Path, root: str, expected: Artifact) -> Artifact:
+    target = f"{root.rstrip('/')}/sha256/{expected.sha256}"
+    if _rclone("lsf", target).stdout.strip():  # exists: never overwrite, just verify below
+        pass
+    elif (r := _rclone("copyto", "--immutable", str(path), target)).returncode:
+        raise ValueError(f"upload failed: {r.stderr.decode(errors='replace').strip()[-300:]}")
+    # Hash what R2 now holds, not what we sent: catches a changed input and bad uploads.
+    verify(target, expected)
+    return Artifact(expected.sha256, expected.size_bytes, target)
+
+
+def retain(path: Path, root: str | Path, expected: Artifact) -> Artifact:
     """Retain exactly the inspected bytes. Existing archives must be private.
 
     Changing input between preview/hash and copy is an error. Reusing a blob
     verifies its bytes, not just its file name. No garbage collection here: an
     orphan after a DB failure is safer than a receipt pointing at missing data.
     """
-    root = root.resolve()
+    if is_remote(root):
+        return _retain_remote(path, str(root), expected)
+    root = Path(root).resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     if root.stat().st_mode & 0o077:
         raise ValueError("archive directory must be private (chmod 700)")

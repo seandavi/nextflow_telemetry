@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -252,3 +253,69 @@ def test_concurrent_registration_and_capture_are_idempotent(db_url, tmp_path):
             archive_dir=root, actor="test", commit=True) for _ in range(3)))
         assert sorted(r["action"] for r in replies) == ["added", "unchanged", "unchanged"]
     run(db_url, scenario)
+
+
+# --- rclone (object-storage) archive, exercised with rclone's local backend ---
+
+needs_rclone = pytest.mark.skipif(shutil.which("rclone") is None, reason="rclone not installed")
+
+
+@pytest.fixture()
+def fake_remote(monkeypatch, tmp_path):
+    """Remote `fakeremote:` is a plain directory: real rclone, no network."""
+    monkeypatch.setenv("RCLONE_CONFIG_FAKEREMOTE_TYPE", "local")
+    monkeypatch.setenv("RCLONE_CONFIG", str(tmp_path / "empty.conf"))
+    store = tmp_path / "bucket"
+    store.mkdir()
+    return f"fakeremote:{store}/metadata-sources", store
+
+
+@needs_rclone
+def test_remote_root_detection():
+    assert archive.is_remote("r2:cmgd-private/metadata-sources")
+    assert not any(archive.is_remote(p) for p in ("/abs/path", "relative/dir", "./x:y", "file:///a"))
+
+
+@needs_rclone
+def test_remote_capture_retains_verifies_and_never_overwrites(db_url, tmp_path, fake_remote):
+    root, bucket = fake_remote
+    raw = tmp_path / "raw.bz2"
+    data = b"BZh9\x00\xffwhole compressed file"
+    raw.write_bytes(data)
+    sha = hashlib.sha256(data).hexdigest()
+
+    async def scenario(c):
+        await c.apply(manifest(), actor="t", commit=True)
+        kw = dict(version="v1", file=raw, archive_dir=root, actor="t")
+        assert not (bucket / "metadata-sources").exists()  # preview uploads nothing
+        await c.capture("tracker", "tab-0", **kw)
+        assert not (bucket / "metadata-sources").exists()
+        cap = await c.capture("tracker", "tab-0", commit=True, **kw)
+        assert cap["snapshot"]["artifact_uri"] == f"{root}/sha256/{sha}"
+        assert (bucket / "metadata-sources" / "sha256" / sha).read_bytes() == data
+        assert (await c.capture("tracker", "tab-0", commit=True, **kw))["action"] == "unchanged"
+        # A second version with the same bytes reuses the object.
+        await c.capture("tracker", "tab-1", commit=True, **{**kw, "version": "v2"})
+        assert len(list((bucket / "metadata-sources" / "sha256").iterdir())) == 1
+        # Corrupt the stored object: a repeat capture must notice, not trust the key.
+        (bucket / "metadata-sources" / "sha256" / sha).write_bytes(b"corrupt")
+        with pytest.raises(ValueError, match="checksum mismatch"):
+            await c.capture("tracker", "tab-0", commit=True, **kw)
+    run(db_url, scenario)
+
+
+@needs_rclone
+def test_remote_retain_rejects_changed_input_and_corrupt_existing(tmp_path, fake_remote):
+    root, bucket = fake_remote
+    raw = tmp_path / "in"
+    raw.write_bytes(b"first")
+    inspected = archive.inspect_file(raw, root)
+    raw.write_bytes(b"changed")  # changed between hashing and upload
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        archive.retain(raw, root, inspected)
+    raw.write_bytes(b"first")
+    blob = bucket / "metadata-sources" / "sha256" / inspected.sha256
+    blob.write_bytes(b"pre-existing corrupt object")  # same key, wrong bytes: not overwritten
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        archive.retain(raw, root, inspected)
+    assert blob.read_bytes() == b"pre-existing corrupt object"

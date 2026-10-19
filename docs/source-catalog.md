@@ -37,8 +37,11 @@ Access labels are inventory information, not an authorization system.
 
 - Catalog records and descriptor history: four `metadata_source*` tables in the
   existing **Postgres catalog**, configured through `SQLALCHEMY_URI`.
-- Original snapshot bytes: a **private persistent local archive** chosen with
-  `--archive-dir`, stored as `sha256/<digest>` (whole input, no filtering).
+- Original snapshot bytes: a **private content-addressed archive** chosen with
+  `--archive-dir`, stored as `sha256/<digest>` (whole input, no filtering). Production
+  uses the private R2 bucket `cmgd-private`: `--archive-dir r2:cmgd-private/metadata-sources`
+  (an rclone path, using the host's existing `r2:` remote). A local directory also works
+  and is what the tests use.
 - Bulk interpreted metadata values: the existing lake `cmgd_meta` loader, unchanged.
   It is **not yet connected** to this inventory. Its `source_releases` records
   loads of interpreted values; source-catalog snapshots record acquired bytes.
@@ -50,9 +53,10 @@ and credentials are not consulted. This increment has no HTTP/UI endpoints.
 
 Raw files do not belong in git or Postgres. Back up the archive with the catalog;
 a database backup alone does not retain the bytes. This local archive is a
-first adapter, not a new universal storage platform. R2/GCS retention can be
-added behind the capture interface later. There is no automatic garbage
-collection or deletion command.
+dev/offline adapter. For R2 the object is uploaded, then read back and hashed
+before the receipt is written; an existing object at a digest is verified, never
+overwritten. Today's `r2:` credentials are account-wide, not scoped to this bucket.
+There is no automatic garbage collection or deletion command.
 
 ## Workflow
 
@@ -92,7 +96,7 @@ interest. For compressed metadata, retain the original compressed bytes.
 uv run nf-meta sources capture zoe-predict-open p3-us21-metadata \
   --version zenodo-15308000-v1 \
   --file /path/to/P3_US21_metadata.tsv.bz2 \
-  --archive-dir /persistent/private/metadata-sources \
+  --archive-dir r2:cmgd-private/metadata-sources \
   --actor curator                         # preview only
 
 # Same invocation with --commit retains bytes and inserts the receipt.
