@@ -24,6 +24,7 @@ help:
 	@echo "Data and dispatch"
 	@echo "  just seed          Register samples + workflow from ArtachoA_2021_sample.tsv."
 	@echo "  just daemon        Run nf-client daemon: claim+run batches until no pending jobs."
+	@echo "  just cmd-schema-pin <commit>   Re-pin the cMD data dictionary and regenerate cmd.yaml."
 	@echo ""
 	@echo "Container workflows"
 	@echo "  just up-all        Start API + pgAdmin via docker compose profile 'all' (external DB)."
@@ -144,6 +145,17 @@ seed:
 	  --tsv ArtachoA_2021_sample.tsv --collection ArtachoA_2021 --reconcile
 
 # Run nf-client daemon: claim and run batches of 10 until no pending jobs remain.
+# Re-pin the cMD data dictionary at an upstream commit, regenerate cmd.yaml, show the diff.
+# Capture the same commit into the source catalog and set pin.json catalog_snapshot to it.
+cmd-schema-pin commit:
+	d=src/nextflow_telemetry/meta/schema; \
+	curl -fsSL "https://raw.githubusercontent.com/waldronlab/curatedMetagenomicDataCuration/{{commit}}/inst/extdata/cMD_data_dictionary.csv" -o "$d/cMD_data_dictionary.csv"; \
+	sha=$(sha256sum "$d/cMD_data_dictionary.csv" | cut -d' ' -f1); \
+	uv run python -c "import json; p='$d/pin.json'; j=json.load(open(p)); j.update(commit='{{commit}}', sha256='$sha'); open(p,'w').write(json.dumps(j, indent=2) + '\\n')"; \
+	uv run python scripts/cmd_schema.py; \
+	git diff --stat -- "$d"; \
+	echo "Now capture cmd-curation at {{commit}} and update pin.json catalog_snapshot."
+
 daemon:
 	uv run nf-client daemon --config client-local.yaml --batch-size 10
 

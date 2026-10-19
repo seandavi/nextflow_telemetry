@@ -1,0 +1,7 @@
+# Permissible values are upstream cMD labels kept verbatim ("Study Control"); renaming them breaks matching.
+extends: recommended
+rules:
+  standard_naming:
+    level: error
+    permissible_values_upper_case: false
+    exclude_type: [permissible_value]
