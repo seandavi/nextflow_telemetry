@@ -76,6 +76,29 @@ def _library_composition(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _drop_non_metagenomic(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Within a sample that has a METAGENOMIC run, drop its other runs (e.g. a
+    paired METATRANSCRIPTOMIC run, #294). Sample identity is the md5 of all of its
+    runs, so keeping them would fold the other reads into the metagenome sample.
+    Samples with no METAGENOMIC run are left alone."""
+    def source(r: dict[str, Any]) -> str:
+        return (r.get("library_source") or "").strip().upper()
+
+    has_mg = {r.get("secondary_sample_accession") for r in rows if source(r) == "METAGENOMIC"}
+    kept: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    for r in rows:
+        mixed = source(r) != "METAGENOMIC" and r.get("secondary_sample_accession") in has_mg
+        (dropped if mixed else kept).append(r)
+    if not dropped:
+        return rows, []
+    n_samples = len({r.get("secondary_sample_accession") for r in dropped})
+    return kept, [
+        f"dropped {len(dropped)} non-METAGENOMIC run(s) from {n_samples} sample(s) that also have a "
+        "METAGENOMIC run (e.g. paired metatranscriptomes); only the metagenome runs are registered"
+    ]
+
+
 def classify_source(accession: str) -> str:
     """Return the ``collections.source`` for a study/BioProject accession.
 
@@ -187,11 +210,12 @@ class SubmissionService:
         try:
             source = classify_source(accession)
             rows = await _fetch_runs(accession)
-            samples = _group_samples(rows, collection_id)
+            kept, dropped_warnings = _drop_non_metagenomic(rows)
+            samples = _group_samples(kept, collection_id)
             if not samples:
                 raise AccessionError(f"no runs found for '{accession}'")
-            composition = _library_composition(rows)
-            warnings = composition.pop("warnings")
+            composition = _library_composition(rows)  # all runs, so the approver sees what was dropped
+            warnings = composition.pop("warnings") + dropped_warnings
             if dry_run:
                 counts = await self._count_new(samples)
                 status = "dry_run"

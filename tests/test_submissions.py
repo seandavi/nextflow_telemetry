@@ -103,6 +103,26 @@ def test_library_composition_flags_amplicon():
     assert comp2["warnings"] and "amplicon" in comp2["warnings"][0].lower()
 
 
+def test_drops_metatranscriptome_runs_from_mixed_samples():
+    # VilletteR_2025 (PRJNA782492, #189/#294): each sample has one WGS and one RNA-Seq run.
+    rows = [
+        {"run_accession": "SRR20608020", "secondary_sample_accession": "SRS14266614",
+         "library_strategy": "WGS", "library_source": "METAGENOMIC"},
+        {"run_accession": "SRR20608116", "secondary_sample_accession": "SRS14266614",
+         "library_strategy": "RNA-Seq", "library_source": "METATRANSCRIPTOMIC"},
+        # A sample with no metagenome run is left alone.
+        {"run_accession": "SRR9", "secondary_sample_accession": "SRS9",
+         "library_strategy": "RNA-Seq", "library_source": "METATRANSCRIPTOMIC"},
+    ]
+    kept, warnings = sub_mod._drop_non_metagenomic(rows)
+    assert [r["run_accession"] for r in kept] == ["SRR20608020", "SRR9"]
+    assert len(warnings) == 1 and "1 non-METAGENOMIC run(s) from 1 sample(s)" in warnings[0]
+    samples = sub_mod._group_samples(kept, "PRJNA782492")
+    assert samples[0]["ncbi_accession"] == "SRR20608020"
+
+    assert sub_mod._drop_non_metagenomic(rows[:1]) == (rows[:1], [])
+
+
 def test_composition_in_receipt(db_url, monkeypatch):
     rows = [dict(r, library_strategy="WGS", library_selection="RANDOM",
                  library_source="METAGENOMIC", instrument_platform="ILLUMINA")
