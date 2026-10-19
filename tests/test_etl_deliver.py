@@ -371,8 +371,21 @@ def test_record_delivery_replaces_same_day_row(tmp_path):
         f.write("readset_id\nRS.a\nRS.b\n")
     (d / "MANIFEST.sha256").write_text("abc  samples.tsv.gz\n")
     deliver.record(con, d, "x", REG, ["B", "A"], recipient="Long")
-    row = deliver.record(con, d, "x", REG, ["B", "A"], recipient="Long", issue="gh#1")
+    row = deliver.record(con, d, "x", REG, ["B", "A"], recipient="Long", issue="seandavi/curatedMetagenomicsNextflow#35")
     assert row["url"].endswith("/deliverables/x/2026-10-19/index.html")
     got = con.execute("SELECT n_samples, collections, expires::VARCHAR, issue "
                       "FROM lake.cmgd.deliveries").fetchall()
-    assert got == [(2, ["A", "B"], "2027-01-17", "gh#1")]
+    assert got == [(2, ["A", "B"], "2027-01-17",
+                    "https://github.com/seandavi/curatedMetagenomicsNextflow/issues/35")]
+
+
+def test_issue_url_needs_a_repo():
+    u = "https://github.com/seandavi/curatedMetagenomicsNextflow/issues/35"
+    assert deliver.issue_url("seandavi/curatedMetagenomicsNextflow#35") == u
+    assert deliver.issue_url(u) == u
+    for bad in ("#35", "35", "cMN#35", "https://example.com/a/b/issues/3"):
+        try:
+            deliver.issue_url(bad)
+        except ValueError:
+            continue
+        raise AssertionError(bad)

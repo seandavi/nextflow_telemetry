@@ -781,6 +781,18 @@ def url(d: Path, name: str) -> str:
     return f"{publish.PUBLIC_BASE_URL}/{PREFIX}/{name}/{d.name}/index.html"
 
 
+ISSUE = re.compile(r"(?:https://github\.com/)?([\w.-]+/[\w.-]+)(?:#|/issues/)(\d+)")
+
+
+def issue_url(ref: str) -> str:
+    """``owner/repo#N`` or a GitHub issue URL, as the URL; anything else is an error
+    (a bare ``#35`` names no repo)."""
+    m = ISSUE.fullmatch(ref.strip())
+    if not m:
+        raise ValueError(f"--issue {ref!r}: use owner/repo#N or https://github.com/owner/repo/issues/N")
+    return f"https://github.com/{m[1]}/issues/{m[2]}"
+
+
 DELIVERIES = "deliveries"
 DELIVERIES_COLS = {"name": "VARCHAR", "built": "DATE", "registration": "VARCHAR",
                    "collections": "VARCHAR[]", "n_samples": "INTEGER", "url": "VARCHAR",
@@ -803,7 +815,7 @@ def record(con, d: Path, name: str, reg: Registration, collections: list[str],
            "collections": sorted(collections), "n_samples": n, "url": url(d, name),
            "expires": built + timedelta(days=EXPIRY_DAYS),
            "manifest_sha256": hashlib.sha256((d / "MANIFEST.sha256").read_bytes()).hexdigest(),
-           "recipient": recipient, "issue": issue, "delivered_at": datetime.now(UTC)}
+           "recipient": recipient, "issue": issue and issue_url(issue), "delivered_at": datetime.now(UTC)}
     con.execute(f"CREATE TABLE IF NOT EXISTS {t} ("
                 + ", ".join(f"{c} {ty}" for c, ty in DELIVERIES_COLS.items()) + ")")
     with ops.run(con, source=etl_lake.SOURCE.name, target=t, version=f"{name}/{d.name}") as r:

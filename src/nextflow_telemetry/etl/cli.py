@@ -179,6 +179,8 @@ def cmd_deliver(a) -> None:
         bs = v2.biosamples(client, a.collection) if not a.no_olm else {}
     for i in items:
         i.setdefault("biosample_id", bs.get(i.get("sample_id") or ""))
+    if a.issue:
+        a.issue = deliver.issue_url(a.issue)  # fail before the build, not after the upload
     olm = None if a.no_olm else deliver.olm_source(a.olm_cache)
     d = deliver.build(reg, items, a.collection, a.name, a.out, olm=olm)
     print(f"{a.name} -> {d}: {', '.join(sorted(p.name for p in d.iterdir()))}")
