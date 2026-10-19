@@ -12,6 +12,12 @@ description: >
 
 # cmgd release & rollout
 
+> **Run the `pipeline-change` checklist first.** It has the rules and edge cases
+> (new params ⇒ new version, databases staged per cluster, DAG gating, dead-letter
+> traps, priority, deliverables) behind this procedure. Parts of this skill predate
+> v2 (GCS paths, uvicorn restarts, `cmgd_nextflow`); where they disagree, the
+> checklist and `docs/` win.
+
 End-to-end procedure to ship a new `cmgd_nextflow` version. Two repos are
 involved: the pipeline (`curatedMetagenomicsNextflow`) and the telemetry backend
 (this repo, via the API in `telemetry-api`).
@@ -48,7 +54,8 @@ lifecycle status so only the new version dispatches.
 API=https://nf-telemetry.seandavi.workers.dev
 curl -s "$API/api/workflows" | python3 -m json.tool        # find pks + current revisions
 
-# Point the live row at the new tag (if reusing a row) ...
+# Point the live row at the new tag (if reusing a row). AVOID mid-campaign: it
+# mixes pipeline versions in one registration (pk 7 had 2.3.0 + 2.3.2, #305) ...
 curl -s -X PATCH "$API/api/workflows/<pk>/revision" -H 'content-type: application/json' \
   -d '{"revision":"X.Y.Z"}'
 
