@@ -9,6 +9,7 @@ docs/etl-runbook.md).
   nf-meta load cmd [REF] [--pin]                         cMD curation at a commit (default master)
   nf-meta load zoe [--version V]                         ZOE open metadata from catalog snapshots
   nf-meta load xref                                      rebuild sample_xref (v2 + pinned sources)
+  nf-meta link zoe --ena-version V                       resolve ZOE sample IDs to ENA (reproducible)
   nf-meta views                                          seeds + sample_values/_harmonized/compare_cmd_olm
 """
 from __future__ import annotations
@@ -37,6 +38,10 @@ def main(argv: list[str] | None = None) -> None:
     zoe_p = src.add_parser("zoe", help="ZOE open metadata from catalog snapshots")
     zoe_p.add_argument("--version", default="zenodo-15308000-v1")
     src.add_parser("xref")
+    link = sub.add_parser("link", help="resolve source sample IDs to ENA (from catalog snapshots)")
+    link.add_argument("source", choices=["zoe"])
+    link.add_argument("--ena-version", required=True, help="catalog version of the ENA listings, e.g. ena-2026-10-19")
+    link.add_argument("--version", default="zenodo-15308000-v1")
     sub.add_parser("views")
     a = p.parse_args(argv)
     if a.cmd == "sources":
@@ -48,8 +53,13 @@ def main(argv: list[str] | None = None) -> None:
 
     con = store.connect()
     try:
-        if a.cmd == "views":
-            out: object = store.create_views(con)
+        if a.cmd == "link":
+            from . import zoe_link
+
+            out: object = zoe_link.link_zoe(con, os.environ["SQLALCHEMY_URI"].replace(
+                "postgresql://", "postgresql+asyncpg://", 1), a.ena_version, a.version)
+        elif a.cmd == "views":
+            out = store.create_views(con)
         elif a.source == "olm":
             out = store.load_olm(con, a.zip, doi=a.doi, pin=a.pin)
         elif a.source == "zoe":
