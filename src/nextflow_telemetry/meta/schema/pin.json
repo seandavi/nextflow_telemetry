@@ -1,0 +1,12 @@
+{
+  "upstream": "https://github.com/waldronlab/curatedMetagenomicDataCuration",
+  "commit": "6828fb9abdfc27a91b02e20568d27332eaf19ca4",
+  "path": "inst/extdata/cMD_data_dictionary.csv",
+  "sha256": "edbb371567ff0360b90795aaafdb502713cb56965cb245e4595867f882b0181a",
+  "catalog_snapshot": {
+    "source": "cmd-curation",
+    "asset": "curation-archive",
+    "version": "6828fb9abdfc27a91b02e20568d27332eaf19ca4",
+    "sha256": "51b2be460816ceec68238e144f903feb4e74b20ce27ad3be4d06ae242a7c15bd"
+  }
+}
