@@ -102,6 +102,14 @@ def test_library_composition_flags_amplicon():
     assert comp2["library_strategy"] == {"WGS": 3, "AMPLICON": 1}
     assert comp2["warnings"] and "amplicon" in comp2["warnings"][0].lower()
 
+    # #293: WGS + PCR is shotgun with an amplified library prep (BoktorJC_2023, #185).
+    boktor = [{"library_strategy": "WGS", "library_selection": "PCR",
+               "library_source": "METAGENOMIC"}] * 192
+    assert sub_mod._library_composition(boktor)["warnings"] == []
+    # Without a strategy, PCR still counts.
+    comp3 = sub_mod._library_composition(wgs + [{"library_strategy": "OTHER", "library_selection": "PCR"}])
+    assert comp3["warnings"][0].startswith("1 of 4")
+
 
 def test_composition_in_receipt(db_url, monkeypatch):
     rows = [dict(r, library_strategy="WGS", library_selection="RANDOM",

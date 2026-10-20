@@ -59,13 +59,21 @@ def _library_composition(rows: list[dict[str, Any]]) -> dict[str, Any]:
         return dict(sorted(c.items(), key=lambda kv: -kv[1]))
 
     strat, sel = tally("library_strategy"), tally("library_selection")
-    n_amplicon = sum(n for k, n in strat.items() if k.upper() in _AMPLICON_STRATEGY)
-    n_pcr = sum(n for k, n in sel.items() if k.upper() in _AMPLICON_SELECTION)
+    # PCR selection alone is not a signal: shotgun preps (e.g. Nextera) amplify
+    # too, and ENA tags them WGS + PCR (#293). Trust it only without a strategy.
+    def amplicon(r: dict[str, Any]) -> bool:
+        s = (r.get("library_strategy") or "").strip().upper()
+        if s in _AMPLICON_STRATEGY:
+            return True
+        return s in {"", "OTHER"} and (r.get("library_selection") or "").strip().upper() in _AMPLICON_SELECTION
+
+    n_amplicon = sum(amplicon(r) for r in rows)
     warnings = []
-    if n_amplicon or n_pcr:
+    if n_amplicon:
         warnings.append(
-            f"{max(n_amplicon, n_pcr)} of {len(rows)} run(s) look like amplicon/16S "
-            "(library_strategy=AMPLICON or library_selection=PCR), not shotgun metagenomics"
+            f"{n_amplicon} of {len(rows)} run(s) look like amplicon/16S "
+            "(library_strategy=AMPLICON, or no strategy and library_selection=PCR), "
+            "not shotgun metagenomics"
         )
     return {
         "library_strategy": strat,
