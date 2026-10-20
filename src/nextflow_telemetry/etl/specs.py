@@ -156,9 +156,11 @@ CONTAINERS: dict[tuple[str, str], dict[str, str]] = {
 CAVEATS: dict[tuple[str, str], list[str]] = {
     ("cmgd_humann4a2", "2.4.2"): [
         "**Revision moved during the run.** The registration's revision went from 2.4.2 to "
-        "2.4.3 on 2026-10-17. 2.4.3 only deletes intermediate files earlier; results are "
-        "unchanged (curatedMetagenomicsNextflow#126). `samples.tsv.gz` gives each sample's "
-        "revision.",
+        "2.4.3 on 2026-10-17 and to 2.4.4 on 2026-10-18. 2.4.3 only deletes intermediate "
+        "files earlier (curatedMetagenomicsNextflow#126); 2.4.4 only renames BAQLaVa's input "
+        "file so BAQLaVa no longer fails on sample keys containing `gz` or `fq` "
+        "(curatedMetagenomicsNextflow#130). Results are unchanged. `samples.tsv.gz` gives "
+        "each sample's revision.",
         "**Patched UniRef file name.** HUMAnN 4.0.0a2 checks that a protein database's file "
         "names carry its expected version tag, so BAQLaVa's DIAMOND database files were "
         "symlinked under names ending `_2019_06` (pipeline 2.4.2, #125; humann#82). The "
