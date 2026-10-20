@@ -3,9 +3,7 @@
 > **Audience:** researchers who want to *use* the curatedMetagenomicData (cMD)
 > profiles, not run the pipeline.
 >
-> **Status:** the site is `https://cmgd-public.cancerdatasci.org`. Its first
-> releases go up once the `cmgd-public` bucket (monode#52) exists; until then
-> the URLs below return 404. Every code block on this page is run by the test
+> **Status:** the site `https://cmgd-public.cancerdatasci.org` is live. Every code block on this page is run by the test
 > suite against a local copy of a release (`tests/test_data_access_docs.py`), and
 > `scripts/smoke_public_data.py` runs them against the live site.
 

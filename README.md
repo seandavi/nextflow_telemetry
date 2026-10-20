@@ -1,16 +1,30 @@
 # Nextflow Telemetry
 
-A dispatch and telemetry server for the curatedMetagenomics Nextflow pipeline. It ingests
-real-time execution events from Nextflow, tracks sample-level processing outcomes, and
-presents the results through a live React dashboard.
+Orchestration, telemetry and data tooling for the curatedMetagenomicData (cMGD) compendium.
+It dispatches the curatedMetagenomics Nextflow pipeline to HPC clusters, records every run
+and task, shows progress on a live React dashboard, and turns pipeline outputs and sample
+metadata into versioned, published data.
 
-> **Adding samples?** See **[Adding studies](docs/adding-studies.md)** — how submitters
-> request an SRA study/BioProject by accession, and how maintainers review the preview,
-> approve, and dispatch.
+The repo has four parts:
 
-**Cataloging metadata sources?** See [Metadata source catalog](docs/source-catalog.md)
-for repositories, spreadsheets and Zenodo assets, descriptor history and immutable
-snapshots. `nf-meta sources` works independently of sample registration and processing.
+| Part | Where | What it does |
+|------|-------|--------------|
+| **Control plane (v2)** | [`cf/`](cf/) | Cloudflare Worker + Durable Objects + R2. Dispatch, runs, timers, the event sink and task logs. Production. |
+| **Catalog service** | `src/nextflow_telemetry/` | FastAPI + Postgres. Study and sample catalog, submissions, curated annotations, users and historical metrics ([ADR 0009](docs/adr/0009-catalog-in-postgres-control-plane-in-worker.md)). |
+| **HPC client** | [`packages/nf_client/`](packages/nf_client/) | `nf-client` daemon on each cluster login node (Alpine, Anvil, Bridges-2). Claims batches and submits SLURM jobs. |
+| **Data tooling** | `nf-etl`, `nf-meta` | Pipeline outputs and sample metadata into the shared DuckLake, public releases and deliverables. |
+
+### Where to start
+
+| If you want to... | Read |
+|---|---|
+| Add a study for processing | [Adding studies](docs/adding-studies.md): request an SRA study/BioProject by accession; maintainers review, approve and dispatch |
+| Use the published data | [Data access](docs/data-access.md) |
+| Run or debug the cluster daemons | [HPC deployment](docs/hpc-deployment.md), [HPC layout](docs/hpc-layout.md) |
+| Work on the control plane | [`cf/README.md`](cf/README.md), [diagrams](cf/docs/diagrams.md) |
+| Load outputs, publish, deliver | [nf-etl runbook](docs/etl-runbook.md) |
+| Track metadata sources | [Metadata source catalog](docs/source-catalog.md) |
+| Understand a design decision | [ADRs](docs/adr/README.md) and the [roadmap](docs/roadmap.md) |
 
 ![Dashboard overview](docs/dashboard-overview.png)
 
@@ -62,6 +76,12 @@ Registry of pipeline versions. Each workflow card shows:
 Paginated catalog of all registered BioSample IDs with metadata and substring filtering by
 sample_id or cohort.
 
+### Studies
+
+cMD study progress: one row per study, with progress under the active pipeline version
+and study facets from the catalog. Collections that v2 knows but the study catalog does
+not are marked with `*`.
+
 ### Cohorts
 
 Collection-level summary (`/api/cohorts`) for any registered group of samples — a
@@ -72,6 +92,14 @@ BioProject, an SRA Study, or a manually-tagged cohort. Each cohort shows:
 - A failure-by-process bar chart: which Nextflow process is killing samples, and how many
 - Click a process row to drill down to the failing task list, with deep-links into the
   log viewer
+
+### Runs, Infrastructure, Dispatch & Admin
+
+- **Runs**: workflow runs with a derived state, including how a run died
+  ([ADR 0002](docs/adr/0002-run-death-classification.md)), and per-run detail.
+- **Infrastructure**: the daemon fleet, active vs stale, from daemon heartbeats.
+- **Dispatch & Admin**: operator buttons that make the live dispatch and admin calls
+  (claim a batch, report submitted, requeue expired or dead-lettered jobs, reconcile).
 
 ---
 
@@ -90,6 +118,13 @@ table.
 **Workflow run** — a single Nextflow execution that processes a batch of samples together.
 The server dispatches runs in configurable batch sizes.
 
+**Registration** — one pipeline version plus its configuration, e.g. `cmgd_mpa4.2/2.3.0`
+([ADR 0010](docs/adr/0010-registrations-are-bundles.md)). Jobs, lake tables and public
+datasets are all per registration.
+
+**Readset id** — the stable sample key (`RS.…`) shared by v2, the catalog and the lake
+([ADR 0007](docs/adr/0007-readset-identity.md)). The older md5 `sample_id` remains as an alias.
+
 **Process metrics** — task-level data from individual Nextflow process executions
 (`FETCH_READS`, `PROFILE_TAXA`, etc.). A sample's job can succeed even if some tasks failed
 and were rescued by retry. Process metrics and job outcomes are complementary views.
@@ -102,69 +137,110 @@ without it, the job is failed (or re-queued if retries remain).
 
 ## Architecture
 
-> **v2 (Cloudflare control plane).** A wire-compatible replacement for the server
-> below lives in [`cf/`](cf/): Workers + Durable Objects + R2, no Postgres, no cron
-> sweepers. It is deployed and verified end to end but no cluster points at it yet.
-> Start with [`cf/README.md`](cf/README.md), the diagrams in
-> [`cf/docs/diagrams.md`](cf/docs/diagrams.md) (topology, run sequence, timers, state
-> machines) and [ADR 0006](docs/adr/0006-cloudflare-control-plane.md). The rest of
-> this section describes v1, which is what production runs today.
+Concerns are split by job, not by era ([ADR 0009](docs/adr/0009-catalog-in-postgres-control-plane-in-worker.md)).
+The v2 Worker runs the orchestration that needs timers and high write rates. The
+Postgres catalog holds the metadata people query and curate. The two share one key, the
+readset id ([ADR 0007](docs/adr/0007-readset-identity.md)).
 
-```
-                        ┌─────────────────────────────────┐
-                        │       HPC cluster (Anvil/Alpine) │
-                        │                                  │
-  ┌──────────────┐      │  ┌───────────┐  SLURM submit    │
-  │  nf-client   │──────┼─►│ sbatch    │──────────────►   │
-  │  (daemon on  │      │  │ wrapper   │                   │
-  │  head node)  │◄─────┼──│ job       │◄── Nextflow       │
-  └──────┬───────┘      │  └───────────┘    per-sample     │
-         │              │        │          tasks           │
-         │ claim/report │        │ -with-weblog             │
-         ▼              └────────┼────────────────────────-─┘
-  ┌──────────────────────────────▼──────────────────┐
-  │              FastAPI server + PostgreSQL          │
-  │                                                  │
-  │  /telemetry  ◄── Nextflow weblog events          │
-  │  /runs/…/event ◄── wrapper + pipeline hook events│
-  │  /dispatch   ◄── nf-client claims & reports      │
-  │  /metrics    ──► dashboard queries               │
-  │  /cohorts    ──► cohort summaries + drill-down   │
-  │  /samples    ──► sample catalog                  │
-  └──────────────────────────┬───────────────────────┘
-                             │
-                      ┌──────▼──────┐
-                      │  React UI   │
-                      │  dashboard  │
-                      └─────────────┘
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/architecture-dark.svg">
+  <img alt="System architecture: HPC daemons, v2 control plane, R2, catalog service, dashboard, DuckLake" src="docs/figures/architecture-light.svg">
+</picture>
+
+*Figure 1. System architecture. Amber: external (HPC clusters); green: our command-line tools; blue: services; violet: data stores. Generated by [`docs/figures/make_figures.py`](docs/figures/make_figures.py).*
 
 **Data flow**
 
-1. Samples are registered in the server's catalog (BioSample IDs + NCBI accessions).
-2. `nf-client` (running as a daemon on each HPC head node — Anvil and Alpine) claims
-   batches of pending samples from the server and submits a SLURM wrapper job for each
-   batch.
-3. The wrapper job (`nf_client.run_wrapper`) emits run-lifecycle events to
-   `/api/runs/{run_name}/event` (wrapper_started, pre_nextflow with queue wait,
-   periodic heartbeats), then runs Nextflow under instrumentation.
-4. Nextflow submits individual compute tasks (downloading reads, taxonomic profiling,
-   etc.) back to SLURM via the `process.executor = 'slurm'` setting, and posts real-time
-   weblog events to `/telemetry` as each task starts and finishes.
-5. When the `MARK_COMPLETE` sentinel process fires for a sample, the server marks that
-   sample's job as `completed`. If the run ends without it, the job is swept to `failed`
-   (or re-queued, within the workflow's retry budget).
-6. On exit, the wrapper posts `wrapper_exited` and uploads the `.nextflow.log` so the
-   diagnosis surface is complete even when the run dies before any weblog event.
-7. The dashboard polls the server's metrics, cohort, and status endpoints to render live
-   progress.
+1. A study is requested by accession and approved ([Adding studies](docs/adding-studies.md)).
+   The catalog registers its samples and writes them through to v2.
+2. `nf-client`, running on each cluster's login node, claims batches of pending samples
+   from v2 and submits a SLURM wrapper job per batch. It only makes outbound HTTPS calls
+   ([ADR 0001](docs/adr/0001-pull-mode-orchestration.md)).
+3. The wrapper (`nf_client.run_wrapper`) posts run-lifecycle events (`wrapper_started`,
+   `pre_nextflow` with queue wait, heartbeats), then runs Nextflow.
+4. Nextflow submits per-sample tasks to SLURM and posts weblog events as each task starts
+   and finishes. Outputs are published to R2 ([ADR 0008](docs/adr/0008-object-storage-on-r2.md)).
+5. When `MARK_COMPLETE` fires for a sample, v2 marks that job `completed`. If a run ends or
+   its deadline passes without it, the job fails or is re-queued within the retry budget.
+6. On exit the wrapper posts `wrapper_exited` and uploads `.nextflow.log`, so a run that
+   dies before any weblog event is still diagnosable.
+7. `nf-etl` loads finished outputs into the shared DuckLake and builds public releases;
+   `nf-meta` loads sample metadata from cataloged sources
+   ([ADR 0011](docs/adr/0011-results-storage-and-publication.md),
+   [ADR 0012](docs/adr/0012-multi-source-sample-metadata-in-the-lake.md)).
 
-**Storage** — all data lives in PostgreSQL. Raw Nextflow events are stored as JSONB in the
-`telemetry` table; sample, workflow, and job state live in their own relational tables.
-Process-level metrics are computed at query time from the raw event stream, with partial
-functional indexes on `(trace->>'process')` and `(trace->>'status')` keeping the
-analytical queries fast. Metrics endpoints apply a 7-day default look-back when no time
-filter is supplied, so unparameterised calls stay bounded as event volume grows.
+**Storage**
+
+| What | Where |
+|------|-------|
+| Jobs, runs, sample registry, daemons | v2 Durable Objects, with ledger snapshots in R2 |
+| Raw Nextflow events | R2, as gzipped NDJSON partitioned by day; queried with DuckDB for history |
+| Study/sample catalog, submissions, curation, users, metadata source catalog | Postgres `nf_telemetry` on the shared `pg_main` cluster |
+| Pipeline outputs | R2 (`publishDir`) |
+| Analysis tables (results and sample metadata) | shared cdsci DuckLake: catalog in Postgres, data in R2 |
+| Original metadata source files | private R2 bucket `cmgd-private`, content-addressed |
+
+The FastAPI app still contains the v1 dispatch, runs, daemon and process-metrics
+endpoints. Production clusters and the dashboard use v2. ADR 0009 retires those v1
+endpoints.
+
+---
+
+## Data sources and publication
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/data-flow-dark.svg">
+  <img alt="Data flow: pipeline outputs and metadata sources into the DuckLake, then public releases, mirrors and deliverables" src="docs/figures/data-flow-light.svg">
+</picture>
+
+*Figure 2. Data flow and publication routes. Pipeline outputs and metadata sources (left) are loaded into the shared DuckLake by `nf-etl` and `nf-meta` (middle), then published (right). Colours as in Figure 1.*
+
+**Metadata sources.** Each upstream source is registered in the
+[source catalog](docs/source-catalog.md). Its original files are kept byte-for-byte as
+checksummed snapshots before anything interprets them. `nf-meta` then loads values per
+source release into `lake.cmgd_meta`. The target schema is the cMD data dictionary,
+pinned in `src/nextflow_telemetry/meta/schema/` with a generated LinkML schema
+(`cmd.yaml`).
+
+| Source | Loaded into the lake | Notes |
+|---|---|---|
+| curatedMetagenomicData curation | yes (`nf-meta load cmd`) | authoritative curated metadata; also defines the target schema |
+| Olm Lab Microbiome Repo | yes (`nf-meta load olm`) | CC-BY-4.0 data packages from Zenodo |
+| ZOE PREDICT open metadata | yes (`nf-meta load zoe`, `link zoe`) | CC-BY-4.0; sample IDs linked to ENA |
+| ENA read-run listings | used for linkage | dated observations of a mutable source |
+| ASAP-MAC Parkinson's curation and inventory | cataloged only | |
+| Shared study tracker | cataloged only | restricted |
+
+*Table 1. Metadata sources in the catalog as of 2026-10-19.*
+
+**Publication routes.**
+
+| Route | Command | What a consumer gets |
+|---|---|---|
+| Public releases | `nf-etl publish --sync` | Immutable, dated snapshots per registration (pipeline version + config) at <https://cmgd-public.cancerdatasci.org>: Parquet tables, a read-only DuckLake catalog, per-study downloads and provenance. See [Data access](docs/data-access.md). |
+| Mirrors | `nf-etl mirror --to zenodo\|hf` | A built release copied to Zenodo (draft deposition, for a DOI) or Hugging Face. |
+| Deliverables | `nf-etl deliver --sync` | A scoped, expiring hand-off for one requester: chosen collections, completed samples, wide TSVs plus METHODS.md. Not a release. |
+| Gene-family files | (published with each HUMAnN release) | Per-sample HUMAnN gene families served straight from `cmgd-raw.cancerdatasci.org`, indexed in each release. |
+
+*Table 2. Publication routes. Details in the [nf-etl runbook](docs/etl-runbook.md).*
+
+---
+
+## Command-line tools
+
+| Tool | Runs on | Install | Does |
+|---|---|---|---|
+| `nf-client` | cluster login nodes, operator laptops | `uv pip install -e packages/nf_client` | Daemon that claims and submits batches; `run-wrapper` for SLURM jobs; operator commands (`stats`, `reconcile`, `requeue-dlq`, `register-workflow`); study registration (`submit-study`, `add-cmd`, `add-samples`, `submission`) |
+| `nf-etl` | onclappc02 | `uv sync` (this repo) | Pipeline outputs into `lake.cmgd` (`status`, `ingest`, `tick`, `parse`, `volumes`) and the publication routes above (`publish`, `mirror`, `deliver`) |
+| `nf-meta` | onclappc02 | `uv sync` (this repo) | Source catalog (`sources validate/apply/list/show/history/capture`), metadata loads (`load cmd/olm/zoe/xref`), linkage (`link zoe`), lake views (`views`) |
+| `just` | anywhere | | Repo task runner: `just help` lists dev, deploy and data recipes (for example `just deploy-clients`, `just cmd-schema-pin`) |
+
+*Table 3. Command-line tools. Each prints full usage with `--help`.*
+
+`nf-etl` and `nf-meta` write to the shared cdsci DuckLake. With
+`CU_OPENALEX_LAKE_BACKEND=postgres` they read the lake credentials from GCP Secret
+Manager through `gcloud`. Without it they use a local file catalog for dev and tests.
+`nf-meta sources` uses only the Postgres catalog (`SQLALCHEMY_URI`) and never opens the lake.
 
 ---
 
@@ -199,7 +275,12 @@ just seed       # seed sample catalog from ArtachoA_2021_sample.tsv
 
 ### API reference
 
-Interactive OpenAPI docs are available at `/docs` when the server is running.
+Two APIs serve different concerns. The **v2 control plane** keeps the v1 wire paths for
+dispatch, runs, telemetry, task logs, daemons and process metrics; its endpoint status is
+in [`cf/README.md`](cf/README.md#endpoint-status). The **catalog service** (this FastAPI
+app) has interactive OpenAPI docs at `/docs`. The table lists its routers. Production
+clusters and the dashboard use v2 for the dispatch-side groups; the v1 copies retire
+under [ADR 0009](docs/adr/0009-catalog-in-postgres-control-plane-in-worker.md).
 
 | Group | Endpoints |
 |-------|-----------|
@@ -214,6 +295,8 @@ Interactive OpenAPI docs are available at `/docs` when the server is running.
 | Daemons | `GET /daemons/`, `POST /daemons/heartbeat` |
 | Curated | `GET/POST /curated/studies`, `/curated/samples` |
 | Admin | `POST /admin/reconcile-jobs`, `/admin/expire-stale-runs`, `GET /admin/stats` |
+| Submissions | `POST /submissions` (study by accession), `GET /submissions/{submission_id}` |
+| Auth | `GET /auth/login`, `/auth/callback`, `/auth/me`, `POST /auth/logout` (Google OAuth) |
 
 ### nf-client (HPC orchestration)
 
@@ -224,6 +307,9 @@ needed by whoever operates the HPC submission daemon — not by dashboard consum
 uv pip install -e packages/nf_client
 nf-client daemon --config client-alpine.yaml
 ```
+
+Daemons talk to the v2 control plane (`https://nf-telemetry.seandavi.workers.dev`).
+`just deploy-clients [alpine|anvil|bridges2|all] [ref]` deploys them at a pushed commit.
 
 The daemon's SLURM template invokes `python -m nf_client.run_wrapper` rather than
 `nextflow run` directly. The wrapper emits run-lifecycle events (wrapper_started,
@@ -245,15 +331,18 @@ with configurable probability (default 30%) to generate realistic retry telemetr
 
 ## Production Deployment
 
-Production runs **self-hosted on `onclappc02`** as a Docker Compose stack behind the
+The control plane runs on **Cloudflare** (the v2 Worker). The catalog service and the
+dashboard run **self-hosted on `onclappc02`** as a Docker Compose stack behind the
 shared Traefik reverse proxy on `cancerdatasci.org`, using the shared `pg_main` Postgres
 cluster (one database per app — this app owns `nf_telemetry`). The migration off Cloud Run
 + Cloud SQL completed in May 2026.
 
 | Component | Service |
 |-----------|---------|
-| API | `nf_telemetry_api` container, Traefik route `nf-telemetry.cancerdatasci.org` |
-| Frontend | `nf_telemetry_frontend` container (nginx), Traefik route `cmgd.cancerdatasci.org` (Cloudflare-proxied) |
+| Control plane (v2) | Cloudflare Worker `nf-telemetry.seandavi.workers.dev`, deployed from `cf/` with `npm run deploy` (see [`cf/README.md`](cf/README.md)) |
+| Catalog service | `nf_telemetry_api` container, Traefik route `nf-telemetry.cancerdatasci.org` |
+| Frontend | `nf_telemetry_frontend` container (nginx), Traefik route `cmgd.cancerdatasci.org` (Cloudflare-proxied); its API origin is the v2 Worker (`FRONTEND_API_URL`) |
+| Data tooling | `nf-etl` / `nf-meta` on the host ([nf-etl runbook](docs/etl-runbook.md)) |
 | Database | shared `pg_main` cluster, database `nf_telemetry` |
 | Host | `onclappc02` (`140.226.4.71`) |
 
@@ -291,8 +380,8 @@ runtime files: `.env` (DB URI + hostnames) and `.env.secrets` (OAuth + session, 
 by `deploy/onclappc02/fetch-secrets.sh`). Never hand-maintain a parallel copy. Full table
 and rotation steps are in the runbook.
 
-> **Important — weblog URL stability:** the weblog URL (`-with-weblog <url>`) is baked
-> into SLURM scripts at submission time. Changing the API hostname mid-batch will silently
+> **Important — weblog URL stability:** the weblog URL (`-with-weblog <url>`, today the v2
+> Worker) is baked into SLURM scripts at submission time. Changing that hostname mid-batch will silently
 > drop telemetry for all in-flight jobs. Always keep the old hostname resolving (or
 > redirect it) until all running Nextflow jobs have finished before cutting DNS over.
 > The same goes for the wrapper events that `nf_client.run_wrapper` posts.
