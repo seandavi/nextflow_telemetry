@@ -36,7 +36,13 @@ unattended run. Cluster-side detail (`sacct`/`squeue`) needs SSH — see
 **Ready-made:** `scripts/health_report.py` runs this whole sweep, applies the
 signal-vs-noise rules below, prints a report, and exits `0`=GREEN / `1`=ATTENTION
 (a regression signal fired) / `2`=API unreachable — the natural hook for an LLM
-deep-dive. Stdlib only. `scripts/run_daily_report.sh` wraps it for scheduling
+deep-dive. Stdlib only. Beyond the API sweep it reports every active registration's
+completions per 6h and ETA, live runs older than 18h, and, with one read-only ssh
+per cluster (`--clusters`, `--no-ssh` to skip), queue waits (flag: 24h median over
+60 min) and each live run's `.nextflow.log`: more MARK_COMPLETE lines than the
+server has completed = lost weblog events (#350), log idle over 60 min = possible
+hang. The scheduled copy in `~/.local/share/cmgd-health/` is older; redeploying it
+rotates the GitHub issue (post_github keys it on the report's first word + version). `scripts/run_daily_report.sh` wraps it for scheduling
 (logs to `~/.cmgd-health/`, drops `attention-latest.txt` when non-green) and, via
 `scripts/post_github.py`, publishes to a **per-(workflow, version) GitHub tracking
 issue** in `seandavi/nextflow_telemetry`:
