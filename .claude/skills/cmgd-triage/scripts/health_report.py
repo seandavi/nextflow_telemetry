@@ -274,11 +274,13 @@ def daemons_section(r, args):
         seen = d.get("last_seen_at")
         stale = _age_minutes(seen)
         flagstr = ""
+        # v2 marks a daemon is_active=False once its heartbeat lapses, so
+        # staleness is checked regardless; a dead daemon is the thing to flag.
+        if stale is None or stale > args.daemon_stale_min:
+            r.flag(f"daemon {d['agent_id']} heartbeat stale "
+                   f"(last_seen {seen}, ~{stale}min)")
+            flagstr = "  <-- STALE"
         if d.get("is_active", True) is not False:
-            if stale is None or stale > args.daemon_stale_min:
-                r.flag(f"daemon {d['agent_id']} heartbeat stale "
-                       f"(last_seen {seen}, ~{stale}min)")
-                flagstr = "  <-- STALE"
             check_client_drift(r, d)
         r.say(f"  {d['agent_id']:<40} status={d.get('status')} "
               f"active_runs={d.get('active_runs')} last_seen={seen}{flagstr}")
