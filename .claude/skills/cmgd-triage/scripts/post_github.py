@@ -74,11 +74,20 @@ def parse_report(text):
     """-> (workflow_id, version, date). version None if the report couldn't
     determine an active workflow (e.g. API-unreachable run)."""
     head = text.splitlines()[0] if text else ""
+    # The report covers every registration under "## <workflow_id>" headings; the
+    # issue follows the release corpus (CMGD_TRACK) so it rotates on its releases only.
+    track = os.environ.get("CMGD_TRACK", "cmgd_mpa4.2")
+    sec = re.search(rf"^## {re.escape(track)}\n(?:.*\n)*?active workflow:.*version=(\S+)", text, re.M)
+    if sec:
+        return track, sec.group(1), _date(head)
     wf = head.split()[0] if head else "cmgd_nextflow"
     vm = re.search(r"active workflow:.*version=(\S+)", text)
+    return wf, (vm.group(1) if vm else None), _date(head)
+
+
+def _date(head):
     dm = re.search(r"(\d{4}-\d{2}-\d{2})", head)
-    date = dm.group(1) if dm else datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return wf, (vm.group(1) if vm else None), date
+    return dm.group(1) if dm else datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 def attention_lines(text):
