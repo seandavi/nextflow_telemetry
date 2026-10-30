@@ -32,8 +32,8 @@ class CohortService:
             """
             SELECT c.collection_id, c.source, c.label, c.created_at, c.updated_at,
                    COUNT(cs.sample_id) AS sample_count
-            FROM collections c
-            LEFT JOIN collection_samples cs USING (collection_id)
+            FROM v1_collections c
+            LEFT JOIN v1_collection_samples cs USING (collection_id)
             GROUP BY c.collection_id, c.source, c.label, c.created_at, c.updated_at
             ORDER BY c.created_at DESC
             """
@@ -74,7 +74,7 @@ class CohortService:
         if include_all_workflows:
             return ""
         return (
-            f" AND EXISTS (SELECT 1 FROM workflows w "
+            f" AND EXISTS (SELECT 1 FROM v1_workflows w "
             f"WHERE w.workflow_id = {alias}.workflow_id "
             f"AND w.version = {alias}.workflow_version "
             f"AND w.status = 'active')"
@@ -104,12 +104,12 @@ class CohortService:
                        WHERE j.status = 'running') AS samples_running,
                    MAX(j.completed_at) FILTER (
                        WHERE j.status = 'completed') AS last_completed_at
-            FROM collections c
-            LEFT JOIN collection_samples cs USING (collection_id)
-            LEFT JOIN jobs j
+            FROM v1_collections c
+            LEFT JOIN v1_collection_samples cs USING (collection_id)
+            LEFT JOIN v1_jobs j
                    ON j.sample_id = cs.sample_id
                   AND EXISTS (
-                      SELECT 1 FROM workflows w
+                      SELECT 1 FROM v1_workflows w
                       WHERE w.workflow_id = j.workflow_id
                         AND w.version = j.workflow_version
                         AND w.status = 'active')
@@ -163,7 +163,7 @@ class CohortService:
                 await conn.execute(
                     text(
                         "SELECT collection_id, source, label "
-                        "FROM collections WHERE collection_id = :cid"
+                        "FROM v1_collections WHERE collection_id = :cid"
                     ),
                     {"cid": collection_id},
                 )
@@ -174,7 +174,7 @@ class CohortService:
             sample_count = (
                 await conn.execute(
                     text(
-                        "SELECT COUNT(*) AS n FROM collection_samples WHERE collection_id = :cid"
+                        "SELECT COUNT(*) AS n FROM v1_collection_samples WHERE collection_id = :cid"
                     ),
                     {"cid": collection_id},
                 )
@@ -199,8 +199,8 @@ class CohortService:
                         SELECT j.status,
                                COUNT(*) AS n,
                                COUNT(DISTINCT j.sample_id) AS n_samples
-                        FROM jobs j
-                        JOIN collection_samples cs ON cs.sample_id = j.sample_id
+                        FROM v1_jobs j
+                        JOIN v1_collection_samples cs ON cs.sample_id = j.sample_id
                         WHERE cs.collection_id = :cid
                           {job_scope}
                         GROUP BY j.status
@@ -231,8 +231,8 @@ class CohortService:
                         SELECT t.trace->>'process' AS process,
                                COUNT(*) AS failed_count,
                                COUNT(DISTINCT t.sample_id) AS sample_count
-                        FROM telemetry t
-                        JOIN collection_samples cs ON cs.sample_id = t.sample_id
+                        FROM v1_telemetry t
+                        JOIN v1_collection_samples cs ON cs.sample_id = t.sample_id
                         WHERE cs.collection_id = :cid
                           AND t.event = 'process_completed'
                           AND t.trace->>'status' IN ('FAILED', 'ABORTED')

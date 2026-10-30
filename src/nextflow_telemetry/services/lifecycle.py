@@ -357,7 +357,7 @@ async def sweep_incomplete(
                     for row in dlq_rows
                 ]
             )
-            .on_conflict_do_nothing(constraint="uq_dlq_job_id")
+            .on_conflict_do_nothing(constraint="v1_uq_dlq_job_id")
         )
 
     return len(swept)

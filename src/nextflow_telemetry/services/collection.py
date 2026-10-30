@@ -54,5 +54,5 @@ async def add_to_collection(
         await conn.execute(
             pg_insert(collection_samples_tbl)
             .values([{"collection_id": collection_id, "sample_id": sid} for sid in sample_ids])
-            .on_conflict_do_nothing(constraint="uq_collection_sample")
+            .on_conflict_do_nothing(constraint="v1_uq_collection_sample")
         )

@@ -48,12 +48,12 @@ def cohort_data(db_url):
 
     pat = f"%{tag}%"
     cleanup = [
-        text("DELETE FROM telemetry WHERE sample_id LIKE :p OR run_name LIKE :p OR workflow_id LIKE :p").bindparams(p=pat),
-        text("DELETE FROM jobs WHERE sample_id LIKE :p OR workflow_id LIKE :p").bindparams(p=pat),
-        text("DELETE FROM collection_samples WHERE collection_id LIKE :p OR sample_id LIKE :p").bindparams(p=pat),
-        text("DELETE FROM collections WHERE collection_id LIKE :p").bindparams(p=pat),
-        text("DELETE FROM samples WHERE sample_id LIKE :p").bindparams(p=pat),
-        text("DELETE FROM workflows WHERE workflow_id LIKE :p").bindparams(p=pat),
+        text("DELETE FROM v1_telemetry WHERE sample_id LIKE :p OR run_name LIKE :p OR workflow_id LIKE :p").bindparams(p=pat),
+        text("DELETE FROM v1_jobs WHERE sample_id LIKE :p OR workflow_id LIKE :p").bindparams(p=pat),
+        text("DELETE FROM v1_collection_samples WHERE collection_id LIKE :p OR sample_id LIKE :p").bindparams(p=pat),
+        text("DELETE FROM v1_collections WHERE collection_id LIKE :p").bindparams(p=pat),
+        text("DELETE FROM v1_samples WHERE sample_id LIKE :p").bindparams(p=pat),
+        text("DELETE FROM v1_workflows WHERE workflow_id LIKE :p").bindparams(p=pat),
     ]
     _run(_exec(db_url, *cleanup))
 

@@ -99,7 +99,7 @@ class WorkflowService:
                     updated_at=now,
                 )
                 .on_conflict_do_update(
-                    constraint="uq_workflow_id_version",
+                    constraint="v1_uq_workflow_id_version",
                     set_={
                         "repository_url": repository_url,
                         "revision": revision,

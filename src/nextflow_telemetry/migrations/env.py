@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from nextflow_telemetry.config import settings
 from nextflow_telemetry.db import metadata
+import nextflow_telemetry.control_db  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

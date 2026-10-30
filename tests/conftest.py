@@ -38,6 +38,7 @@ def db_asyncpg_url(postgres_container: PostgresContainer) -> str:
 def create_schema(db_asyncpg_url: str) -> None:
     """Create all tables once before any tests run."""
     from sqlalchemy.ext.asyncio import create_async_engine
+    import nextflow_telemetry.control_db  # noqa: F401
     from nextflow_telemetry.db import metadata
 
     async def _create():
@@ -94,6 +95,7 @@ def clean_db(request):
     if any(f in request.fixturenames for f in ("db_asyncpg_url", "db_url", "integration_client", "live_server")):
         db_asyncpg_url = request.getfixturevalue("db_asyncpg_url")
         from sqlalchemy.ext.asyncio import create_async_engine
+        import nextflow_telemetry.control_db  # noqa: F401
         from nextflow_telemetry.db import metadata
         import asyncio
 

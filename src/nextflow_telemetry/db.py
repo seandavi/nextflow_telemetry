@@ -72,11 +72,14 @@ metadata_source_events_tbl = Table(
     Index("ix_metadata_source_events_source", "source_id"),
 )
 
+# v1 tables, renamed by #371, dropped in M10. Live control-plane tables are in
+# control_db.py.
+
 # ---------------------------------------------------------------------------
 # Raw weblog events — append-only, one row per Nextflow event POST
 # ---------------------------------------------------------------------------
 telemetry_tbl = Table(
-    "telemetry",
+    "v1_telemetry",
     metadata,
     Column("id", Integer, primary_key=True),
     Column("run_id", String, nullable=False, index=True),
@@ -88,9 +91,9 @@ telemetry_tbl = Table(
     Column("workflow_version", String, nullable=True),
     Column("metadata_", JSONB),
     Column("trace", JSONB),
-    Index("ix_telemetry_event", "event"),
-    Index("ix_telemetry_utc_time", "utc_time"),
-    Index("ix_telemetry_event_utc_time", "event", "utc_time"),
+    Index("v1_ix_telemetry_event", "event"),
+    Index("v1_ix_telemetry_utc_time", "utc_time"),
+    Index("v1_ix_telemetry_event_utc_time", "event", "utc_time"),
 )
 
 # ---------------------------------------------------------------------------
@@ -98,10 +101,10 @@ telemetry_tbl = Table(
 # Populated on ingest of 'process_completed' events.
 # ---------------------------------------------------------------------------
 task_executions_tbl = Table(
-    "task_executions",
+    "v1_task_executions",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("telemetry_id", Integer, ForeignKey("telemetry.id", ondelete="CASCADE"), nullable=False, unique=True),
+    Column("telemetry_id", Integer, ForeignKey("v1_telemetry.id", ondelete="CASCADE"), nullable=False, unique=True),
     Column("run_name", String, nullable=False, index=True),
     Column("run_id", String, nullable=True),
     Column("sample_id", String, nullable=True, index=True),
@@ -127,9 +130,9 @@ task_executions_tbl = Table(
     Column("write_bytes", Float, nullable=True),
     Column("rchar", Float, nullable=True),
     Column("wchar", Float, nullable=True),
-    Index("ix_task_executions_process_status", "process", "status"),
-    Index("ix_task_executions_utc_time", "utc_time"),
-    Index("ix_task_executions_composite_metrics", "workflow_id", "workflow_version", "status"),
+    Index("v1_ix_task_executions_process_status", "process", "status"),
+    Index("v1_ix_task_executions_utc_time", "utc_time"),
+    Index("v1_ix_task_executions_composite_metrics", "workflow_id", "workflow_version", "status"),
 )
 
 # ---------------------------------------------------------------------------
@@ -140,7 +143,7 @@ task_executions_tbl = Table(
 # biosample_id is the NCBI BioSample accession (annotation only, not identity).
 # ---------------------------------------------------------------------------
 samples_tbl = Table(
-    "samples",
+    "v1_samples",
     metadata,
     Column("id", Integer, primary_key=True),
     Column("sample_id", String, nullable=False, unique=True),
@@ -149,15 +152,15 @@ samples_tbl = Table(
     Column("metadata_", JSONB, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
-    Index("ix_samples_sample_id", "sample_id"),
-    Index("ix_samples_biosample_id", "biosample_id"),
+    Index("v1_ix_samples_sample_id", "sample_id"),
+    Index("v1_ix_samples_biosample_id", "biosample_id"),
 )
 
 # ---------------------------------------------------------------------------
 # Collections — named groups of samples (e.g. a BioProject, a cohort)
 # ---------------------------------------------------------------------------
 collections_tbl = Table(
-    "collections",
+    "v1_collections",
     metadata,
     Column("id", Integer, primary_key=True),
     Column("collection_id", String, nullable=False, unique=True),
@@ -167,15 +170,15 @@ collections_tbl = Table(
     Column("metadata_", JSONB, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
-    Index("ix_collections_collection_id", "collection_id"),
+    Index("v1_ix_collections_collection_id", "collection_id"),
 )
 
 collection_samples_tbl = Table(
-    "collection_samples",
+    "v1_collection_samples",
     metadata,
-    Column("collection_id", String, ForeignKey("collections.collection_id"), nullable=False),
-    Column("sample_id", String, ForeignKey("samples.sample_id"), nullable=False),
-    UniqueConstraint("collection_id", "sample_id", name="uq_collection_sample"),
+    Column("collection_id", String, ForeignKey("v1_collections.collection_id"), nullable=False),
+    Column("sample_id", String, ForeignKey("v1_samples.sample_id"), nullable=False),
+    UniqueConstraint("collection_id", "sample_id", name="v1_uq_collection_sample"),
 )
 
 # ---------------------------------------------------------------------------
@@ -202,6 +205,23 @@ submissions_tbl = Table(
     Column("error", Text, nullable=True),                # message when status = failed
     Column("metadata_", JSONB, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    # Which catalog snapshot the submission was derived from; all three set or none.
+    Column("source_snapshot_source_id", String(80), nullable=True),
+    Column("source_snapshot_asset_id", String(80), nullable=True),
+    Column("source_snapshot_version", String(300), nullable=True),
+    ForeignKeyConstraint(
+        ["source_snapshot_source_id", "source_snapshot_asset_id", "source_snapshot_version"],
+        [
+            "metadata_source_snapshots.source_id",
+            "metadata_source_snapshots.asset_id",
+            "metadata_source_snapshots.version",
+        ],
+        name="fk_submissions_source_snapshot",
+    ),
+    CheckConstraint(
+        "num_nulls(source_snapshot_source_id, source_snapshot_asset_id, source_snapshot_version) in (0, 3)",
+        name="ck_submissions_source_snapshot",
+    ),
     Index("ix_submissions_collection_id", "collection_id"),
     Index("ix_submissions_created_at", "created_at"),
 )
@@ -213,7 +233,7 @@ submissions_tbl = Table(
 # reruns. workflow_runs captures the revision actually used.
 # ---------------------------------------------------------------------------
 workflows_tbl = Table(
-    "workflows",
+    "v1_workflows",
     metadata,
     Column("id", Integer, primary_key=True),
     Column("workflow_id", String, nullable=False),
@@ -226,15 +246,15 @@ workflows_tbl = Table(
     Column("description", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
-    UniqueConstraint("workflow_id", "version", name="uq_workflow_id_version"),
-    Index("ix_workflows_status", "status"),
-    Index("ix_workflows_workflow_id", "workflow_id"),
+    UniqueConstraint("workflow_id", "version", name="v1_uq_workflow_id_version"),
+    Index("v1_ix_workflows_status", "status"),
+    Index("v1_ix_workflows_workflow_id", "workflow_id"),
     # At most one active version per workflow_id (Epic A identity model,
     # docs/study-sample-version-identity.md). Makes "the active version"
     # unambiguous for completion metrics. Maintained in the app by
     # WorkflowService (register + promote auto-retire the prior active).
     Index(
-        "uq_one_active_version_per_workflow",
+        "v1_uq_one_active_version_per_workflow",
         "workflow_id",
         unique=True,
         postgresql_where=text("status = 'active'"),
@@ -248,37 +268,37 @@ workflows_tbl = Table(
 # the per-execution history.
 # ---------------------------------------------------------------------------
 jobs_tbl = Table(
-    "jobs",
+    "v1_jobs",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("sample_id", String, ForeignKey("samples.sample_id"), nullable=False),
-    Column("workflow_pk", Integer, ForeignKey("workflows.id"), nullable=False),
+    Column("sample_id", String, ForeignKey("v1_samples.sample_id"), nullable=False),
+    Column("workflow_pk", Integer, ForeignKey("v1_workflows.id"), nullable=False),
     Column("workflow_id", String, nullable=False),       # denormalised for query convenience
     Column("workflow_version", String, nullable=False),  # denormalised
-    Column("run_name", String, ForeignKey("workflow_runs.run_name"), nullable=True),
+    Column("run_name", String, ForeignKey("v1_workflow_runs.run_name"), nullable=True),
     Column("status", String, nullable=False, default="pending"),
     Column("retry_count", Integer, nullable=False, default=0),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("completed_at", DateTime(timezone=True), nullable=True),
     Column("failed_at", DateTime(timezone=True), nullable=True),
     Column("failure_reason", String, nullable=True),
-    UniqueConstraint("sample_id", "workflow_id", "workflow_version", name="uq_job_composite"),
-    Index("ix_jobs_status", "status"),
-    Index("ix_jobs_sample_id", "sample_id"),
-    Index("ix_jobs_composite", "sample_id", "workflow_id", "workflow_version"),
+    UniqueConstraint("sample_id", "workflow_id", "workflow_version", name="v1_uq_job_composite"),
+    Index("v1_ix_jobs_status", "status"),
+    Index("v1_ix_jobs_sample_id", "sample_id"),
+    Index("v1_ix_jobs_composite", "sample_id", "workflow_id", "workflow_version"),
 )
 
 # ---------------------------------------------------------------------------
 # One row per Nextflow run (identified by run_name, which the client controls)
 # ---------------------------------------------------------------------------
 workflow_runs_tbl = Table(
-    "workflow_runs",
+    "v1_workflow_runs",
     metadata,
     Column("run_name", String, primary_key=True),
     Column("run_id", String, nullable=True),           # set on 'started' weblog event
     Column("workflow_id", String, nullable=False),
     Column("workflow_version", String, nullable=False),
-    Column("workflow_pk", Integer, ForeignKey("workflows.id"), nullable=True),
+    Column("workflow_pk", Integer, ForeignKey("v1_workflows.id"), nullable=True),
     Column("revision", String, nullable=True),         # revision actually used for this run
     Column("status", String, nullable=False, default="claimed"),
     Column("executor_job_id", String, nullable=True),  # SLURM job id, local PID, etc.
@@ -293,15 +313,15 @@ workflow_runs_tbl = Table(
     Column("wrapper_exit_code", Integer, nullable=True),
     Column("wait_seconds", Integer, nullable=True),
     Column("nextflow_log_uploaded_at", DateTime(timezone=True), nullable=True),
-    Index("ix_workflow_runs_status", "status"),
-    Index("ix_workflow_runs_claimed_at", "claimed_at"),
+    Index("v1_ix_workflow_runs_status", "status"),
+    Index("v1_ix_workflow_runs_claimed_at", "claimed_at"),
 )
 
 # ---------------------------------------------------------------------------
 # Task logs — .command.sh and .command.err uploaded by nf-client post-run
 # ---------------------------------------------------------------------------
 task_logs_tbl = Table(
-    "task_logs",
+    "v1_task_logs",
     metadata,
     Column("id", Integer, primary_key=True),
     Column("run_name", String, nullable=False),
@@ -309,18 +329,18 @@ task_logs_tbl = Table(
     Column("log_type", String, nullable=False),    # "command_sh", "command_out" or "command_err"
     Column("content", Text, nullable=False),
     Column("uploaded_at", DateTime(timezone=True), nullable=False),
-    UniqueConstraint("run_name", "task_hash", "log_type", name="uq_task_log"),
-    Index("ix_task_logs_run_hash", "run_name", "task_hash"),
+    UniqueConstraint("run_name", "task_hash", "log_type", name="v1_uq_task_log"),
+    Index("v1_ix_task_logs_run_hash", "run_name", "task_hash"),
 )
 
 # ---------------------------------------------------------------------------
 # Dead letter queue — populated when a run completes without MARK_COMPLETE
 # ---------------------------------------------------------------------------
 dead_letter_tbl = Table(
-    "dead_letter",
+    "v1_dead_letter",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("job_id", Integer, ForeignKey("jobs.id"), nullable=False),
+    Column("job_id", Integer, ForeignKey("v1_jobs.id"), nullable=False),
     Column("run_name", String, nullable=False),
     Column("sample_id", String, nullable=False),
     Column("workflow_id", String, nullable=False),
@@ -328,8 +348,8 @@ dead_letter_tbl = Table(
     Column("reason", String, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("resolved_at", DateTime(timezone=True), nullable=True),
-    UniqueConstraint("job_id", name="uq_dlq_job_id"),
-    Index("ix_dlq_resolved", "resolved_at"),
+    UniqueConstraint("job_id", name="v1_uq_dlq_job_id"),
+    Index("v1_ix_dlq_resolved", "resolved_at"),
 )
 
 # ---------------------------------------------------------------------------
@@ -379,7 +399,7 @@ users_tbl = Table(
 # Daemon agent registry — upserted by nf-client on every heartbeat
 # ---------------------------------------------------------------------------
 daemon_agents_tbl = Table(
-    "daemon_agents",
+    "v1_daemon_agents",
     metadata,
     Column("agent_id", String, primary_key=True),   # "{hostname}:{workflow_id}"
     Column("hostname", String, nullable=False),

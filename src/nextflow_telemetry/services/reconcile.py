@@ -46,15 +46,15 @@ class ReconcileService:
             result = await conn.execute(
                 text(
                     """
-                    INSERT INTO jobs (
+                    INSERT INTO v1_jobs (
                         sample_id, workflow_pk, workflow_id, workflow_version,
                         status, retry_count, created_at
                     )
                     SELECT s.sample_id, w.id, w.workflow_id, w.version,
                            'pending', 0, :now
-                    FROM samples s CROSS JOIN workflows w
+                    FROM v1_samples s CROSS JOIN v1_workflows w
                     WHERE w.status = 'active'
-                    ON CONFLICT ON CONSTRAINT uq_job_composite DO NOTHING
+                    ON CONFLICT ON CONSTRAINT v1_uq_job_composite DO NOTHING
                     """
                 ),
                 {"now": now},
