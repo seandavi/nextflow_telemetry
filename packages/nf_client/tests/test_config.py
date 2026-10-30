@@ -50,7 +50,7 @@ def test_dispatch_workflow_id_accepts_a_comma_separated_string():
 
 def test_deployed_cluster_configs_load_and_gate_dispatch(monkeypatch):
     """The tracked config/client-*.yaml files the daemons read (#269): Alpine and
-    Anvil claim humann4a2 and mpa4.2 (#307/#308); Bridges-2 only humann4a2 (#301, #326)."""
+    Anvil claim humann4a2 and mpa4.2 (#307/#308); so does Bridges-2 since 2026-10-30."""
     from pathlib import Path
 
     for var in ("NF_OPERATOR_TOKEN", "NF_TEL_ACCOUNT", "NF_TEL_LOGS", "NF_TEL_REPO"):
@@ -60,5 +60,5 @@ def test_deployed_cluster_configs_load_and_gate_dispatch(monkeypatch):
     assert cfgs["alpine"].dispatch.workflow_id == ["cmgd_humann4a2", "cmgd_mpa4.2"]
     assert cfgs["alpine"].submission.defaults["task_qos"] == "cpu-normal"  # tasks need a qos <= 24 h
     assert cfgs["anvil"].dispatch.workflow_id == ["cmgd_humann4a2", "cmgd_mpa4.2"]
-    assert cfgs["bridges2"].dispatch.workflow_id == ["cmgd_humann4a2"]
+    assert cfgs["bridges2"].dispatch.workflow_id == ["cmgd_humann4a2", "cmgd_mpa4.2"]
     assert cfgs["bridges2"].submission.max_concurrent_runs == 6
