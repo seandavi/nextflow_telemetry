@@ -273,6 +273,33 @@ just ci         # full CI gate (sync --frozen + mypy + pytest)
 just seed       # seed sample catalog from ArtachoA_2021_sample.tsv
 ```
 
+### HTTP contract suite
+
+`contract/` is a black-box pytest + httpx suite for the control-plane API (#372, ADR-0013
+M2). It needs only a base URL and a token. It passes against a local v2 (the Worker in
+`cf/` on miniflare), and the move to Postgres (M3) is done when it passes against the
+Python service. Response shapes are checked against Pydantic mirrors of `cf/src/schemas.ts`.
+
+```bash
+just v2-local   # terminal A: local Worker with 6 s claim and liveness deadlines
+just contract   # terminal B: the whole suite against it
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CONTRACT_BASE_URL` | required | Origin root, no `/api`, no trailing slash |
+| `CONTRACT_EVENT_URL` | `CONTRACT_BASE_URL` | Root that receives `/telemetry`, run events and task logs (the edge Worker after M5) |
+| `CONTRACT_TOKEN` | unset | Bearer token for origin writes; enables `test_auth.py` |
+| `CONTRACT_ALLOW_WRITES` | unset | `1` enables the tests marked `writes` |
+| `CONTRACT_FAST_CLOCK_SECONDS` | unset | Longest time the target takes to fire any deadline; enables `test_timers.py` |
+| `CONTRACT_EVENT_LAG_SECONDS` | `5` | How long to poll for state driven by an event |
+
+Against production the suite is read-only: `CONTRACT_BASE_URL=https://nf-telemetry.seandavi.workers.dev uv run pytest contract`.
+The write tier registers samples and runs `admin/reconcile-jobs` and `admin/requeue-dead-letter`,
+which act on the whole catalog, so it needs a disposable target; the suite exits with
+code 2 if `CONTRACT_ALLOW_WRITES=1` is set for a production host. CI runs the whole suite
+against a local v2 on every PR (`.github/workflows/contract.yml`).
+
 ### API reference
 
 Two APIs serve different concerns. The **v2 control plane** keeps the v1 wire paths for

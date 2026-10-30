@@ -24,6 +24,8 @@ help:
 	@echo "Data and dispatch"
 	@echo "  just seed          Register samples + workflow from ArtachoA_2021_sample.tsv."
 	@echo "  just daemon        Run nf-client daemon: claim+run batches until no pending jobs."
+	@echo "  just v2-local      Run the Worker on miniflare with short deadlines (no Cloudflare credentials)."
+	@echo "  just contract      Run the HTTP contract suite (contract/) against a running v2-local."
 	@echo "  just cmd-schema-pin <commit>   Re-pin the cMD data dictionary and regenerate cmd.yaml."
 	@echo ""
 	@echo "Container workflows"
@@ -135,6 +137,17 @@ v2-e2e: v2-reset v2-seed
 	just v2-run test,fail-fetch SRR9990003
 	just v2-run test,stochastic SRR9990004
 	curl -s {{v2_url}}/api/admin/stats
+
+# Local v2 for the contract suite (#372): miniflare, no Cloudflare credentials,
+# 6 s claim TTL and liveness, no catalog proxy. Same flags as .github/workflows/contract.yml.
+v2-local:
+	cd cf && npx wrangler dev --ip 127.0.0.1 --port 8787 \
+	  --var CLAIM_TTL_MINUTES:0.1 --var LIVENESS_MINUTES:0.1 --var CATALOG_URL: --var API_TOKEN:contract-token
+
+# HTTP contract suite against a running target; defaults match `just v2-local`.
+contract url="http://127.0.0.1:8787" token="contract-token":
+	CONTRACT_BASE_URL={{url}} CONTRACT_TOKEN={{token}} CONTRACT_ALLOW_WRITES=1 CONTRACT_FAST_CLOCK_SECONDS=20 \
+	  uv run pytest contract -v
 
 # Seed samples + workflow from the ArtachoA_2021 TSV and reconcile jobs.
 seed:

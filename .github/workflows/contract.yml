@@ -1,0 +1,41 @@
+name: contract
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  v2-local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cf/package-lock.json
+      - run: npm ci
+        working-directory: cf
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: uv sync --group dev --frozen
+      - name: Start local v2 (flags match `just v2-local`)
+        working-directory: cf
+        run: |
+          npx wrangler dev --ip 127.0.0.1 --port 8787 \
+            --var CLAIM_TTL_MINUTES:0.1 --var LIVENESS_MINUTES:0.1 --var CATALOG_URL: --var API_TOKEN:contract-token \
+            > "$RUNNER_TEMP/wrangler.log" 2>&1 &
+          for i in $(seq 60); do curl -sf http://127.0.0.1:8787/api/health && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/wrangler.log"; exit 1
+      - name: Contract suite
+        env:
+          CONTRACT_BASE_URL: http://127.0.0.1:8787
+          CONTRACT_TOKEN: contract-token
+          CONTRACT_ALLOW_WRITES: "1"
+          CONTRACT_FAST_CLOCK_SECONDS: "20"
+        run: uv run pytest contract -v
+      - if: failure()
+        run: cat "$RUNNER_TEMP/wrangler.log"
