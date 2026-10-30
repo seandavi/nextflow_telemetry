@@ -74,6 +74,12 @@ def test_load_reads_only_retained_bytes_and_is_idempotent(db_url, tmp_path):
         assert zoe.load_zoe(con, db_url)["rows"] == 6 * 5  # same MERGE, same rows
         n = con.execute(f"SELECT count(*), count(DISTINCT snapshot_sha256) FROM {store.S}.zoe_sample_values").fetchone()
         assert n == (30, 6)
+        digests = [r[0] for r in con.execute(
+            f"SELECT DISTINCT snapshot_sha256 FROM {store.S}.zoe_sample_values").fetchall()]
+        assert con.execute(f"SELECT source, release, license, doi, url, pinned, sha256 "
+                           f"FROM {store.S}.source_releases WHERE source = 'zoe'").fetchall() == [
+            ("zoe", zoe.VERSION, "CC-BY-4.0", zoe.DOI, zoe.URL, True,
+             hashlib.sha256("\n".join(sorted(digests)).encode()).hexdigest())]
         sha = hashlib.sha256(bz2.compress(files["p1-metadata"].encode())).hexdigest()
         schemes = dict(con.execute(
             f"SELECT cohort, any_value(id_scheme) FROM {store.S}.zoe_sample_values GROUP BY 1").fetchall())

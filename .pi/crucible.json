@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/seandavi/pi-crucible/main/schema/crucible.schema.json",
+  "worktreeRoot": "/data/davsean/worktrees/nextflow_telemetry",
+  "defaultLenses": ["code", "compat"],
+  "design": "The design record is AGENTS.md, CONTEXT.md, README.md, docs/adr/ (ADR-0013 moves the control plane from the Cloudflare Worker in cf/ to the Python service on Postgres; 0007 readset identity, 0010 registrations are bundles, 0012 source metadata values stay in the lake) and docs/source-catalog.md. Tracking issue #381 and its sub-issues #370-#380 record the migration plan and dependencies; read the issue's parent before writing the spec. Say in the spec when a change departs from these.",
+  "seamNote": "the HTTP contract that nf-client (daemon, run wrapper, operator commands), etl/v2.py, the frontend and health_report.py call: paths, methods, payload and response shapes",
+  "spec": {
+    "design": "files to add or change; Alembic migrations with tables, columns, constraints and indexes; endpoints with method, path, request and response models; functions and their signatures; config and env changes; which existing callers (nf-client, etl, frontend, health report) are affected, the default being none; the tests that prove it"
+  },
+  "implement": "Run `uv sync --group dev` first. Python uses SQLAlchemy Core (no ORM), Pydantic response models and thin routers (AGENTS.md). Database tests use the testcontainers Postgres fixture in tests/conftest.py. Never run Alembic, loaders, registration or any write against the production database (pg_main), the production lake, the v2 Worker or R2; no test may use the network or real credentials. nf-client tests run from its own venv: `cd packages/nf_client && uv run pytest`. If cf/ changes, run `cd cf && npx vitest run`.",
+  "checks": [
+    { "name": "typecheck", "command": "uv run mypy src/nextflow_telemetry" },
+    { "name": "test", "command": "uv run pytest -q" },
+    { "name": "nf-client", "command": "cd packages/nf_client && uv run pytest -q" },
+    { "name": "worker", "command": "cd cf && (test -d node_modules || npm ci --silent) && npx vitest run" }
+  ],
+  "lenses": {
+    "code": "CODE review. Correctness against the spec and the issue's acceptance criteria; SQLAlchemy Core with bound parameters; migrations that upgrade and downgrade cleanly; idempotent state transitions where the issue requires them; tests that would catch a regression, run against the testcontainers Postgres; no network or production credentials in tests; the spec, docs and code agree (a stale spec or doc is \"major\").",
+    "compat": "CONTRACT COMPATIBILITY review. Daemons on three HPC clusters, the SLURM run wrapper, the Nextflow weblog, etl/v2.py, the dashboard and the health report call this API and are hard to redeploy. Does any existing path, method, payload field, response field, status code or default change? Does a migration edit an applied revision or drop data without a backup step? Does anything touch production (pg_main, the lake, the v2 Worker, R2)? Any unintended contract change or production write is \"blocker\".",
+    "security": "SECURITY review. Bearer auth on every write except the documented event routes; input validation at the API boundary; SQL built from input; secrets never in code, fixtures, logs or PR bodies; the restricted study tracker's rows and URL never in the repo."
+  }
+}

@@ -4,13 +4,15 @@ docs/research/metadata-sources/).
 Reads only bytes the source catalog retained (receipt -> fetch -> sha256 check). Keeps
 the source's own sample ID and says what kind of ID it is; no ENA lookup, readsets or
 harmonization here, those are linkage. Values stay raw. Every row carries the sha256 of
-the snapshot it came from.
+the snapshot it came from. The ``source_releases`` row's ``sha256`` is the SHA-256 of the
+sorted, newline-joined snapshot digests.
 """
 from __future__ import annotations
 
 import asyncio
 import bz2
 import csv
+import hashlib
 import io
 import json
 import tempfile
@@ -23,10 +25,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from .catalog import SourceCatalog
 from .catalog import archive
-from .store import S, _q
+from .store import S, _q, _record_release
 
 SOURCE_ID = "zoe-predict-open"
 VERSION = "zenodo-15308000-v1"
+# ponytail: DOI and URL describe VERSION; change them together with it.
+DOI = "10.5281/zenodo.15308000"
+URL = "https://zenodo.org/records/15308000"
 # asset -> (cohort, what sampleID is, ENA BioProject the IDs are expected to link to)
 COHORTS = {
     "p1-metadata": ("P1", "biosample", "PRJEB39223"),
@@ -91,4 +96,7 @@ def load_zoe(con: duckdb.DuckDBPyConnection, db_uri: str, version: str = VERSION
         with ops.run(con, source="cmgd_meta_zoe", target=f"{S}.zoe_sample_values", version=version) as r:
             r.rows = n = upsert(con, f"{S}.zoe_sample_values", sql,
                                 ["release", "cohort", "source_sample", "field"])
+    digest = hashlib.sha256("\n".join(sorted(rc["sha256"] for rc in receipts.values())).encode())
+    _record_release(con, "zoe", version, package_version=None, doi=DOI, license="CC-BY-4.0",
+                    url=URL, sha256=digest.hexdigest(), pin=False)
     return {"rows": n, "samples": len({(r["cohort"], r["source_sample"]) for r in rows})}

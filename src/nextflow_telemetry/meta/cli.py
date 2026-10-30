@@ -7,10 +7,12 @@ docs/etl-runbook.md).
 
   nf-meta load olm ZIP_URL_OR_PATH [--doi DOI] [--pin]   one Olm data package release
   nf-meta load cmd [REF] [--pin]                         cMD curation at a commit (default master)
-  nf-meta load zoe [--version V]                         ZOE open metadata from catalog snapshots
+  nf-meta load zoe [--version V]                         ZOE open metadata from catalog snapshots;
+                                                         records (first time: pins) the release
   nf-meta load xref                                      rebuild sample_xref (v2 + pinned sources)
   nf-meta link zoe --ena-version V                       resolve ZOE sample IDs to ENA (reproducible)
   nf-meta views                                          seeds + sample_values/_harmonized/compare_cmd_olm
+                                                         (needs load olm/cmd/zoe, link zoe)
 """
 from __future__ import annotations
 
