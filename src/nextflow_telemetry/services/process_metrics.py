@@ -686,7 +686,7 @@ class ProcessMetricsService:
         sql = text(
             """
             with active_runs as (
-                select run_name from workflow_runs where status = 'running'
+                select run_name from v1_workflow_runs where status = 'running'
             ),
             events as (
                 select
@@ -694,7 +694,7 @@ class ProcessMetricsService:
                     t.trace->>'task_id' as task_id,
                     coalesce(t.trace->>'process', '<null>') as process,
                     t.event
-                from telemetry t
+                from v1_telemetry t
                 join active_runs ar on t.run_name = ar.run_name
                 where t.event in ('process_submitted', 'process_started', 'process_completed')
                   and t.trace is not null
@@ -721,7 +721,7 @@ class ProcessMetricsService:
         )
 
         active_runs_sql = text(
-            "select count(*) as n from workflow_runs where status = 'running'"
+            "select count(*) as n from v1_workflow_runs where status = 'running'"
         )
 
         async with self.engine.connect() as conn:

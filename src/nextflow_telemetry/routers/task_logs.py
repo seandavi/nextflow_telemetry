@@ -60,9 +60,9 @@ def create_task_logs_router(engine: AsyncEngine) -> APIRouter:
 
         upsert_sql = text(
             """
-            insert into task_logs (run_name, task_hash, log_type, content, uploaded_at)
+            insert into v1_task_logs (run_name, task_hash, log_type, content, uploaded_at)
             values (:run_name, :task_hash, :log_type, :content, :uploaded_at)
-            on conflict on constraint uq_task_log
+            on conflict on constraint v1_uq_task_log
             do update set content = excluded.content, uploaded_at = excluded.uploaded_at
             returning id, run_name, task_hash, log_type, content, uploaded_at
             """
@@ -94,7 +94,7 @@ def create_task_logs_router(engine: AsyncEngine) -> APIRouter:
         select_sql = text(
             """
             select id, run_name, task_hash, log_type, content, uploaded_at
-            from task_logs
+            from v1_task_logs
             where run_name = :run_name and task_hash = :task_hash
             order by log_type
             """

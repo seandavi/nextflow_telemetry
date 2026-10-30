@@ -258,9 +258,9 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
                 await conn.execute(
                     text(
                         """
-                        INSERT INTO task_logs (run_name, task_hash, log_type, content, uploaded_at)
+                        INSERT INTO v1_task_logs (run_name, task_hash, log_type, content, uploaded_at)
                         VALUES (:run_name, :task_hash, :log_type, :content, :uploaded_at)
-                        ON CONFLICT ON CONSTRAINT uq_task_log
+                        ON CONFLICT ON CONSTRAINT v1_uq_task_log
                         DO UPDATE SET content = EXCLUDED.content, uploaded_at = EXCLUDED.uploaded_at
                         """
                     ),
@@ -288,9 +288,9 @@ def create_runs_router(engine: AsyncEngine) -> APIRouter:
                 await conn.execute(
                     text(
                         """
-                        INSERT INTO task_logs (run_name, task_hash, log_type, content, uploaded_at)
+                        INSERT INTO v1_task_logs (run_name, task_hash, log_type, content, uploaded_at)
                         VALUES (:run_name, :task_hash, :log_type, :content, :uploaded_at)
-                        ON CONFLICT ON CONSTRAINT uq_task_log
+                        ON CONFLICT ON CONSTRAINT v1_uq_task_log
                         DO UPDATE SET content = EXCLUDED.content, uploaded_at = EXCLUDED.uploaded_at
                         """
                     ),

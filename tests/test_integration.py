@@ -545,7 +545,7 @@ def test_dispatch_skips_locked_workflow_and_picks_an_unlocked_one(integration_cl
                 async with engine.begin() as conn:
                     await conn.execute(
                         text(
-                            "SELECT id FROM jobs "
+                            "SELECT id FROM v1_jobs "
                             "WHERE workflow_id = :w AND status = 'pending' "
                             "FOR UPDATE"
                         ),

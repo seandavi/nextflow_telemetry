@@ -77,8 +77,8 @@ async def _run(workflow_pk: int, limit: int, samples: tuple[str, ...], commit: b
                     text(
                         """
                         SELECT s.sample_id, j.status AS job_status
-                        FROM samples s
-                        LEFT JOIN jobs j
+                        FROM v1_samples s
+                        LEFT JOIN v1_jobs j
                           ON j.sample_id = s.sample_id
                          AND j.workflow_id = :wid
                          AND j.workflow_version = :ver
@@ -102,7 +102,7 @@ async def _run(workflow_pk: int, limit: int, samples: tuple[str, ...], commit: b
                 for r in (await conn.execute(
                     text(
                         """
-                        SELECT sample_id, status FROM jobs
+                        SELECT sample_id, status FROM v1_jobs
                         WHERE workflow_id = :wid AND workflow_version = :ver
                           AND sample_id = ANY(:ids)
                         """
@@ -134,7 +134,7 @@ async def _run(workflow_pk: int, limit: int, samples: tuple[str, ...], commit: b
                     for sid in chosen
                 ])
                 .on_conflict_do_update(
-                    constraint="uq_job_composite",
+                    constraint="v1_uq_job_composite",
                     set_={
                         "status": "pending",
                         "run_name": None,

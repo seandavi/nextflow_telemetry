@@ -17,11 +17,14 @@ string are the same collection.
 Purpose is operational, not analytic: a collection exists so the team can watch how
 close a set of samples is to completion. Nothing computes on collections, so membership
 overlap (a sample in several collections) is fine and expected.
-_Avoid_: cohort, study (as a top-level concept), curated study
+_Avoid_: cohort, curated study
 
 **Study**:
-Not a first-class concept — a *source* of a collection. A study-based collection is a
-collection whose provenance is an accession. Use "collection" for the thing itself.
+A row in `studies`, with its identifiers as aliases in `study_aliases` (schemes:
+`cmd_study`, `bioproject`, `insdc_study`, `asap_code`, `tracker_name`, `doi`, `pmid`; one
+alias can back several studies). A collection may reference one study. Collection stays
+the unit of grouping and progress; a study-based collection is one whose provenance is
+an accession (ADR-0013, #371).
 
 **Sample**:
 The content-addressed unit of work: identity is the md5 of its sorted, deduplicated
