@@ -11,3 +11,6 @@ cmd,antibiotics_current_use,antibiotics_current_use,lower
 olm,antibiotic_exposure,antibiotics_current_use,lower
 cmd,disease,health_condition,case_control
 olm,health_condition,health_condition,case_control
+zoe,age,age_years,to_years
+zoe,sex,sex,sex
+zoe,bmi,bmi,round2
