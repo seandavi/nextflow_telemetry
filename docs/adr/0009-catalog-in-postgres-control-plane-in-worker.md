@@ -1,6 +1,6 @@
 # 0009. Keep the catalog in Postgres and the control plane in the Worker
 
-- **Status:** Accepted
+- **Status:** Superseded by [0013](0013-postgres-control-plane-edge-event-sink.md)
 - **Date:** 2026-10-07
 - **Deciders:** Sean Davis
 

@@ -1,6 +1,6 @@
 # 0006. Replace the FastAPI + Postgres server with a Cloudflare control plane
 
-- **Status:** Accepted (running in parallel with v1; cutover not yet sequenced)
+- **Status:** Superseded by [0013](0013-postgres-control-plane-edge-event-sink.md)
 - **Date:** 2026-08-18, recorded 2026-09-21
 - **Deciders:** Sean Davis
 
