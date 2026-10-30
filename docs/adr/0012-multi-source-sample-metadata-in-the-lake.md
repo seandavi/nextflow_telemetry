@@ -106,6 +106,22 @@ Plan: `docs/plans/onboarding-and-publication.md`, decisions D1, D3 and D4 on #26
 - ADR-0011's "licence set in one place" now has a per-table exception for
   Olm-derived tables. Phase 4 carries it into the release manifest.
 
+## Amendment (2026-10-30): ZOE PREDICT as a third source (#382)
+
+- ZOE values (`zoe_sample_values`) reach readsets through `zoe_sample_link` rows
+  with `link_status = 'resolved'` only.
+- `load zoe` records a `source_releases` row. Its `sha256` is the digest of the
+  six snapshot digests (SHA-256 of the sorted, newline-joined snapshot digests),
+  not the hash of one file.
+- Precedence is cmd > zoe > olm R1/R2 > olm R3/R4 (≥ 0.5). ZOE is first-party
+  data for its cohorts, and cMD's `AsnicarF_2021` already curates P1. This
+  amends decision 4.
+- `sample_values` and `sample_harmonized` carry `value_flag`
+  (`implausible_bmi`: BMI < 12 or > 70). Flagged values are kept and compete at
+  their rank.
+- Load order: `load olm`, `load cmd`, `load zoe`, `link zoe`, then `load xref`,
+  then `views`.
+
 ## References
 
 - #266 (epic), #267 (Phase 1), #268 (Phase 2)

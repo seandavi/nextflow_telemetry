@@ -10,7 +10,8 @@ one attributed snapshot (monode DUCKLAKE.md).
                         plus olm_sample_values, the wide table's long form
   load_cmd(con, ref)    curatedMetagenomicDataCuration inst/curated/*/*_sample.tsv -> cmd_sample_values
   load_xref(con)        v2 samples + pinned olm/cmd run groupings -> sample_xref (readset_id <-> runs)
-  create_views(con)     field_map + country_iso2 seeds; views sample_values, sample_harmonized, compare_cmd_olm
+  create_views(con)     field_map + country_iso2 seeds; views sample_values (cmd, olm, zoe),
+                        sample_harmonized (cmd > zoe > olm), compare_cmd_olm
 
 The package is untrusted input: it is only unzipped (named members) and read as
 data, never executed.
@@ -402,10 +403,14 @@ TRANSFORM = f"""CASE WHEN m.field IS NOT NULL AND lower(trim(v.value_raw)) IN {_
         WHEN 'month' THEN 12 WHEN 'week' THEN 365.25 / 7 WHEN 'day' THEN 365.25 ELSE 1 END, 2)::VARCHAR
     WHEN 'round2' THEN round({_NUM}, 2)::VARCHAR
     WHEN 'lower' THEN lower(trim(v.value_raw))
+    WHEN 'sex' THEN CASE lower(trim(v.value_raw)) WHEN 'f' THEN 'female' WHEN 'm' THEN 'male'
+        ELSE lower(trim(v.value_raw)) END
     WHEN 'country_iso2' THEN c.iso2
     WHEN 'case_control' THEN CASE WHEN lower(trim(v.value_raw)) IN ('healthy', 'healthy_control')
         THEN 'healthy_control' ELSE 'case' END
     ELSE v.value_raw END END"""
+
+BMI_PLAUSIBLE = (12.0, 70.0)  # docs/research/metadata-sources/README.md: "under 12 or over 70"
 
 
 def views_sql(schema: str = S) -> dict[str, str]:
@@ -423,31 +428,48 @@ def views_sql(schema: str = S) -> dict[str, str]:
                        NULL::DOUBLE AS confidence, 'curated' AS route, NULL::VARCHAR AS evidence_source,
                        NULL::VARCHAR AS determined_by, curator
                 FROM {s}.cmd_sample_values
-                UNION ALL BY NAME SELECT * FROM {s}.olm_sample_values)
-            SELECT v.source, v.release, v.study, v.sample, v.biosample, v.run_accessions,
-                   coalesce(m.field, v.source_field) AS field, {TRANSFORM} AS value,
-                   v.source_field, v.value_raw, v.value_unit, v.value_ontology, v.confidence,
-                   v.route, v.evidence_source, v.determined_by, v.curator
-            FROM v
-            LEFT JOIN {s}.field_map m ON m.source = v.source AND m.source_field = v.source_field
-            LEFT JOIN {s}.country_iso2 c ON m.unit_transform = 'country_iso2'
-                 AND lower(c.name) = lower(trim(v.value_raw))""",
+                UNION ALL BY NAME SELECT * FROM {s}.olm_sample_values
+                UNION ALL BY NAME
+                SELECT z.source, z.release, z.bioproject AS study, z.source_sample AS sample,
+                       l.biosample,
+                       list_filter(string_split(l.run_accessions, ';'), x -> x <> '') AS run_accessions,
+                       z.field AS source_field, z.value_raw, z.value_unit,
+                       NULL::VARCHAR AS value_ontology, NULL::DOUBLE AS confidence, 'curated' AS route,
+                       NULL::VARCHAR AS evidence_source, NULL::VARCHAR AS determined_by,
+                       NULL::VARCHAR AS curator
+                FROM {s}.zoe_sample_values z
+                LEFT JOIN {s}.zoe_sample_link l ON l.release = z.release AND l.cohort = z.cohort
+                     AND l.source_sample = z.source_sample AND l.link_status = 'resolved'),
+            t AS (
+                SELECT v.source, v.release, v.study, v.sample, v.biosample, v.run_accessions,
+                       coalesce(m.field, v.source_field) AS field, {TRANSFORM} AS value,
+                       v.source_field, v.value_raw, v.value_unit, v.value_ontology, v.confidence,
+                       v.route, v.evidence_source, v.determined_by, v.curator
+                FROM v
+                LEFT JOIN {s}.field_map m ON m.source = v.source AND m.source_field = v.source_field
+                LEFT JOIN {s}.country_iso2 c ON m.unit_transform = 'country_iso2'
+                     AND lower(c.name) = lower(trim(v.value_raw)))
+            SELECT t.*, CASE WHEN t.field = 'bmi' AND (TRY_CAST(t.value AS DOUBLE) < {BMI_PLAUSIBLE[0]}
+                    OR TRY_CAST(t.value AS DOUBLE) > {BMI_PLAUSIBLE[1]}) THEN 'implausible_bmi' END AS value_flag
+            FROM t""",
         # One value per (readset, mapped field) from the pinned releases:
-        # cmd > olm R1/R2 (not external.cmd) > olm R3/R4 with confidence >= 0.5.
+        # cmd > zoe > olm R1/R2 (not external.cmd) > olm R3/R4 with confidence >= 0.5.
+        # A value_flag does not demote a value.
         "sample_harmonized": f"""
             WITH v AS (
                 SELECT v.*, CASE
                     WHEN v.source = 'cmd' THEN 1
-                    WHEN v.route IN ('R1', 'R2') AND v.evidence_source IS DISTINCT FROM 'external.cmd' THEN 2
+                    WHEN v.source = 'zoe' THEN 2
+                    WHEN v.route IN ('R1', 'R2') AND v.evidence_source IS DISTINCT FROM 'external.cmd' THEN 3
                     WHEN v.route IN ('R3', 'R4') AND v.confidence >= 0.5
-                         AND v.evidence_source IS DISTINCT FROM 'external.cmd' THEN 3 END AS rank
+                         AND v.evidence_source IS DISTINCT FROM 'external.cmd' THEN 4 END AS rank
                 FROM {s}.sample_values v {pinned}
                 WHERE v.field IN (SELECT field FROM {s}.field_map) AND v.value IS NOT NULL),
             r AS (SELECT DISTINCT x.readset_id, v.*
                   FROM v, unnest(v.run_accessions) AS u(run)
                   JOIN {s}.sample_xref x ON x.run_accession = u.run
                   WHERE v.rank IS NOT NULL)
-            SELECT readset_id, field, value, source, release, route, confidence
+            SELECT readset_id, field, value, source, release, route, confidence, value_flag
             FROM r QUALIFY row_number() OVER (PARTITION BY readset_id, field
                 ORDER BY rank, confidence DESC NULLS LAST, sample) = 1""",
         # Per cMD study x mapped field, pinned releases, Olm's resolved value with
