@@ -6,6 +6,7 @@
  *
  * Field sets mirror v1's Pydantic models in src/nextflow_telemetry/models.py;
  * where v2 differs on purpose it is recorded in cf/README.md (#174).
+ * Mirrored by hand in contract/schemas.py (#372); change both.
  */
 import { z } from "zod";
 
@@ -179,7 +180,7 @@ export const ClaimedBatch = z.looseObject({
     z.looseObject({
       sample_id: z.string().describe("The registration's sample_key: md5 sample_id or readset id"),
       ncbi_accession: z.string().nullable(),
-      metadata: z.record(z.string(), z.unknown()).nullable(),
+      metadata: z.record(z.string(), z.unknown()),
     }),
   ),
 });

@@ -64,7 +64,7 @@ suite against a local v2 on every PR, which partly covers #265.
    (`wrangler dev` on miniflare, no Cloudflare credentials, short deadlines).
    `just v2-e2e` resets and seeds the deployed Worker, which `ALLOW_RESET=false` now
    forbids (cf/STATUS.md), so it can't serve as a CI target. `v2-e2e` stays unchanged.
-4. **Three fixes to `cf/src/schemas.ts`, which in two cases is wrong about live v2:**
+4. **Three fixes to `cf/src/schemas.ts`, each where it is wrong about live v2:**
    - `ClaimedBatch.jobs[].id` is required in Zod, but v2 never sends it. Checked on
      2026-10-30 by parsing a live local claim through `S.ClaimedBatch`; the only
      error was `jobs.0.id: expected number, received undefined`. `nf-client`'s
@@ -72,6 +72,13 @@ suite against a local v2 on every PR, which partly covers #265.
    - `RunDetail` doesn't declare `task_status_counts` or `failed_tasks`. v2 always
      sends them (`control-do.ts` `getRun`), and the dashboard reads them
      (`frontend/src/types.ts` `RunDetail`, `pages/RunsPage.tsx`). Add them.
+
+   - `ClaimedBatch.jobs[].metadata` is `.nullable()` in Zod, but no server sends
+     null: v2's `safeJson` returns `{}` and v1's `DispatchedJob` defaults to `{}`.
+     `nf-client` parses every claim with `DispatchBatchResponse`, whose
+     `DispatchedJob.metadata: dict[str, Any] = {}` rejects null, so a service that
+     returned null would break the cluster daemons. Make it a required object in Zod,
+     and in the mirror too (stricter than the old Zod, on purpose).
 
    The other 16 GET schemas parsed cleanly against live local v2 on 2026-10-30.
    These are documentation-only changes to the OpenAPI document; handler behaviour
@@ -250,7 +257,7 @@ Models: `Detail`, `Sample`, `SampleList`, `CollectionFacet`, `CollectionFacets`,
 `TaskLogs`.
 
 - `ClaimedJob` has `sample_id: str`, `ncbi_accession: str | None`, and
-  `metadata: dict[str, Any] | None`. It has no `id` (departure 4).
+  `metadata: dict[str, Any]` (required, not nullable). It has no `id` (departure 4).
 - `RunDetail` adds `job_status_counts: dict[str, int]`,
   `nextflow_log_available: bool`, `wrapper_output_log_available: bool`,
   `task_status_counts: dict[str, int]` and `failed_tasks: list[FailedTask]`.
@@ -648,7 +655,8 @@ Coverage table (caller → paths):
 
 - **Mirror drift.** `contract/schemas.py` duplicates `cf/src/schemas.ts` by hand. A
   Zod change that also changes v2's responses fails the CI job. A Zod-only edit
-  doesn't fail anything. The two files name each other in docstrings and comments.
+  doesn't fail anything. The two files name each other: the `cf/src/schemas.ts` header comment and the
+  `contract/schemas.py` module docstring.
   After M10 the Zod file goes away, and the Python mirror becomes the contract.
 - **Global side effects.** Reconcile and requeue-dead-letter act on every
   registration. That is acceptable on a disposable target and is why writes are

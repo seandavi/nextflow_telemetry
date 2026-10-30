@@ -1,3 +1,5 @@
+"""Pydantic mirrors of cf/src/schemas.ts responses (#372); change both together."""
+
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -125,7 +127,7 @@ class ClaimedJob(Loose):
 
     sample_id: str
     ncbi_accession: str | None
-    metadata: dict[str, Any] | None
+    metadata: dict[str, Any]
 
 
 class ClaimedBatch(Loose):
