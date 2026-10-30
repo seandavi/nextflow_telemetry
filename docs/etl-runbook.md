@@ -212,6 +212,8 @@ export CU_OPENALEX_LAKE_BACKEND=postgres
 uv run nf-meta load olm https://github.com/OlmLab/microbiome_repo-data/releases/download/data-v1.20.0/data_package_v1.20.0.zip \
   --doi 10.5281/zenodo.23087712          # add --pin to move the pin to a newer release
 uv run nf-meta load cmd <commit-sha>     # curatedMetagenomicDataCuration; default master
+uv run nf-meta load zoe                  # records and pins the first ZOE release; views need it
+uv run nf-meta link zoe --ena-version V  # V = catalog version of the ENA listings, e.g. ena-2026-10-19
 uv run nf-meta load xref                 # after either source (or v2 samples) changes
 uv run nf-meta views                     # seeds + views; views are DDL, so this always writes a snapshot
 ```

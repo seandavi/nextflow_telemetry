@@ -53,6 +53,7 @@ become `female`/`male`. Implausible BMI values stay in the output and carry a fl
 | `src/nextflow_telemetry/meta/store.py` | `sex` transform; `zoe` branch in `sample_values`; `value_flag` column; ZOE rank in `sample_harmonized`; module docstring |
 | `src/nextflow_telemetry/meta/zoe.py` | `load_zoe` records the `source_releases` row; `DOI`, `URL` constants |
 | `src/nextflow_telemetry/meta/cli.py` | docstring: `load zoe` records and pins the release; `views` needs `load zoe` and `link zoe` |
+| `docs/etl-runbook.md` | sample-metadata run order adds `load zoe` and `link zoe` before `load xref` |
 | `docs/adr/0012-multi-source-sample-metadata-in-the-lake.md` | amendment section |
 | `tests/test_meta.py` | shared schema helper with empty ZOE tables; new ZOE views test |
 | `tests/test_meta_zoe.py` | assert the `source_releases` row |
