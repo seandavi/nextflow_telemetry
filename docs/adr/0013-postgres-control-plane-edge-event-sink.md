@@ -1,6 +1,6 @@
 # 0013. Run the control plane on Postgres; keep Cloudflare as the edge event sink
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-30
 - **Deciders:** Sean Davis
 
