@@ -363,3 +363,42 @@ async def test_reconcile_scoped_readset_deduped_idempotent(engine: AsyncEngine) 
     assert len(await job_statuses(engine, pk)) == 3
     async with engine.begin() as conn:
         assert await transitions.reconcile_jobs(conn) == 0
+
+
+def test_event_value_coercion() -> None:
+    assert [transitions._int(v) for v in (7, 1.9, -1.9, True, float("nan"), float("inf"), 2**31, -(2**31) - 1, "1", None)] == [
+        7, 1, -1, None, None, None, None, None, None, None,
+    ]
+    assert transitions._int(2**31 - 1) == 2**31 - 1 and transitions._int(-(2**31)) == -(2**31)
+    assert [transitions._str(v) for v in ("a\x00b", 3, 1.5, True, None, {"a": 1})] == ["ab", "3", "1.5", None, None, None]
+    assert transitions._dict({"a": 1}) == {"a": 1} and transitions._dict([1]) == {} and transitions._dict(None) == {}
+
+
+async def test_ill_typed_event_values_are_coerced(engine: AsyncEngine) -> None:
+    await seed(engine, "ill")
+    run_name = (await claim(engine, "ill"))["run_name"]
+    bad_trace = {"status": "FAILED", "process": {"a": 1}, "exit": 1.5, "hash": 12, "attempt": 2.7, "error_action": ["x"], "tag": 5}
+    await apply(engine, transitions.apply_weblog_event, {"runName": run_name, "event": "process_completed", "trace": bad_trace}, now=NOW)
+    await apply(engine, transitions.apply_weblog_event, {"runName": run_name, "event": "started", "runId": 77}, now=NOW)
+    await apply(engine, transitions.apply_run_event, run_name, {"type": "pre_nextflow", "wait_seconds": "soon"}, now=NOW)
+    await apply(engine, transitions.apply_run_event, run_name, {"type": "slurm_state", "state": 4, "reason": ["x"]}, now=NOW)
+    run = await run_row(engine, run_name)
+    assert (run["run_id"], run["wait_seconds"], run["last_known_slurm_state"], run["slurm_reason"]) == ("77", None, "4", None)
+    async with engine.connect() as conn:
+        failed = (await conn.execute(select(run_failed_tasks_tbl))).mappings().one()
+    assert (failed["process"], failed["sample_id"], failed["exit_code"], failed["task_hash"], failed["attempt"], failed["error_action"]) == (
+        "unknown", "5", "1.5", "12", 2, None,
+    )
+
+    await apply(engine, transitions.apply_weblog_event, {"runName": run_name, "event": "completed", "metadata": "text"}, now=NOW)
+    assert (await run_row(engine, run_name))["status"] == "completed"
+    await seed(engine, "ill2")
+    second = (await claim(engine, "ill2"))["run_name"]
+    meta = {"workflow": {"success": False, "errorMessage": {"x": 1}, "errorReport": "why"}}
+    await apply(engine, transitions.apply_weblog_event, {"runName": second, "event": "completed", "metadata": meta}, now=NOW)
+    assert (await run_row(engine, second))["slurm_reason"] == "why"
+
+    await seed(engine, "ill3")
+    third = (await claim(engine, "ill3"))["run_name"]
+    await apply(engine, transitions.apply_run_event, third, {"type": "wrapper_exited", "exit_code": "x"}, now=NOW)
+    assert (await run_row(engine, third))["wrapper_exit_code"] is None

@@ -181,6 +181,28 @@ def test_upgrade_downgrade_round_trip(db_asyncpg_url: str) -> None:
     _alembic(url, "upgrade", "head")
 
 
+def test_event_ingest_migration_round_trip(db_asyncpg_url: str) -> None:
+    url = _scratch_db(db_asyncpg_url, "nf_m5_roundtrip")
+    _alembic(url, "upgrade", "head")
+
+    async def at_head(con: AsyncConnection) -> None:
+        assert "ingest_rejects" in await _table_names(con)
+        assert await _all(con, "select 1 from information_schema.columns where table_name = 'ingest_cursor' "
+                               "and column_name = 'caught_up_at'")
+
+    _with_connection(url, at_head)
+    _alembic(url, "downgrade", "0d5e1a7c")
+
+    async def before(con: AsyncConnection) -> None:
+        assert "ingest_rejects" not in await _table_names(con)
+        assert not await _all(con, "select 1 from information_schema.columns where table_name = 'ingest_cursor' "
+                                   "and column_name = 'caught_up_at'")
+
+    _with_connection(url, before)
+    _alembic(url, "upgrade", "head")
+    _with_connection(url, at_head)
+
+
 @pytest.fixture(scope="module")
 def migrated_url(db_asyncpg_url: str) -> Iterator[str]:
     url = _scratch_db(db_asyncpg_url, "nf_m1_constraints")
@@ -190,7 +212,7 @@ def migrated_url(db_asyncpg_url: str) -> Iterator[str]:
 
 def test_columns_match_table_definitions(migrated_url: str) -> None:
     async def check(con: AsyncConnection) -> None:
-        for name in (*NEW_TABLES, "submissions", "deadline_sweep"):
+        for name in (*NEW_TABLES, "submissions", "deadline_sweep", "ingest_rejects"):
             expected = {col.name: col.nullable for col in metadata.tables[name].columns}
             actual = {
                 col["name"]: col["nullable"]
