@@ -98,7 +98,10 @@ class RetiredJobArchive:
             ids = [r.id for r in rows]
             dlq = (await conn.execute(
                 select(dead_letter_tbl).where(dead_letter_tbl.c.job_id.in_(ids)))).all()
-            body = b"".join(orjson.dumps(dict(r._mapping)) + b"\n" for r in [*rows, *dlq])
+            # Keys are quoted_name (a str subclass orjson rejects): rebuild as plain str.
+            body = b"".join(
+                orjson.dumps({str(k): v for k, v in r._asdict().items()}) + b"\n"
+                for r in [*rows, *dlq])
             now = datetime.now(timezone.utc)
             key = (f"{self.url.rstrip('/')}/{pk}/{now:%Y-%m-%dT%H%M%S}"
                    f"{now.microsecond // 1000:03d}Z-{n}.ndjson.gz")
