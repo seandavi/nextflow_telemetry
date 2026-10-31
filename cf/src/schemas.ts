@@ -6,6 +6,7 @@
  *
  * Field sets mirror v1's Pydantic models in src/nextflow_telemetry/models.py;
  * where v2 differs on purpose it is recorded in cf/README.md (#174).
+ * Mirrored by hand in contract/schemas.py (#372); change both.
  */
 import { z } from "zod";
 
@@ -177,10 +178,9 @@ export const ClaimedBatch = z.looseObject({
   params: WorkflowParams,
   jobs: z.array(
     z.looseObject({
-      id: z.number().int(),
       sample_id: z.string().describe("The registration's sample_key: md5 sample_id or readset id"),
       ncbi_accession: z.string().nullable(),
-      metadata: z.record(z.string(), z.unknown()).nullable(),
+      metadata: z.record(z.string(), z.unknown()),
     }),
   ),
 });
@@ -218,6 +218,17 @@ export const RunDetail = Run.extend({
   job_status_counts: z.record(z.string(), z.number().int()),
   nextflow_log_available: z.boolean(),
   wrapper_output_log_available: z.boolean(),
+  task_status_counts: z.record(z.string(), z.number().int()).describe("Per-run task outcomes from run_task_counts"),
+  failed_tasks: z.array(
+    z.looseObject({
+      process: z.string(),
+      sample_id: z.string().nullable(),
+      exit_code: z.string().nullable(),
+      task_hash: z.string().nullable(),
+      attempt: z.number().int().nullable(),
+      error_action: z.string().nullable(),
+    }),
+  ),
 });
 
 export const RunEventAccepted = z.object({
