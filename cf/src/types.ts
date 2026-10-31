@@ -18,6 +18,8 @@ export interface Env {
   ALLOW_RESET?: string;
   /** Catalog service API base (e.g. https://host/api); the historical tier proxies there. */
   CATALOG_URL?: string;
+  /** "sink-only" after cutover (ADR-0013, M8): the event routes only archive. Anything else is full mode. */
+  MODE?: string;
 }
 
 /**
