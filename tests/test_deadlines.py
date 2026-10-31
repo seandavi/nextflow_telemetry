@@ -72,9 +72,9 @@ async def _seed(
     return pk
 
 
-async def _sweep(engine: AsyncEngine, now: datetime) -> SweepResult:
+async def _sweep(engine: AsyncEngine, now: datetime, policy: DeadlinePolicy = POLICY) -> SweepResult:
     async with engine.begin() as conn:
-        return await sweep_deadlines(conn, POLICY, now)
+        return await sweep_deadlines(conn, policy, now)
 
 
 async def _run(engine: AsyncEngine, run_name: str):
@@ -258,14 +258,20 @@ async def test_locked_run_is_skipped_until_released(engine: AsyncEngine) -> None
     assert (await _run(engine, "r1")).status == "expired"
 
 
-@pytest.mark.parametrize("cursor, stale", [
-    (None, False),                                    # no cursor row: contract suite, pg-local
-    ((None,), True),                                  # imported, never caught up
-    ((T0 + timedelta(minutes=4, seconds=59),), True),  # just over liveness / 2 old
-    ((T0 + timedelta(minutes=5),), False),            # exactly liveness / 2 old
+INGESTING = DeadlinePolicy(POLICY.claim_ttl, POLICY.submit_backstop, POLICY.liveness,
+                           POLICY.sweep_interval, ingest_interval=timedelta(seconds=30))
+
+
+@pytest.mark.parametrize("ingesting, cursor, stale", [
+    (True, None, False),                                     # no cursor row: contract suite, pg-local
+    (True, (None,), True),                                   # imported, never caught up
+    (True, (T0 + timedelta(minutes=4, seconds=59),), True),  # just over liveness / 2 old
+    (True, (T0 + timedelta(minutes=5),), False),             # exactly liveness / 2 old
+    (False, (None,), False),   # imported cursor, ingester off: nothing to wait for (#409 compat-r0-1)
 ])
 async def test_ingest_stale_holds_liveness_and_backstop_not_claims(
-        engine: AsyncEngine, cursor: tuple[datetime | None] | None, stale: bool) -> None:
+        engine: AsyncEngine, ingesting: bool, cursor: tuple[datetime | None] | None,
+        stale: bool) -> None:
     deadline = T0 + timedelta(minutes=10)
     async with engine.begin() as conn:
         await _seed(conn, "rl", "running", "liveness_deadline", deadline, [("running", 0)])
@@ -274,7 +280,7 @@ async def test_ingest_stale_holds_liveness_and_backstop_not_claims(
         if cursor is not None:
             await conn.execute(insert(ingest_cursor_tbl).values(
                 stream=EVENTS_STREAM, object_key="", line_offset=0, caught_up_at=cursor[0]))
-    result = await _sweep(engine, deadline)
+    result = await _sweep(engine, deadline, INGESTING if ingesting else POLICY)
 
     assert result.ingest_stale is stale
     assert result.expired_claims == 1
@@ -347,6 +353,13 @@ async def test_requeued_dead_letter_reopens_on_a_second_failure(engine: AsyncEng
 def test_policy_from_settings_defaults() -> None:
     assert DeadlinePolicy.from_settings(settings) == DeadlinePolicy(
         timedelta(minutes=5), timedelta(hours=168), timedelta(minutes=10), timedelta(seconds=30))
+
+
+def test_policy_rejects_a_slow_ingester() -> None:
+    minute = timedelta(minutes=1)
+    with pytest.raises(ValueError, match="EVENT_INGEST_SECONDS"):
+        DeadlinePolicy(minute, minute, minute, timedelta(seconds=1), ingest_interval=timedelta(seconds=31))
+    DeadlinePolicy(minute, minute, minute, timedelta(seconds=1), ingest_interval=timedelta(seconds=30))
 
 
 def test_policy_rejects_bad_intervals() -> None:

@@ -39,6 +39,9 @@ class DeadlinePolicy:
     submit_backstop: timedelta
     liveness: timedelta
     sweep_interval: timedelta
+    # Set only when the event ingester runs (EVENT_INGEST_ENABLED). None: no ingester, so
+    # nothing to wait for, whatever an imported ingest_cursor row says (#409 compat-r0-1).
+    ingest_interval: timedelta | None = None
 
     def __post_init__(self) -> None:
         zero = timedelta(0)
@@ -49,6 +52,11 @@ class DeadlinePolicy:
                 "DEADLINE_SWEEP_SECONDS must be at most half of LIVENESS_MINUTES, "
                 "or every sweep's own gap trips the outage grace period"
             )
+        if self.ingest_interval is not None and self.ingest_interval * 2 > self.liveness:
+            raise ValueError(
+                "EVENT_INGEST_SECONDS must be at most half of LIVENESS_MINUTES, or the sweep "
+                "holds liveness expiry for part of every ingest cycle (#409)"
+            )
 
     @classmethod
     def from_settings(cls, s: Settings) -> DeadlinePolicy:
@@ -57,6 +65,8 @@ class DeadlinePolicy:
             submit_backstop=timedelta(hours=s.SUBMIT_BACKSTOP_HOURS),
             liveness=timedelta(minutes=s.LIVENESS_MINUTES),
             sweep_interval=timedelta(seconds=s.DEADLINE_SWEEP_SECONDS),
+            ingest_interval=(timedelta(seconds=s.EVENT_INGEST_SECONDS)
+                             if s.EVENT_INGEST_ENABLED else None),
         )
 
 
@@ -111,7 +121,7 @@ async def sweep_deadlines(conn: AsyncConnection, policy: DeadlinePolicy, now: da
     cursor = (await conn.execute(
         select(ingest_cursor_tbl.c.caught_up_at).where(ingest_cursor_tbl.c.stream == EVENTS_STREAM)
     )).first()
-    result.ingest_stale = cursor is not None and (
+    result.ingest_stale = policy.ingest_interval is not None and cursor is not None and (
         cursor[0] is None or now - cursor[0] > policy.liveness / 2)
     if result.ingest_stale:
         logger.warning("deadline.sweep.ingest_stale", extra={"caught_up_at": cursor[0] if cursor else None})
