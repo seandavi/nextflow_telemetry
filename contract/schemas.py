@@ -18,11 +18,13 @@ class Loose(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class Envelope(BaseModel):
+    """Zod z.object: unknown keys are stripped, not rejected."""
+
+    model_config = ConfigDict(extra="ignore")
 
 
-class Detail(Strict):
+class Detail(Envelope):
     """Zod `Detail`."""
 
     detail: str
@@ -42,7 +44,7 @@ class Sample(Loose):
     updated_at: Iso
 
 
-class SampleList(Strict):
+class SampleList(Envelope):
     """Zod `SampleList`."""
 
     items: list[Sample]
@@ -51,14 +53,14 @@ class SampleList(Strict):
     offset: int
 
 
-class CollectionFacet(Strict):
+class CollectionFacet(Envelope):
     """Inline object in Zod `CollectionFacets.collections`."""
 
     collection: str
     count: int
 
 
-class CollectionFacets(Strict):
+class CollectionFacets(Envelope):
     """Zod `CollectionFacets`."""
 
     total: int
@@ -97,7 +99,7 @@ class JobListItem(Loose):
     collections: list[str]
 
 
-class JobList(Strict):
+class JobList(Envelope):
     """Zod `JobList`."""
 
     items: list[JobListItem]
@@ -105,7 +107,7 @@ class JobList(Strict):
     limit: int
 
 
-class JobSummary(Strict):
+class JobSummary(Envelope):
     """Zod `JobSummary`."""
 
     workflow_pk: int
@@ -167,7 +169,7 @@ class Run(Loose):
     classification: str
 
 
-class RunList(Strict):
+class RunList(Envelope):
     """Zod `RunList`."""
 
     total: int
@@ -197,7 +199,7 @@ class RunDetail(Run):
     failed_tasks: list[FailedTask]
 
 
-class RunEventAccepted(Strict):
+class RunEventAccepted(Envelope):
     """Zod `RunEventAccepted`."""
 
     run_name: str
@@ -265,7 +267,7 @@ class RunningProcesses(Loose):
     by_process: list[RunningProcess]
 
 
-class TaskLog(Strict):
+class TaskLog(Envelope):
     """Zod `TaskLogs.logs` item."""
 
     id: int
@@ -276,7 +278,7 @@ class TaskLog(Strict):
     uploaded_at: Iso
 
 
-class TaskLogs(Strict):
+class TaskLogs(Envelope):
     """Zod `TaskLogs`."""
 
     run_name: str

@@ -95,7 +95,9 @@ def test_running_processes(api: httpx.Client) -> None:
 def test_historical_tier(api: httpx.Client, ns: str, route: str) -> None:
     if "COHORT" in route:
         cohorts = api.get("cohorts").json()
-        route = route.replace("COHORT", cohorts[0]["collection_id"] if cohorts else ns)
+        if not cohorts:
+            pytest.skip("target holds no cohorts")
+        route = route.replace("COHORT", cohorts[0]["collection_id"])
     resp = api.get(route)
     assert resp.status_code in {200, 501}, f"GET {route}: {resp.status_code} {resp.text[:500]}"
     resp.json()

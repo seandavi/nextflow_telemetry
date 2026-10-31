@@ -20,6 +20,9 @@ PRODUCTION_HOSTS: frozenset[str] = frozenset(
 )
 
 
+LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
 @dataclass(frozen=True)
 class Target:
     base_url: str
@@ -41,6 +44,10 @@ def target_from_env(environ: Mapping[str, str]) -> Target:
             host = urlsplit(url).hostname
             if host in PRODUCTION_HOSTS:
                 raise ValueError(f"refusing writes against production host {host}: unset CONTRACT_ALLOW_WRITES")
+            if host not in LOOPBACK_HOSTS and host != environ.get("CONTRACT_DISPOSABLE_HOST"):
+                raise ValueError(
+                    f"refusing writes against {host}: not loopback; set CONTRACT_DISPOSABLE_HOST={host} if it is disposable"
+                )
     fast_clock = environ.get("CONTRACT_FAST_CLOCK_SECONDS")
     return Target(
         base_url=base_url,
@@ -153,7 +160,7 @@ def run_event(
     event: dict[str, Any],
     files: dict[str, tuple[str, bytes, str]] | None = None,
 ) -> httpx.Response:
-    data = {"event": json.dumps({"utc_time": _now()} | event)}
+    data = {"event": json.dumps({"utc_time": datetime.now(UTC).isoformat()} | event)}
     return edge.post(f"api/runs/{run_name}/event", data=data, files=files)
 
 

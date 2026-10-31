@@ -37,6 +37,8 @@ trap 'rm -f "$tmp"' EXIT
     echo "R2_SECRET_ACCESS_KEY=$(get cdsci-r2-secret-access-key)"
     # Submission write-through to the v2 Worker (POST /api/samples).
     echo "V2_API_TOKEN=$(get cdsci-nf-telemetry-v2-api-token)"
+    # Bearer token for every control-plane write (ADR-0013 §6); the v2 token, so nf-client configs keep working.
+    echo "DISPATCH_TOKEN=$(get cdsci-nf-telemetry-v2-api-token)"
 } > "$tmp"
 
 chmod 600 "$tmp"
