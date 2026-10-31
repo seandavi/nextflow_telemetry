@@ -27,8 +27,8 @@ On top of that it adds:
   or run status. The routers, M4's sweep and M5's ingester all call it.
 
 **Done when** the M2 contract suite passes against the service on a scratch database, both
-locally (`just pg-local` + `just contract`) and in a new CI job. The timer tier stays skipped
-until M4 lands (see Departures, 1).
+locally (`just pg-local` + `just contract`) and in a new CI job, timer tier included (see
+Departures, 1).
 
 ## Non-goals
 
@@ -56,10 +56,10 @@ until M4 lands (see Departures, 1).
 
 ## Departures from the issue and the design record
 
-1. **Timers come with M4.** The issue's done-gate is "the M2 suite is green". Here that
-   means green with `CONTRACT_FAST_CLOCK_SECONDS` unset, so the three `test_timers.py` tests
-   are skipped. Claim expiry and liveness expiry need M4's sweep, and #374's own done-gate
-   is those fast-clock scenarios.
+1. **Timers come with M4.** Claim expiry and liveness expiry need M4's sweep. M4 merged
+   first, so the follow-up to this change (#405) enables the sweep (`DEADLINE_SWEEP_ENABLED=1`,
+   `DEADLINE_SWEEP_SECONDS=1`) in `just pg-local` and the CI job, and sets
+   `CONTRACT_FAST_CLOCK_SECONDS=20`: the three `test_timers.py` tests run and pass.
 2. **The origin serves the event routes too.** ADR-0013 §2 sends `/telemetry`,
    `/runs/{run}/event` and `POST /task-logs` to the edge. The origin serves them as well, and
    applies the events synchronously through the same transition functions. This has to
@@ -155,7 +155,7 @@ until M4 lands (see Departures, 1).
 | `src/nextflow_telemetry/routers/cohorts.py` | list, leaderboard and summary onto `control_reads`. The `/{id}/failures` handler and its models stay as they are |
 | `src/nextflow_telemetry/services/process_metrics.py` | `running()` rewritten (below). Nothing else changes |
 | `src/nextflow_telemetry/main.py` | `/telemetry` onto `transitions`, `/api/health` added, `TelemetryService` removed, router factories take what they need (below) |
-| `src/nextflow_telemetry/config.py` | four settings (below), and the `DISPATCH_TOKEN` comment |
+| `src/nextflow_telemetry/config.py` | `BLOB_STORE_URL` (the three deadline settings came from M4), and the `DISPATCH_TOKEN` comment |
 | `src/nextflow_telemetry/deps.py` | docstrings only: `require_service` now guards every control write |
 | deleted: `services/dispatch.py`, `services/lifecycle.py`, `services/reconcile.py`, `services/telemetry.py`, `services/sample.py`, `services/workflow.py`, `services/cohort.py` | v1 control services with no callers left. Before deleting, confirm with `grep -rn "services\.\(dispatch\|lifecycle\|reconcile\|telemetry\|sample\|workflow\|cohort\)\b\|from \.\(dispatch\|lifecycle\|reconcile\|telemetry\|sample\|workflow\|cohort\) import" src scripts tests` that only the deleted files and tests import them. `services/collection.py` and `utils.py` stay, because `submission.py` uses them |
 | deleted: `tests/test_integration.py`, `tests/test_e2e.py`, `tests/test_runs_router.py`, `tests/test_task_logs_router.py`, `tests/test_cohorts_router.py`, `tests/test_lifecycle.py`, `tests/test_dispatch_service.py` | tests of the deleted v1 routes and services. The contract suite and the new tests cover their behaviour |
@@ -464,11 +464,6 @@ and for an expired `liveness_deadline`
 `close_run(conn, run, "failed", "presumed dead: heartbeats stopped")`. These are v2's
 `RunDO.alarm` reasons, and the contract's liveness test checks for "presumed dead". Nothing
 here needs to be duplicated in M4.
-
-*Integration note:* M4 merged first, and `services/deadlines.py` carries temporary copies
-of `expire_claim` and `close_run` (its `_expire_claim` and `_fail_run`) instead of calling
-`services/transitions.py`. The copies follow the same v2 reasons. Replacing them with the
-calls above is a follow-up, not part of this change.
 
 **For M5:** the ingester calls `apply_weblog_event(conn, envelope["payload"], now=received_at)`
 for `source == "weblog"`, and `apply_run_event(conn, run_name, envelope["payload"], now=received_at)`
@@ -993,11 +988,12 @@ Add a second job. The `v2-local` job is unchanged.
             uv run uvicorn nextflow_telemetry.main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
           for i in $(seq 60); do curl -sf http://127.0.0.1:8000/api/health && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/api.log"; exit 1
-      - name: Contract suite (timer tier waits for M4)
+      - name: Contract suite
         env:
           CONTRACT_BASE_URL: http://127.0.0.1:8000
           CONTRACT_TOKEN: contract-token
           CONTRACT_ALLOW_WRITES: "1"
+          CONTRACT_FAST_CLOCK_SECONDS: "20"
         run: uv run pytest contract -v
       - if: failure()
         run: cat "$RUNNER_TEMP/api.log"
@@ -1167,8 +1163,8 @@ inside `engine.begin()`.
   `health_report.py` and the frontend all use `workers.dev`). The catalog routes, and the
   Worker's historical-tier proxy, keep working.
 - **M4 and M6 run at the same time.** M3 owns `config.py`'s three deadline settings and
-  the `transitions` signatures. If M4 merges first with its own copies, whichever merges
-  second reconciles them to this spec's names. M6's import has to fill `readset_runs`, or
+  the `transitions` signatures. M4 merged first with its own copies; the follow-up (#405)
+  made `services/deadlines.py` call `transitions.expire_claim` and `close_run` and deleted them. M6's import has to fill `readset_runs`, or
   `by-srr` misses imported samples.
 - **The origin event path skips the R2 archive.** A reporter pointed at the origin
   instead of the edge would leave no history in R2. The configs and the SLURM templates
@@ -1196,8 +1192,9 @@ inside `engine.begin()`.
   The select is 0.3–0.6 s of that; the rest is the insert with its indexes and foreign-key
   checks on `jobs`, so getting under 10 s on a cold first run would need a schema change.
   `POST /samples/bulk` took 7.1 s for 58,699 rows.
-- **Shutdown.** The service has no lifespan hook or background task; an idle `uvicorn` exits
-  on SIGTERM in 0.2 s. A server stopped while a request is in flight waits for that request,
+- **Shutdown.** The lifespan starts M4's sweep and the daily retired-job archive (each only
+  when its flag is on) and cancels both on shutdown; with the sweep on, an idle `uvicorn`
+  exits on SIGTERM at once (checked on `just pg-local`). A server stopped while a request is in flight waits for that request,
   so a slow `reconcile-jobs` (above) is what held the earlier dev run past SIGTERM and
   SIGINT. A deploy that restarts the container during a first-time reconcile pays the full
   stop timeout; M4's sweep and M5's ingester must be cancelled in the lifespan.
