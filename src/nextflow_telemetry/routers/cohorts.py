@@ -1,6 +1,6 @@
 """Cohort summary router (issue #36).
 
-Lightweight wrapper over CohortService that exposes:
+Lightweight wrapper over control_reads that exposes:
   - GET /api/cohorts                     — list cohorts/collections
   - GET /api/cohorts/{id}/summary        — counts + completion % + per-process failures
   - GET /api/cohorts/{id}/failures       — drill-down: failed tasks for a process
@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..services.cohort import CohortService
+from ..services import control_reads
 from ..services.process_metrics import ProcessMetricsService
 
 
@@ -104,7 +104,6 @@ class CohortFailuresResponse(BaseModel):
 
 def create_cohorts_router(engine: AsyncEngine, process_metrics: ProcessMetricsService) -> APIRouter:
     router = APIRouter(prefix="/cohorts", tags=["cohorts"])
-    svc = CohortService(engine=engine)
 
     @router.get(
         "",
@@ -113,7 +112,8 @@ def create_cohorts_router(engine: AsyncEngine, process_metrics: ProcessMetricsSe
         description="Returns every collection (cohort) with its current sample count, newest first.",
     )
     async def list_cohorts() -> list[CohortListItem]:
-        rows = await svc.list_cohorts()
+        async with engine.connect() as conn:
+            rows = await control_reads.list_cohorts(conn)
         return [CohortListItem(**r) for r in rows]
 
     @router.get(
@@ -129,7 +129,8 @@ def create_cohorts_router(engine: AsyncEngine, process_metrics: ProcessMetricsSe
         ),
     )
     async def leaderboard() -> list[CohortLeaderboardRow]:
-        rows = await svc.leaderboard()
+        async with engine.connect() as conn:
+            rows = await control_reads.leaderboard(conn)
         return [CohortLeaderboardRow(**r) for r in rows]
 
     @router.get(
@@ -151,10 +152,12 @@ def create_cohorts_router(engine: AsyncEngine, process_metrics: ProcessMetricsSe
         workflow_version: Annotated[Optional[str], Query(description="Restrict to a specific workflow version.")] = None,
         all_workflows: Annotated[bool, Query(description="Count across ALL workflow versions instead of just the active one.")] = False,
     ) -> CohortSummaryResponse:
-        summary = await svc.summary(
-            collection_id, workflow_id, workflow_version,
-            include_all_workflows=all_workflows,
-        )
+        async with engine.connect() as conn:
+            summary = await control_reads.cohort_summary(
+                conn, collection_id,
+                workflow_id=workflow_id, workflow_version=workflow_version,
+                all_workflows=all_workflows, now=datetime.datetime.now(datetime.timezone.utc),
+            )
         if summary is None:
             raise HTTPException(status_code=404, detail=f"Cohort '{collection_id}' not found.")
         return CohortSummaryResponse.model_validate(summary)

@@ -1,179 +1,122 @@
-"""Sample catalog router."""
+"""Sample catalog router: registration (single and bulk), lookups and facets (ADR-0013 #373)."""
 from __future__ import annotations
 
-from typing import Any
-
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..services.sample import SampleService
-from ..utils import parse_srrs
+from ..control_models import BulkRegistered, CollectionFacets, Sample, SampleList, SampleRegistration
+from ..deps import require_service
+from ..services import registry
+from .control_route import ControlRoute, clamp, utcnow
+
+BULK_MAX_BYTES = 64 * 1024 * 1024
+BULK_MEDIA_TYPES = ("application/x-ndjson", "text/tab-separated-values")
 
 
-class SampleRegisterRequest(BaseModel):
-    """Request body for registering or updating a sample."""
-    sample_id: str = Field(description="Unique identifier. For SRA samples derive via srrs_to_sample_id().")
-    ncbi_accession: str = Field(description="Semicolon-separated SRR accessions (e.g. 'SRR001;SRR002'). Must contain at least one non-empty accession. Normalised to sorted, deduplicated form on write.")
-    biosample_id: str | None = Field(default=None, description="NCBI BioSample accession (e.g. 'SAMN12345678'). Annotation only — not used as identity.")
-    metadata: dict[str, Any] | None = Field(default=None, description="Optional arbitrary JSON metadata. Replaced on upsert.")
-    collection: str | None = Field(default=None, description="Optional collection name to attach this sample to. The exact string is the collection id (see CONTEXT.md). Membership is the source of truth — not a metadata key.")
-
-    @field_validator("ncbi_accession")
-    @classmethod
-    def _ncbi_accession_non_empty(cls, v: str) -> str:
-        if not parse_srrs(v):
-            raise ValueError("must contain at least one non-empty SRR accession")
-        return v
+def _conflict(err: registry.ReadsetConflict) -> HTTPException:
+    return HTTPException(status_code=409, detail=f"runs already belong to another readset: {', '.join(err.runs)}")
 
 
-class SampleResponse(BaseModel):
-    """A sample record from the catalog."""
-    id: int = Field(description="Auto-incrementing database primary key.")
-    sample_id: str = Field(description="Unique sample identifier (md5 of SRRs for SRA samples).")
-    ncbi_accession: str | None = Field(default=None, description="Canonical semicolon-separated SRR list.")
-    biosample_id: str | None = Field(default=None, description="NCBI BioSample accession, if known.")
-    metadata: dict[str, Any] | None = Field(default=None, description="Arbitrary JSON metadata.")
-    collections: list[str] = Field(default_factory=list, description="Collection ids this sample belongs to (membership is the source of truth).")
-    created_at: Any = Field(description="UTC timestamp when this sample was first registered.")
-    updated_at: Any = Field(description="UTC timestamp of the most recent update.")
-
-    model_config = {"from_attributes": True}
-
-
-class SampleListResponse(BaseModel):
-    """A page of samples plus the total count matching the current filters."""
-    items: list[SampleResponse]
-    total: int = Field(description="Total samples matching the filters (for pagination).")
-    limit: int
-    offset: int
-
-
-class CollectionFacet(BaseModel):
-    collection: str
-    count: int
-
-
-class CollectionFacetsResponse(BaseModel):
-    total: int = Field(description="Total samples in the catalog (distinct samples).")
-    collections: list[CollectionFacet] = Field(description="Per-collection sample counts across the whole catalog, largest first. Overlap-allowed (a sample may be in several collections), so counts need not sum to total.")
-
-
-def _row_to_response(row: dict) -> SampleResponse:
-    return SampleResponse(
-        id=row["id"],
-        sample_id=row["sample_id"],
-        ncbi_accession=row.get("ncbi_accession"),
-        biosample_id=row.get("biosample_id"),
-        metadata=row["metadata_"],
-        collections=row.get("collections", []),
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
+async def _read_capped(request: Request) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > BULK_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="body exceeds the 64 MiB limit")
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > BULK_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="body exceeds the 64 MiB limit")
+    return bytes(body)
 
 
 def create_samples_router(engine: AsyncEngine) -> APIRouter:
-    router = APIRouter(prefix="/samples", tags=["samples"])
-    svc = SampleService(engine=engine)
+    router = APIRouter(prefix="/samples", tags=["samples"], route_class=ControlRoute)
 
     @router.post(
         "",
-        response_model=SampleResponse,
+        response_model=Sample,
         status_code=201,
-        summary="Register or update a sample",
+        dependencies=[Depends(require_service)],
+        responses={409: {"description": "A run already belongs to another readset."}},
+        summary="Register (upsert) a sample, optionally into a collection",
+    )
+    async def register_sample(req: SampleRegistration):
+        try:
+            async with engine.begin() as conn:
+                await registry.register_samples(conn, [req], now=utcnow())
+                return await registry.get_sample(conn, req.sample_id)
+        except registry.ReadsetConflict as err:
+            raise _conflict(err) from err
+
+    @router.post(
+        "/bulk",
+        response_model=BulkRegistered,
+        dependencies=[Depends(require_service)],
+        responses={
+            409: {"description": "A run already belongs to another readset."},
+            413: {"description": "Over 64 MiB or 100,000 rows."},
+            415: {"description": "Content-Type is not NDJSON or TSV."},
+        },
+        summary="Bulk-register samples from NDJSON or TSV, in one transaction",
         description=(
-            "Adds a sample to the catalog, or updates its fields if it already exists "
-            "(upsert on `sample_id`). For SRA samples, derive `sample_id` from the SRR "
-            "list using `srrs_to_sample_id(srrs)` so that identity is content-addressed. "
-            "Call `POST /admin/reconcile-jobs` after registering new samples to create pending jobs."
+            "`Content-Type: application/x-ndjson` (one JSON object per line) or "
+            "`text/tab-separated-values` (header with `sample_id`, `ncbi_accession`, optionally "
+            "`biosample_id`, `collection`). `?collection=` sets the collection for rows that carry none. "
+            "Loaded with COPY into a staging table and merged; any error writes nothing."
         ),
     )
-    async def register_sample(req: SampleRegisterRequest):
-        row = await svc.register(
-            req.sample_id,
-            ncbi_accession=req.ncbi_accession,
-            biosample_id=req.biosample_id,
-            metadata=req.metadata,
-            collection=req.collection,
-        )
-        return _row_to_response(row)
+    async def register_samples_bulk(request: Request, collection: str | None = None):
+        media_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+        if media_type not in BULK_MEDIA_TYPES:
+            raise HTTPException(status_code=415, detail=f"Content-Type must be one of: {', '.join(BULK_MEDIA_TYPES)}")
+        body = await _read_capped(request)
+        try:
+            rows = registry.parse_bulk(body, media_type, collection)
+            async with engine.begin() as conn:
+                result = await registry.register_samples(conn, rows, now=utcnow())
+        except registry.BulkTooLarge as err:
+            raise HTTPException(status_code=413, detail=str(err)) from err
+        except registry.BulkParseError as err:
+            raise HTTPException(status_code=422, detail=str(err)) from err
+        except registry.ReadsetConflict as err:
+            raise _conflict(err) from err
+        return result.__dict__
+
+    @router.get("", response_model=SampleList, summary="List samples with search and collection filters")
+    async def list_samples(limit: int = 100, offset: int = 0, search: str | None = None, collection: str | None = None):
+        limit, offset = clamp(limit, 1, 1000), max(0, offset)
+        async with engine.connect() as conn:
+            items, total = await registry.list_samples(conn, limit=limit, offset=offset, search=search, collection=collection)
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
 
     @router.get(
-        "",
-        response_model=SampleListResponse,
-        summary="List samples (paginated, filterable)",
-        description=(
-            "Returns a page of samples plus the total matching count. Filter "
-            "server-side with `search` (case-insensitive `sample_id` substring) "
-            "and `collection` (exact collection membership), so the catalog stays "
-            "usable well past the old client-side 1000-row ceiling (#118)."
-        ),
-    )
-    async def list_samples(
-        limit: int = Query(default=100, ge=1, le=1000, description="Maximum number of samples to return."),
-        offset: int = Query(default=0, ge=0, description="Number of samples to skip."),
-        search: str | None = Query(default=None, description="Case-insensitive substring match on sample_id."),
-        collection: str | None = Query(default=None, description="Exact collection id — returns samples that are members of that collection."),
-    ):
-        rows, total = await svc.list_samples(limit=limit, offset=offset, search=search, collection=collection)
-        return SampleListResponse(
-            items=[_row_to_response(r) for r in rows],
-            total=total, limit=limit, offset=offset,
-        )
-
-    @router.get(
-        "/facets/collections",
-        response_model=CollectionFacetsResponse,
-        summary="Collection facet counts across the whole catalog",
-        description=(
-            "Per-collection sample counts (from collection membership) over ALL "
-            "samples, plus the grand total — powers the Samples-page collection "
-            "chips so they stay correct regardless of the current page or filters. "
-            "Reads the same source as the Cohorts dashboard, so the two agree."
-        ),
+        "/facets/collections", response_model=CollectionFacets, summary="Per-collection sample counts over the whole catalog"
     )
     async def collection_facets():
-        total, collections = await svc.collection_facets()
-        return CollectionFacetsResponse(total=total, collections=[CollectionFacet(**c) for c in collections])
+        async with engine.connect() as conn:
+            return await registry.collection_facets(conn)
+
+    @router.get("/by-srr/{srr}", response_model=Sample, summary="The sample containing a run accession")
+    async def get_by_srr(srr: str):
+        async with engine.connect() as conn:
+            sample = await registry.get_sample_by_run(conn, srr)
+        if sample is None:
+            raise HTTPException(status_code=404, detail=f"No sample found with SRR '{srr}'")
+        return sample
 
     @router.get(
-        "/by-srr/{srr_accession}",
-        response_model=SampleResponse,
-        summary="Look up a sample by SRR accession",
-        description=(
-            "Returns the sample whose `ncbi_accession` contains the given SRR. "
-            "Returns 404 if no sample is registered with that accession."
-        ),
-    )
-    async def get_by_srr(srr_accession: str):
-        row = await svc.get_by_srr(srr_accession)
-        if not row:
-            raise HTTPException(status_code=404, detail=f"No sample found with SRR '{srr_accession}'")
-        return _row_to_response(row)
-
-    @router.get(
-        "/by-biosample/{biosample_id}",
-        response_model=list[SampleResponse],
-        summary="Look up samples by BioSample accession",
-        description=(
-            "Returns all samples with the given `biosample_id`, newest first. "
-            "Multiple results occur when the BioSample gained new SRRs over time."
-        ),
+        "/by-biosample/{biosample_id}", response_model=list[Sample], summary="Samples annotated with a BioSample id"
     )
     async def get_by_biosample(biosample_id: str):
-        rows = await svc.get_by_biosample(biosample_id)
-        return [_row_to_response(r) for r in rows]
+        async with engine.connect() as conn:
+            return await registry.samples_by_biosample(conn, biosample_id)
 
-    @router.get(
-        "/{sample_id}",
-        response_model=SampleResponse,
-        summary="Get a sample by ID",
-        description="Retrieves a single sample by its `sample_id`. Returns 404 if not found.",
-    )
+    @router.get("/{sample_id}", response_model=Sample, summary="One sample by md5 `sample_id` or `RS.` readset id")
     async def get_sample(sample_id: str):
-        row = await svc.get(sample_id)
-        if not row:
+        async with engine.connect() as conn:
+            sample = await registry.get_sample(conn, sample_id)
+        if sample is None:
             raise HTTPException(status_code=404, detail=f"Sample '{sample_id}' not found")
-        return _row_to_response(row)
+        return sample
 
     return router
