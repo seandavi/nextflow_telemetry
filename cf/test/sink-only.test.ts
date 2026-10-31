@@ -125,9 +125,7 @@ describe("scheduled", () => {
     await withEnv(SINK_ONLY, "/telemetry", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ runName: "r-sched", event: "started" }),
     });
-    const ctx = createExecutionContext();
-    await worker.scheduled({} as ScheduledController, { ...env, ...SINK_ONLY } as unknown as Env, ctx);
-    await waitOnExecutionContext(ctx);
+    await worker.scheduled({} as ScheduledController, { ...env, ...SINK_ONLY } as unknown as Env);
 
     // Nothing is left to flush, so this returns the object the cron wrote.
     const lines = await flushed();
