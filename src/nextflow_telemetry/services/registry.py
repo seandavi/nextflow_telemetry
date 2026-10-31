@@ -229,6 +229,7 @@ def collections_of(sample_id: ColumnElement[Any]) -> ColumnElement[Any]:
             )
         )
         .where(collection_samples_tbl.c.sample_id == sample_id)
+        .correlate_except(collection_samples_tbl)
         .scalar_subquery()
     )
     return members.label("collections")
