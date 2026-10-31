@@ -23,9 +23,10 @@ class Settings:
     OAUTH_CLIENT_SECRET: str
     OAUTH_REDIRECT_URI: str
     SESSION_SECRET: str
-    # Machine auth for nf-client dispatch endpoints. When empty, require_service
-    # is permissive (logs a one-time warning) so daemons keep working during
-    # the rollout window. Flip from empty → populated to enforce.
+    # Bearer token for every control-plane write (ADR-0013 §6): dispatch,
+    # registration, workflows, daemons, admin. The event routes are exempt. Set to
+    # the v2 API token (GSM cdsci-nf-telemetry-v2-api-token). When empty,
+    # require_service is permissive (logs a one-time warning).
     DISPATCH_TOKEN: str
     # Operator/CI auth for mutating catalog endpoints (e.g. POST /submissions).
     # Separate from DISPATCH_TOKEN so operator/CI credentials and the daemon's
@@ -56,6 +57,13 @@ class Settings:
     # Bearer token for v2 writes (GSM cdsci-nf-telemetry-v2-api-token). Empty
     # disables the submission write-through to v2 POST /samples.
     V2_API_TOKEN: str
+    # Control-plane run deadlines (#373); the values match cf/wrangler.jsonc. Floats
+    # so a contract target can use fractional minutes. M4's sweep reads these.
+    CLAIM_TTL_MINUTES: float
+    SUBMIT_BACKSTOP_HOURS: float
+    LIVENESS_MINUTES: float
+    # Where task logs and run logs live: r2://<bucket>, or a local directory path.
+    BLOB_STORE_URL: str
 
 settings = Settings(
     SQLALCHEMY_URI=_normalize_sqlalchemy_uri(
@@ -78,4 +86,8 @@ settings = Settings(
     R2_SECRET_ACCESS_KEY=os.environ.get("R2_SECRET_ACCESS_KEY", ""),
     V2_API_URL=os.environ.get("V2_API_URL", "https://nf-telemetry.seandavi.workers.dev/api"),
     V2_API_TOKEN=os.environ.get("V2_API_TOKEN", ""),
+    CLAIM_TTL_MINUTES=float(os.environ.get("CLAIM_TTL_MINUTES", "5")),
+    SUBMIT_BACKSTOP_HOURS=float(os.environ.get("SUBMIT_BACKSTOP_HOURS", "168")),
+    LIVENESS_MINUTES=float(os.environ.get("LIVENESS_MINUTES", "10")),
+    BLOB_STORE_URL=os.environ.get("BLOB_STORE_URL", "r2://nf-telemetry"),
 )
