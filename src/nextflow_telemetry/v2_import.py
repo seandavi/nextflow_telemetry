@@ -100,11 +100,13 @@ def deadlines(run: dict[str, Any], settings: dict[str, float]) -> dict[str, date
 
     if status == "claimed":
         out["claim_expires_at"] = after("claimed_at", timedelta(minutes=settings["CLAIM_TTL_MINUTES"]))
-    elif status == "submitted" and run["last_heartbeat_at"] is None:
-        out["submit_deadline"] = after("submitted_at", timedelta(hours=settings["SUBMIT_BACKSTOP_HOURS"]))
-    elif status in ("running", "submitted"):
-        column = next(c for c in ("last_heartbeat_at", "started_at", "submitted_at") if run[c] is not None)
-        out["liveness_deadline"] = after(column, timedelta(minutes=settings["LIVENESS_MINUTES"]))
+    elif status in ("submitted", "running"):
+        # Heartbeat decides, not status: only /dispatch/submitted arms the backstop and only
+        # wrapper_started/heartbeat arm liveness (a started weblog event arms nothing).
+        if run["last_heartbeat_at"] is not None:
+            out["liveness_deadline"] = after("last_heartbeat_at", timedelta(minutes=settings["LIVENESS_MINUTES"]))
+        elif run["submitted_at"] is not None:
+            out["submit_deadline"] = after("submitted_at", timedelta(hours=settings["SUBMIT_BACKSTOP_HOURS"]))
     return out
 
 

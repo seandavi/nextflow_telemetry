@@ -362,9 +362,15 @@ All times are in UTC. `s` is the manifest `settings`:
 | v2 run | Column set |
 |---|---|
 | `status = 'claimed'` | `claim_expires_at = claimed_at + s.CLAIM_TTL_MINUTES min` |
-| `status = 'submitted'` and `last_heartbeat_at is null` | `submit_deadline = submitted_at + s.SUBMIT_BACKSTOP_HOURS h` |
-| `status = 'running'`, or `'submitted'` with a heartbeat | `liveness_deadline = coalesce(last_heartbeat_at, started_at, submitted_at) + s.LIVENESS_MINUTES min` |
+| `status` is `'submitted'` or `'running'`, `last_heartbeat_at` set | `liveness_deadline = last_heartbeat_at + s.LIVENESS_MINUTES min` |
+| `status` is `'submitted'` or `'running'`, `last_heartbeat_at` null, `submitted_at` set | `submit_deadline = submitted_at + s.SUBMIT_BACKSTOP_HOURS h` |
+| `status` is `'submitted'` or `'running'`, `last_heartbeat_at` and `submitted_at` null | none |
 | `completed`, `failed`, `expired` | none |
+
+The heartbeat decides, not the status. In v2 only `/dispatch/submitted` arms the backstop
+and only `wrapper_started` and `heartbeat` arm liveness; the weblog `started` event arms
+nothing. A run started without the wrapper (nf-client `mode: local`) is `running` and
+never heartbeats, so it keeps the backstop, as in v2.
 
 A deadline that is already in the past is imported as it is. M4's sweep, with its outage
 grace, decides what happens to it.
@@ -501,7 +507,8 @@ v2-import dir *flags:
   - `to_pg_rows` converts `2026-10-30T23:37:55.294Z` to an aware datetime with 294000 µs;
   - it converts `collections` `"[]"` and null to None, and `metadata` null to `{}`;
   - it raises on an unknown v2 column and on a run under two readsets;
-  - `deadlines` gives each table row's result, and none for terminal runs;
+  - `deadlines` gives each table row's result, none for terminal runs, and the submit
+    backstop (not liveness) for a `running` run with no heartbeat;
   - `read_snapshot` rejects `format: 2`, a missing object, and a line-count mismatch.
 - [ ] Integration (the `db_url` fixture's database):
   - importing the fixture export gives `clean: true`;
@@ -629,11 +636,12 @@ The PR therefore says "Refs #376", not "Closes".
   twice. That only affects triage counts, and M5 should know about it. There's no gap in
   the other direction: every event in R2 at or before the cursor was applied first.
 - **Derived deadlines, one known difference.** A run whose wrapper sent `wrapper_started`
-  but no heartbeat yet is `submitted` with a null `last_heartbeat_at`, while RunDO has
-  already armed liveness. The import gives it the submit backstop instead. Its next
-  heartbeat, applied by M5, moves it to liveness, so the window lasts about 60 s.
-  Otherwise the derived values match RunDO's alarms: ControlDO's heartbeat write and the
-  RunDO re-arm happen in the same request, with the same timestamp.
+  but no heartbeat yet has a null `last_heartbeat_at`, while RunDO has already armed
+  liveness. The import gives it the submit backstop instead. Its next heartbeat, applied
+  by M5, moves it to liveness, so the window lasts about 60 s. Otherwise the derived
+  values match RunDO's alarms: ControlDO's heartbeat write and the RunDO re-arm happen in
+  the same request, with the same timestamp, and a `running` run that never heartbeats
+  keeps the backstop in both.
 - **`--replace` on the wrong database** truncates the live control plane. It's a flag,
   `SQLALCHEMY_URI` has no default, and the help text says scratch and staging only. After
   M8 the module is dead code, and M10 deletes it.

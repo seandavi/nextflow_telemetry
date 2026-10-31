@@ -216,6 +216,9 @@ def test_deadlines_by_run_status(export_dir):
     assert {k: v for k, v in deadlines(rows["r-running"], SETTINGS).items() if v} == {
         "liveness_deadline": datetime(2026, 10, 30, 10, 40, tzinfo=timezone.utc)}
     assert not any(deadlines(rows["r-completed"], SETTINGS).values())
+    local = {**rows["r-running"], "last_heartbeat_at": None}
+    assert {k: v for k, v in deadlines(local, SETTINGS).items() if v} == {
+        "submit_deadline": datetime(2026, 11, 6, 10, 0, tzinfo=timezone.utc)}
 
 
 def test_read_snapshot_rejects_bad_exports(export_dir):
