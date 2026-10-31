@@ -244,6 +244,27 @@ in either form. A readset-keyed registration gets one job per readset (two md5
 ids can name the same run set) and none for a sample without one.
 `GET /samples/{id}` and `?search=` take either id.
 
+## Export for the Postgres migration (M6)
+
+`POST /api/admin/export` (bearer) writes a consistent snapshot of every ControlDO table
+to R2 for the Postgres import (ADR-0013 §8, #376; `src/nextflow_telemetry/v2_import.py`).
+
+- **Layout.** `exports/<export_id>/manifest.json` and
+  `exports/<export_id>/<table>/<nnnn>.ndjson.gz` (up to 10,000 rows per object, rowid
+  order, rows exactly as SQLite holds them). The manifest is written last: its presence
+  means the export is complete. `POST /admin/reset` clears `exports/` too.
+- **Event cursor.** The route flushes SinkDO first, then snapshots ControlDO.
+  `events_cursor` is `{stream, object_key, line_offset}` of the last event object.
+  Events in objects with a key ≤ `object_key` (R2 list order) are reflected in the
+  snapshot, and `line_offset` is that object's full line count. The ingester (M5) starts
+  with `list({ prefix: "telemetry/events/", startAfter: object_key })`. SinkDO keys carry
+  a per-DO counter suffix, so they sort in write order. The one overlap is an event
+  applied to ControlDO before the snapshot whose `sink.write` landed after the flush; M5
+  replays it. Transitions are idempotent, but `recordTask` counters are not.
+- **Recipes.** `just v2-export DIR` calls the route and `rclone copy`s the export to
+  `DIR/<export_id>`; `just v2-import DIR/<export_id> [--replace]` imports it into
+  `$SQLALCHEMY_URI` and prints the verification report.
+
 ## Cost shape
 
 Durable Objects bill rows read ($0.001/M after 25B/month), rows written ($1/M
