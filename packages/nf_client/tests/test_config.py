@@ -62,3 +62,8 @@ def test_deployed_cluster_configs_load_and_gate_dispatch(monkeypatch):
     assert cfgs["anvil"].dispatch.workflow_id == ["cmgd_humann4a2", "cmgd_mpa4.2"]
     assert cfgs["bridges2"].dispatch.workflow_id == ["cmgd_humann4a2", "cmgd_mpa4.2"]
     assert cfgs["bridges2"].submission.max_concurrent_runs == 6
+
+
+def test_event_url_defaults_to_empty():
+    assert ClientConfig(server_url="https://x/api").event_url == ""
+    assert ClientConfig(server_url="https://x/api", event_url="https://e/api").event_url == "https://e/api"

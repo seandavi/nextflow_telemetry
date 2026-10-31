@@ -298,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
         "--telemetry-url", required=True,
         help=(
             "API base URL of the telemetry server (the same value as "
-            "ClientConfig.server_url, e.g. 'https://nf-telemetry.example.com/api'). "
+            "ClientConfig.event_url, e.g. 'https://nf-telemetry.example.com/api'). "
             "Trailing slash is optional; we append one. The wrapper POSTs to "
             "<base>/runs/<run_name>/event."
         ),

@@ -91,6 +91,9 @@ class ClientConfig(BaseModel):
     # Only the daemon/run-wrapper needs a weblog sink; operator/CI commands
     # (study submissions, reconcile, introspection) don't, so it's optional.
     weblog_url: str = ""
+    # Base URL (like server_url, ending in /api) for the run wrapper's events: the edge
+    # Worker (ADR-0013 §7). Empty means server_url.
+    event_url: str = ""
     # Bearer token for operator/CI mutating endpoints (POST /submissions, …).
     # Usually supplied via the NF_OPERATOR_TOKEN env var rather than YAML;
     # the env var overrides this field. Empty ⇒ no Authorization header sent.
