@@ -20,7 +20,7 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./types";
-import { gzip } from "./util";
+import { gzip, serialized } from "./util";
 
 /** Flush when either bound is hit; whichever comes first. */
 const FLUSH_ROWS = 500;
@@ -132,6 +132,7 @@ export class SinkDO extends DurableObject<Env> {
   async reset(): Promise<void> {
     this.sql.exec(`delete from buf`);
     this.sql.exec(`delete from proc`);
+    this.sql.exec(`delete from flush_state`); // its key names an object reset just deleted
     await this.ctx.storage.deleteAlarm();
   }
 
@@ -145,7 +146,7 @@ export class SinkDO extends DurableObject<Env> {
    * and "everything after key K" is an exact cursor (#376).
    */
   async flush(): Promise<FlushedObject | null> {
-    return this.ctx.blockConcurrencyWhile(async () => {
+    return serialized(this.ctx, async () => {
       const rows = this.sql.exec(`select id, line from buf order by id`).toArray() as any[];
       const state = this.sql.exec(`select seq, key, lines from flush_state where id = 1`).toArray()[0] as
         | { seq: number; key: string; lines: number }

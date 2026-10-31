@@ -21,7 +21,7 @@ import { DurableObject } from "cloudflare:workers";
 import { readsetIdForRuns } from "./readset";
 import { SCHEMA } from "./schema";
 import type { Env } from "./types";
-import { gzip, ndjson, uuidv7 } from "./util";
+import { gzip, ndjson, serialized, uuidv7 } from "./util";
 
 /** Run states that have already had their terminal write; closing again is a no-op. */
 const RUN_TERMINAL = ["completed", "failed", "expired"];
@@ -1206,7 +1206,7 @@ export class ControlDO extends DurableObject<Env> {
     sequences: Record<string, number>;
     tables: Record<string, { rows: number; objects: string[] }>;
   }> {
-    return this.ctx.blockConcurrencyWhile(async () => {
+    return serialized(this.ctx, async () => {
       const exported_at = iso();
       const sequences = Object.fromEntries(
         this.all(`select name, seq from sqlite_sequence`).map((r) => [r.name as string, r.seq as number]),

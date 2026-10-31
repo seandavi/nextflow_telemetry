@@ -28,3 +28,25 @@ export function uuidv7(): string {
   const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
+
+/**
+ * blockConcurrencyWhile, minus its reset-on-throw. A callback that throws makes
+ * the runtime reset the Durable Object, which fails every request queued
+ * behind it (an R2 hiccup during a flush would drop the weblog events waiting
+ * on the lock). Catch inside, rethrow after the lock is released: the caller
+ * still sees the error, and the object stays up (#401).
+ */
+export async function serialized<T>(
+  ctx: { blockConcurrencyWhile<U>(fn: () => Promise<U>): Promise<U> },
+  fn: () => Promise<T>,
+): Promise<T> {
+  const r = await ctx.blockConcurrencyWhile(async () => {
+    try {
+      return { ok: true as const, value: await fn() };
+    } catch (error) {
+      return { ok: false as const, error };
+    }
+  });
+  if (!r.ok) throw r.error;
+  return r.value;
+}
