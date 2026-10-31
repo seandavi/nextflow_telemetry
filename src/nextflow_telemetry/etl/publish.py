@@ -75,6 +75,9 @@ CITATION = {
     "olm": ("Microbiome Repo, OlmLab, release R2026.25 (data package 1.20.0), "
             "doi:10.5281/zenodo.23087712; values derived. Required attribution for the "
             "CC-BY-4.0 tables."),
+    "zoe": ("ZOE PREDICT open metadata (PREDICT 1-3: age, sex, BMI), Zenodo record 15308000 "
+            "v1, doi:10.5281/zenodo.15308000; values derived. Required attribution for the "
+            "CC-BY-4.0 tables."),
 }
 
 # Metadata tables (plan §4.2), name -> (lake.cmgd_meta view, SELECT). The SELECT
@@ -185,9 +188,9 @@ _TABLES: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("sample_key", "field", "source_sample")),
     "sample_metadata_harmonized": (
         "One value per sample and harmonized field, with the source and source release it "
-        "came from (precedence: cMD curation, then Olm R1/R2 not imported from cMD, then Olm "
-        f"R3/R4 with confidence >= 0.5). Mixes Olm-derived values; attribution required: "
-        f"{CITATION['olm']}",
+        "came from (precedence: cMD curation, then ZOE PREDICT, then Olm R1/R2 not imported "
+        "from cMD, then Olm R3/R4 with confidence >= 0.5). Mixes Olm- and ZOE-derived values; "
+        f"attribution required: {CITATION['olm']} {CITATION['zoe']}",
         "one row per sample and field",
         ("sample_key", "field")),
     "metadata_comparison": (

@@ -105,3 +105,20 @@ def test_load_requires_every_cohort_to_be_captured(db_url, tmp_path):
             zoe.load_zoe(con, db_url)
     finally:
         con.close()
+
+
+def test_load_zoe_refuses_an_unknown_version():
+    """DOI/URL are published as the release's attribution; a new version must update them (#388)."""
+    import pytest
+
+    from nextflow_telemetry.meta import zoe
+
+    with pytest.raises(ValueError, match="update VERSION, DOI and URL"):
+        zoe.load_zoe(None, "postgresql://unused", version="zenodo-15308000-v2")  # type: ignore[arg-type]
+
+
+def test_harmonized_table_cites_zoe():
+    from nextflow_telemetry.etl import publish
+
+    assert "10.5281/zenodo.15308000" in publish.CITATION["zoe"]
+    assert "zenodo.15308000" in publish._TABLES["sample_metadata_harmonized"][0]

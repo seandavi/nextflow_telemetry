@@ -79,6 +79,8 @@ async def _receipts(db_uri: str, version: str) -> dict[str, dict]:
 
 def load_zoe(con: duckdb.DuckDBPyConnection, db_uri: str, version: str = VERSION) -> dict[str, int]:
     """Load every ZOE cohort file captured under ``version``. All receipts must exist."""
+    if version != VERSION:  # DOI/URL below describe VERSION and are published with the release
+        raise ValueError(f"ZOE {version!r}: update VERSION, DOI and URL in meta/zoe.py first")
     receipts = asyncio.run(_receipts(db_uri, version))
     rows: list[dict] = []
     with tempfile.TemporaryDirectory() as tmp:
