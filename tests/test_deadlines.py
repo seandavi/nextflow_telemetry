@@ -269,24 +269,51 @@ async def test_noop_transition_disarms_deadline(engine: AsyncEngine) -> None:
 
 
 async def test_failing_transition_is_isolated(engine: AsyncEngine, monkeypatch) -> None:
+    """A transition that writes and then fails inside Postgres rolls back to its savepoint:
+    that run keeps its deadline and its job, and the rest of the sweep still commits (#399)."""
     deadline = T0 + timedelta(minutes=10)
     async with engine.begin() as conn:
         await _seed(conn, "bad", "running", "liveness_deadline", deadline, [("running", 0)])
         await _seed(conn, "good", "running", "liveness_deadline", deadline, [("running", 0)])
-    real = deadlines._fail_run
+    real = deadlines.transitions.close_run
 
-    async def flaky(conn, run_name, reason, now):
+    async def flaky(conn, run_name, terminal, reason, *, now):
+        out = await real(conn, run_name, terminal, reason, now=now)
         if run_name == "bad":
-            raise RuntimeError("boom")
-        await real(conn, run_name, reason, now)
+            await conn.execute(text("select 1/0"))  # an error after the writes, in the database
+        return out
 
-    monkeypatch.setattr(deadlines, "_fail_run", flaky)
+    monkeypatch.setattr(deadlines.transitions, "close_run", flaky)
     result = await _sweep(engine, deadline)
 
     assert (result.errors, result.liveness_failures) == (1, 1)
     bad = await _run(engine, "bad")
     assert (bad.status, bad.liveness_deadline) == ("running", deadline)
+    assert [j.status for j in await _jobs(engine) if j.run_name == "bad"] == ["running"]
     assert (await _run(engine, "good")).status == "failed"
+    async with engine.connect() as conn:
+        swept = (await conn.execute(select(deadline_sweep_tbl.c.last_swept_at))).scalar_one()
+    assert swept == deadline
+
+
+async def test_requeued_dead_letter_reopens_on_a_second_failure(engine: AsyncEngine) -> None:
+    """Dead-lettered, requeued (resolved_at set), then fails liveness again: the dead-letter
+    row is open again, so GET /admin/dead-letter and the requeue filters see it (#405 code-r3-1)."""
+    deadline = T0 + timedelta(minutes=10)
+    async with engine.begin() as conn:
+        await _seed(conn, "older-run", "failed", None, None, [])
+        await _seed(conn, "r1", "running", "liveness_deadline", deadline, [("running", 3)], max_retries=3)
+        job_id = (await conn.execute(select(jobs_tbl.c.id))).scalar_one()
+        await conn.execute(insert(dead_letter_tbl).values(
+            job_id=job_id, run_name="older-run", sample_id="r1-s0", workflow_id="wf",
+            workflow_version="1", reason="earlier failure", created_at=T0, resolved_at=T0))
+    await _sweep(engine, deadline)
+
+    (job,) = await _jobs(engine)
+    assert job.status == "failed"
+    (dl,) = await _dead_letters(engine)
+    assert dl.resolved_at is None
+    assert dl.run_name == "r1"
 
 
 def test_policy_from_settings_defaults() -> None:

@@ -285,7 +285,7 @@ just v2-local   # terminal A: local Worker with 6 s claim and liveness deadlines
 just contract   # terminal B: the whole suite against it
 
 just pg-local   # terminal A: throwaway Postgres + the Python API on :8000
-just contract http://127.0.0.1:8000 contract-token ""   # terminal B: the timer tier waits for M4's sweep
+just contract http://127.0.0.1:8000                      # terminal B: the whole suite, timers included
 ```
 
 | Variable | Default | Meaning |
