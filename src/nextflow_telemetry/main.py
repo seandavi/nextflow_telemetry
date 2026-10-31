@@ -5,6 +5,8 @@ import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,8 +33,9 @@ from .routers.workflows import create_workflows_router
 from .services import deadlines
 from .services.event_archive import EventArchive
 from .services.process_metrics import ProcessMetricsService
+from .services import transitions
+from .services.blobs import blob_store
 from .services.retired_archive import RetiredJobArchive
-from .services.telemetry import TelemetryService
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -168,7 +171,7 @@ async def access_log_middleware(
         status = response.status_code if response is not None else 500
         if error is not None:
             level = logging.ERROR
-        elif path == "/health":
+        elif path in ("/health", "/api/health"):
             level = logging.DEBUG
         else:
             level = logging.INFO
@@ -200,17 +203,22 @@ retired_job_archive = RetiredJobArchive(
     settings.R2_SECRET_ACCESS_KEY,
 )
 process_metrics_service = ProcessMetricsService(engine=engine, archive=event_archive)
-telemetry_service = TelemetryService(engine=engine)
+app.state.blob_store = blob_store(
+    settings.BLOB_STORE_URL,
+    r2_account_id=settings.R2_ACCOUNT_ID,
+    r2_access_key_id=settings.R2_ACCESS_KEY_ID,
+    r2_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+)
 
 app.include_router(create_process_metrics_router(process_metrics_service), prefix="/api")
 app.include_router(create_dispatch_router(engine), prefix="/api")
 app.include_router(create_samples_router(engine), prefix="/api")
 app.include_router(create_workflows_router(engine), prefix="/api")
 app.include_router(create_admin_router(engine), prefix="/api")
-app.include_router(create_task_logs_router(engine), prefix="/api")
+app.include_router(create_task_logs_router(app.state.blob_store), prefix="/api")
 app.include_router(create_daemons_router(engine), prefix="/api")
 app.include_router(create_curated_router(engine), prefix="/api")
-app.include_router(create_runs_router(engine), prefix="/api")
+app.include_router(create_runs_router(engine, app.state.blob_store), prefix="/api")
 app.include_router(create_cohorts_router(engine, process_metrics_service), prefix="/api")
 app.include_router(create_submissions_router(engine), prefix="/api")
 app.include_router(create_retired_archive_router(retired_job_archive), prefix="/api")
@@ -220,6 +228,12 @@ app.include_router(create_retired_archive_router(retired_job_archive), prefix="/
 app.include_router(create_auth_router(engine))
 
 
+@app.get(
+    "/api/health",
+    response_model=models.HealthResponse,
+    responses={503: {"model": models.HealthErrorResponse}},
+    include_in_schema=False,
+)
 @app.get(
     "/health",
     response_model=models.HealthResponse,
@@ -246,32 +260,34 @@ async def healthcheck():
 
 @app.post(
     "/telemetry",
-    response_model=models.Telemetry,
     summary="Ingest a Nextflow weblog event",
     description=(
-        "Receives a single event from Nextflow's `-with-weblog` reporter and persists it to the "
-        "raw `telemetry` table. Depending on `event` type the server also updates higher-level "
-        "state: `started` → marks the workflow run as running; `process_completed` on the "
-        "`MARK_COMPLETE` sentinel process → marks the individual sample job as completed; "
-        "`completed` → closes the run and sweeps any unfinished jobs (retry or dead-letter). "
-        "Returns the parsed event so Nextflow can confirm receipt."
+        "Receives a single event from Nextflow's `-with-weblog` reporter (unauthenticated: the reporter "
+        "cannot send headers). Depending on `event` type the server updates run and job state: "
+        "`started` → the run is running; `process_completed` on the `MARK_COMPLETE` sentinel process → "
+        "the sample's job is completed; `completed` → closes the run and sweeps unfinished jobs (retry or "
+        "dead-letter). Production reporters post to the edge Worker, which archives the event; events "
+        "posted here are applied but not archived. Returns the event body."
     ),
     tags=["telemetry"],
 )
-async def telemetry(body: models.Telemetry):
-    # Strip large non-serialisable timezone blobs Nextflow sometimes includes
-    if isinstance(body.metadata, dict):
+async def telemetry(request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    # Nextflow sometimes ships the entire tz database inside a weblog event.
+    for key in ("start", "complete"):
         try:
-            del body.metadata["workflow"]["start"]["offset"]["availableZoneIds"]
-        except (KeyError, TypeError):
-            pass
-        try:
-            del body.metadata["workflow"]["complete"]["offset"]["availableZoneIds"]
+            del body["metadata"]["workflow"][key]["offset"]["availableZoneIds"]
         except (KeyError, TypeError):
             pass
 
     logger.debug(body)
-    await telemetry_service.ingest(body)
+    async with engine.begin() as conn:
+        await transitions.apply_weblog_event(conn, body, now=datetime.now(timezone.utc))
     return body
 
 

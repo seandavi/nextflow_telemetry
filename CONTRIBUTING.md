@@ -61,7 +61,7 @@ cd frontend && npm install   # Frontend dependencies
 ```bash
 just up-db      # Start PostgreSQL via Docker Compose
 just migrate    # Run Alembic migrations
-just run        # Start the API server with hot reload
+just run        # Start the API server with hot reload (BLOB_STORE_URL is required; this defaults it to ./.blobs)
 ```
 
 For the frontend:

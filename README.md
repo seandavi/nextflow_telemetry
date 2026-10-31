@@ -259,7 +259,7 @@ Manager through `gcloud`. Without it they use a local file catalog for dev and t
 uv sync --group dev      # install Python dependencies
 just up-db               # start PostgreSQL via Docker Compose
 just migrate             # run Alembic migrations
-just run                 # start the API server (hot reload)
+just run                 # start the API server (hot reload); BLOB_STORE_URL is required, `just run` defaults it to ./.blobs
 
 cd frontend && npm install && npm run dev   # frontend dev server
 ```
@@ -277,12 +277,15 @@ just seed       # seed sample catalog from ArtachoA_2021_sample.tsv
 
 `contract/` is a black-box pytest + httpx suite for the control-plane API (#372, ADR-0013
 M2). It needs only a base URL and a token. It passes against a local v2 (the Worker in
-`cf/` on miniflare), and the move to Postgres (M3) is done when it passes against the
-Python service. Response shapes are checked against Pydantic mirrors of `cf/src/schemas.ts`.
+`cf/` on miniflare) and against the Python service on Postgres (M3). Response shapes are
+checked against Pydantic mirrors of `cf/src/schemas.ts`.
 
 ```bash
 just v2-local   # terminal A: local Worker with 6 s claim and liveness deadlines
 just contract   # terminal B: the whole suite against it
+
+just pg-local   # terminal A: throwaway Postgres + the Python API on :8000
+just contract http://127.0.0.1:8000 contract-token ""   # terminal B: the timer tier waits for M4's sweep
 ```
 
 | Variable | Default | Meaning |
@@ -290,7 +293,8 @@ just contract   # terminal B: the whole suite against it
 | `CONTRACT_BASE_URL` | required | Origin root, no `/api`, no trailing slash |
 | `CONTRACT_EVENT_URL` | `CONTRACT_BASE_URL` | Root that receives `/telemetry`, run events and task logs (the edge Worker after M5) |
 | `CONTRACT_TOKEN` | unset | Bearer token for origin writes; enables `test_auth.py` |
-| `CONTRACT_ALLOW_WRITES` | unset | `1` enables the tests marked `writes` |
+| `CONTRACT_ALLOW_WRITES` | unset | `1` enables the tests marked `writes`; the target must be loopback or `CONTRACT_DISPOSABLE_HOST` |
+| `CONTRACT_DISPOSABLE_HOST` | unset | A non-loopback host that is safe to write to (never a production host) |
 | `CONTRACT_FAST_CLOCK_SECONDS` | unset | Longest time the target takes to fire any deadline; enables `test_timers.py` |
 | `CONTRACT_EVENT_LAG_SECONDS` | `5` | How long to poll for state driven by an event |
 
@@ -302,26 +306,28 @@ against a local v2 on every PR (`.github/workflows/contract.yml`).
 
 ### API reference
 
-Two APIs serve different concerns. The **v2 control plane** keeps the v1 wire paths for
-dispatch, runs, telemetry, task logs, daemons and process metrics; its endpoint status is
-in [`cf/README.md`](cf/README.md#endpoint-status). The **catalog service** (this FastAPI
-app) has interactive OpenAPI docs at `/docs`. The table lists its routers. Production
-clusters and the dashboard use v2 for the dispatch-side groups; the v1 copies retire
-under [ADR 0009](docs/adr/0009-catalog-in-postgres-control-plane-in-worker.md).
+The **catalog service** (this FastAPI app) has interactive OpenAPI docs at `/docs`. Under
+[ADR 0013](docs/adr/0013-postgres-control-plane-edge-event-sink.md) it is also the
+control plane: dispatch, registration, runs, task logs, daemons and workflows run on
+Postgres with the same wire paths as the Worker in `cf/`, whose endpoint status is in
+[`cf/README.md`](cf/README.md#endpoint-status). Until the clients and dashboard move
+(M8, M9) production still talks to the Worker. Control writes need
+`Authorization: Bearer $DISPATCH_TOKEN`; the event routes do not.
 
 | Group | Endpoints |
 |-------|-----------|
 | Telemetry ingest | `POST /telemetry` (Nextflow `-with-weblog`) |
 | Run-lifecycle events | `POST /api/runs/{run_name}/event` (wrapper, pipeline hooks, daemon sacct polling) |
+| Health | `GET /health`, `GET /api/health` |
 | Dispatch | `POST /dispatch/batch`, `/dispatch/submitted`, `/dispatch/requeue-expired` |
-| Samples | `GET/POST /samples`, `GET /samples/{id}`, `GET /samples/by-srr/{srr}`, `GET /samples/by-biosample/{id}` |
-| Workflows | `GET/POST /workflows`, `PATCH /workflows/{pk}/status`, `/revision`, `GET /workflows/{pk}/job-summary` |
+| Samples | `GET/POST /samples`, `POST /samples/bulk` (NDJSON or TSV), `GET /samples/{id}`, `GET /samples/by-srr/{srr}`, `GET /samples/by-biosample/{id}` |
+| Workflows | `GET/POST /workflows`, `PATCH /workflows/{pk}/status`, `/revision`, `GET /workflows/{pk}/job-summary`, `/jobs` |
 | Cohorts | `GET /cohorts`, `/cohorts/{id}/summary`, `/cohorts/{id}/failures` |
 | Process metrics | `GET /metrics/processes/running`, `/summary`, `/failures`, `/retries`, `/resources-by-attempt`, `/failure-signatures`, `/timeline`, `/tasks` |
 | Task logs | `POST /task-logs`, `GET /task-logs/{run_name}/{task_hash}` |
-| Daemons | `GET /daemons/`, `POST /daemons/heartbeat` |
+| Daemons | `GET /daemons/`, `PUT /daemons/heartbeat` |
 | Curated | `GET/POST /curated/studies`, `/curated/samples` |
-| Admin | `POST /admin/reconcile-jobs`, `/admin/expire-stale-runs`, `GET /admin/stats` |
+| Admin | `POST /admin/reconcile-jobs`, `/admin/close-run`, `/admin/requeue-dead-letter`, `GET /admin/dead-letter`, `/admin/stats`; `POST /admin/expire-stale-runs` and `/admin/heartbeat-watchdog` are deprecated no-ops (deadlines are per run) |
 | Submissions | `POST /submissions` (study by accession), `GET /submissions/{submission_id}` |
 | Auth | `GET /auth/login`, `/auth/callback`, `/auth/me`, `POST /auth/logout` (Google OAuth) |
 

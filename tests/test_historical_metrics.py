@@ -190,3 +190,39 @@ async def test_refresh_reads_only_new_files_and_asks_v2_once_per_run(svc, archiv
     _write(tmp_path, NOW.date().isoformat(), "130000-more.ndjson.gz", [_task("run-a", "s9", "humann", "COMPLETED")])
     assert (await svc.tasks(window_days=10000))["total"] == 8
     assert v2_calls == [{"run-a", "run-b"}]
+
+
+def _flow(run, event, task_id, process):
+    return {
+        "run_name": run, "run_id": f"id-{run}", "event": event, "source": "weblog", "sample_id": "s1",
+        "process": process, "utc_time": NOW.isoformat(), "received_at": NOW.isoformat(),
+        "payload": {"runName": run, "event": event, "trace": {"task_id": task_id, "process": process, "status": "RUNNING"}},
+    }
+
+
+async def test_running_counts_tasks_of_running_runs(archive, tmp_path, db_asyncpg_url):
+    from sqlalchemy import insert
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from nextflow_telemetry.control_db import runs_tbl
+
+    engine = create_async_engine(db_asyncpg_url)
+    async with engine.begin() as conn:
+        await conn.execute(insert(runs_tbl).values(run_name="run-a", status="running", claimed_at=NOW))
+        await conn.execute(insert(runs_tbl).values(run_name="run-b", status="completed", claimed_at=NOW, completed_at=NOW))
+    live = [
+        *(_flow("run-a", e, "11", "kneaddata") for e in ("process_submitted", "process_started")),
+        *(_flow("run-a", e, "12", "kneaddata") for e in ("process_submitted",)),
+        *(_flow("run-a", e, "13", "humann") for e in ("process_submitted", "process_started", "process_completed")),
+        *(_flow("run-b", e, "14", "kneaddata") for e in ("process_submitted", "process_started")),
+    ]
+    _write(tmp_path, NOW.date().isoformat(), "140000-live.ndjson.gz", live)
+    try:
+        body = models.RunningProcessesResponse.model_validate(
+            await ProcessMetricsService(engine=engine, archive=archive).running()
+        )
+    finally:
+        await engine.dispose()
+
+    assert (body.active_nf_runs, body.total_running, body.total_queued) == (1, 1, 1)
+    assert [(p.process, p.running, p.queued) for p in body.by_process] == [("kneaddata", 1, 1)]

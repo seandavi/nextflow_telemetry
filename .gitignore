@@ -208,3 +208,6 @@ client-local-v2.yaml
 
 # Ephemeral Agent Workspace
 .task/
+
+# Local blob store for `just run` (BLOB_STORE_URL)
+.blobs/

@@ -23,9 +23,10 @@ class Settings:
     OAUTH_CLIENT_SECRET: str
     OAUTH_REDIRECT_URI: str
     SESSION_SECRET: str
-    # Machine auth for nf-client dispatch endpoints. When empty, require_service
-    # is permissive (logs a one-time warning) so daemons keep working during
-    # the rollout window. Flip from empty → populated to enforce.
+    # Bearer token for every control-plane write (ADR-0013 §6): dispatch,
+    # registration, workflows, daemons, admin. The event routes are exempt. Set to
+    # the v2 API token (GSM cdsci-nf-telemetry-v2-api-token). When empty,
+    # require_service is permissive (logs a one-time warning).
     DISPATCH_TOKEN: str
     # Operator/CI auth for mutating catalog endpoints (e.g. POST /submissions).
     # Separate from DISPATCH_TOKEN so operator/CI credentials and the daemon's
@@ -67,6 +68,10 @@ class Settings:
     RETIRED_ARCHIVE_ENABLED: bool
     # Directory (r2:// or local path) for retired versions' gzipped NDJSON jobs.
     RETIRED_ARCHIVE_URL: str
+    # Where task logs and run logs live: r2://<bucket>, or a local directory path.
+    # No default: the service refuses to start without it, so a dev or contract
+    # run can never write into the production bucket the Worker owns.
+    BLOB_STORE_URL: str
 
 settings = Settings(
     SQLALCHEMY_URI=_normalize_sqlalchemy_uri(
@@ -92,6 +97,7 @@ settings = Settings(
     CLAIM_TTL_MINUTES=float(os.environ.get("CLAIM_TTL_MINUTES", "5")),
     SUBMIT_BACKSTOP_HOURS=float(os.environ.get("SUBMIT_BACKSTOP_HOURS", "168")),
     LIVENESS_MINUTES=float(os.environ.get("LIVENESS_MINUTES", "10")),
+    BLOB_STORE_URL=os.environ.get("BLOB_STORE_URL", ""),
     DEADLINE_SWEEP_SECONDS=float(os.environ.get("DEADLINE_SWEEP_SECONDS", "30")),
     DEADLINE_SWEEP_ENABLED=_as_bool(os.environ.get("DEADLINE_SWEEP_ENABLED", "0")),
     RETIRED_ARCHIVE_ENABLED=_as_bool(os.environ.get("RETIRED_ARCHIVE_ENABLED", "0")),

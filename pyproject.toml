@@ -22,6 +22,7 @@ dependencies = [
     "duckdb>=1.5.2,<2.0.0",       # historical metrics tier + output-catalog ETL (DuckLake 1.0 sorted tables)
     "cdsci-lake @ git+https://github.com/seandavi/cdsci-lake@0f535a752cce3b4b4f0ebdc7cb99faa79a8fe35b", # shared lake + publish_release
     "huggingface-hub>=2.2.0",
+    "obstore>=0.12.1,<0.13.0",
 ]
 
 [project.scripts]

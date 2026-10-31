@@ -23,7 +23,7 @@
 - `docker compose --profile all up -d`: Start API + pgAdmin (external Postgres).
 - `docker compose --profile api up -d`: Start API service only (external DB expected).
 - `uv sync --group dev`: Install Python dependencies for local development.
-- `uv run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000`: Run API locally.
+- `uv run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000`: Run API locally (`BLOB_STORE_URL` is required: a local directory or `r2://<bucket>`; `just run` defaults it to `./.blobs`).
 - `curl -X POST ... http://localhost:8000/telemetry`: Send a sample telemetry event (see `README.md` for full payload).
 - `uv run mypy nextflow_telemetry`: Type-check core package.
 - `uv run pytest`: Run API tests in `tests/`.

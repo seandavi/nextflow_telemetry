@@ -5,10 +5,11 @@ Three flavors:
 - ``get_current_user``  — optional; returns the logged-in user or None.
 - ``require_role``      — factory; raises 401/403 unless the user has the role
                           (admin implies contributor).
-- ``require_service``   — bearer-token gate for nf-client dispatch endpoints.
-                          When ``DISPATCH_TOKEN`` is empty, allows all
-                          (logs a one-time warning) so we can ship the check
-                          before daemons have been updated.
+- ``require_service``   — bearer-token gate for every control-plane write
+                          (dispatch, registration, workflows, daemons, admin;
+                          ADR-0013 §6). The event routes are exempt. When
+                          ``DISPATCH_TOKEN`` is empty, allows all (logs a
+                          one-time warning).
 """
 from __future__ import annotations
 
@@ -118,11 +119,11 @@ def require_role_or_token(required: str):
 
 
 async def require_service(authorization: str | None = Header(default=None)) -> None:
-    """Bearer-token gate for daemon endpoints.
+    """Bearer-token gate for every control-plane write.
 
     When ``settings.DISPATCH_TOKEN`` is empty we let the request through and log
-    a one-time warning. This makes the API safe to deploy ahead of daemons
-    being updated to send the token. Flip the env var to enforce.
+    a one-time warning, so a deployment without the token is open. Set it to
+    the v2 API token to enforce.
     """
     global _service_auth_warned
     if not settings.DISPATCH_TOKEN:

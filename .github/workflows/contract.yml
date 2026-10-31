@@ -39,3 +39,40 @@ jobs:
         run: uv run pytest contract -v
       - if: failure()
         run: cat "$RUNNER_TEMP/wrangler.log"
+  pg-local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      SQLALCHEMY_URI: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      DISPATCH_TOKEN: contract-token
+      CLAIM_TTL_MINUTES: "0.1"
+      LIVENESS_MINUTES: "0.1"
+      V2_API_URL: http://127.0.0.1:8000/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: uv sync --group dev --frozen
+      - run: uv run alembic upgrade head
+      - name: Start the service (env matches `just pg-local`)
+        run: |
+          mkdir -p "$RUNNER_TEMP/events" "$RUNNER_TEMP/blobs"
+          BLOB_STORE_URL="$RUNNER_TEMP/blobs" EVENTS_ARCHIVE_URL="$RUNNER_TEMP/events" \
+            uv run uvicorn nextflow_telemetry.main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
+          for i in $(seq 60); do curl -sf http://127.0.0.1:8000/api/health && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/api.log"; exit 1
+      - name: Contract suite (timer tier waits for M4)
+        env:
+          CONTRACT_BASE_URL: http://127.0.0.1:8000
+          CONTRACT_TOKEN: contract-token
+          CONTRACT_ALLOW_WRITES: "1"
+        run: uv run pytest contract -v
+      - if: failure()
+        run: cat "$RUNNER_TEMP/api.log"

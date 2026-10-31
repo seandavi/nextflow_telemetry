@@ -11,9 +11,12 @@ from contract.support import Target, target_from_env
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "writes: mutates the target; needs CONTRACT_ALLOW_WRITES=1")
     config.addinivalue_line("markers", "fast_clock: needs CONTRACT_FAST_CLOCK_SECONDS")
+    config.addinivalue_line("markers", "offline: needs no target")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    if all("offline" in item.keywords for item in items):
+        return
     try:
         target = target_from_env(os.environ)
     except ValueError as err:

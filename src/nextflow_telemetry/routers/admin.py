@@ -1,332 +1,145 @@
-"""Admin router — operational endpoints for reconciliation and maintenance."""
+"""Admin router: reconcile, reset, close, requeue and the operator reads (ADR-0013 #373)."""
 from __future__ import annotations
 
-import datetime
-
-from fastapi import APIRouter, HTTPException
-from sqlalchemy import func, select
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ..db import daemon_agents_tbl, dead_letter_tbl, jobs_tbl, samples_tbl, workflow_runs_tbl, workflows_tbl
-from ..services import lifecycle
-from ..services.lifecycle import RUN_TERMINAL_STATUSES, JobStatus, RunStatus
-from ..services.reconcile import ReconcileService
-
-# Keep in sync with routers/daemons.ACTIVE_THRESHOLD — a daemon is "active" if
-# its last heartbeat is within this window.
-_DAEMON_ACTIVE_THRESHOLD = datetime.timedelta(minutes=2)
-
-# Default staleness window for the heartbeat watchdog. Matches the read-only
-# "stalled" classifier in routers/runs.py (_RUN_STALE_THRESHOLD = 15 min). The
-# nf-client run wrapper heartbeats every 60s, so 15 min ≈ 15 missed beats.
-_HEARTBEAT_STALE_MINUTES_DEFAULT = 15.0
+from ..control_models import (
+    ClosedRun,
+    CloseRunRequest,
+    DeadLetterList,
+    Dispatchability,
+    ExpiredStaleRuns,
+    HeartbeatWatchdog,
+    Reconciled,
+    RequeueDeadLetterRequest,
+    RequeuedDeadLetter,
+    ResetRunning,
+    Stats,
+)
+from ..deps import require_service
+from ..services import control_reads, transitions
+from .control_route import ControlRoute, clamp, utcnow
 
 
 def create_admin_router(engine: AsyncEngine) -> APIRouter:
-    router = APIRouter(prefix="/admin", tags=["admin"])
-    reconcile_svc = ReconcileService(engine=engine)
+    router = APIRouter(prefix="/admin", tags=["admin"], route_class=ControlRoute)
 
     @router.post(
         "/reconcile-jobs",
-        summary="Reconcile the jobs table",
+        response_model=Reconciled,
+        dependencies=[Depends(require_service)],
+        summary="Create pending jobs for samples × active workflow versions",
         description=(
-            "Scans the cross-product of all registered samples and all `active` workflows, "
-            "then inserts a `pending` job for every (sample, workflow_id, version) triple that "
-            "does not yet have one. Uses `ON CONFLICT DO NOTHING` so it is safe to call repeatedly "
-            "and is idempotent. "
-            "Call this after registering new samples or activating a new workflow version to ensure "
-            "the dispatch pool is up to date."
+            "One set-based statement. A workflow's `collections` scope limits its samples; a readset-keyed "
+            "workflow gets one job per readset. Idempotent."
         ),
     )
     async def reconcile_jobs():
-        created = await reconcile_svc.reconcile_jobs()
-        return {"jobs_created": created}
+        async with engine.begin() as conn:
+            return {"jobs_created": await transitions.reconcile_jobs(conn)}
 
     @router.post(
         "/reset-running",
-        summary="Reset stuck running jobs to pending",
-        description=(
-            "Resets all jobs in 'running' or 'failed' state back to 'pending' for a given "
-            "workflow, and clears their run_name and retry_count. Use after infrastructure "
-            "failures where Nextflow crashed without sending a completion weblog event and you "
-            "want to give the samples a clean slate regardless of retry budget."
-        ),
+        response_model=ResetRunning,
+        dependencies=[Depends(require_service)],
+        summary="Reset running and failed jobs of a workflow to pending",
     )
-    async def reset_running(workflow_pk: int):
+    async def reset_running(workflow_pk: int | None = None):
+        if workflow_pk is None:
+            raise HTTPException(status_code=422, detail="workflow_pk is required")
         async with engine.begin() as conn:
-            count = await lifecycle.reset_jobs_to_pending(
-                conn, workflow_pk, [JobStatus.running, JobStatus.failed]
-            )
-        return {"reset": count}
+            return {"reset": await transitions.reset_jobs_to_pending(conn, workflow_pk, now=utcnow())}
 
     @router.post(
         "/close-run",
-        summary="Close a workflow run and sweep incomplete jobs",
-        description=(
-            "Marks a workflow run as `completed` (if not already in a terminal state) and "
-            "sweeps any jobs still in `running` or `claimed` state: jobs within their retry "
-            "budget are reset to `pending`; exhausted jobs are failed to the dead-letter queue. "
-            "Idempotent — safe to call even if the run already received a Nextflow `completed` "
-            "weblog event. Called unconditionally from the SLURM submit script after Nextflow "
-            "exits so that crashes and hard kills are always cleaned up."
-        ),
+        response_model=ClosedRun,
+        dependencies=[Depends(require_service)],
+        summary="Force-close a run as completed and sweep its jobs",
+        description="`run_name` as a query parameter or in the JSON body.",
     )
-    async def close_run(run_name: str):
-        now = datetime.datetime.now(datetime.timezone.utc)
+    async def close_run(run_name: str | None = Query(None), req: CloseRunRequest | None = Body(None)):
+        name = run_name or (req.run_name if req else None)
+        if not name:
+            raise HTTPException(status_code=422, detail="run_name is required")
         async with engine.begin() as conn:
-            prior_status = await lifecycle.close_run(conn, run_name, RunStatus.completed, now)
-
-            if prior_status is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No workflow run with name '{run_name}'",
-                )
-
-            already_closed = prior_status in RUN_TERMINAL_STATUSES
-
-            swept = await lifecycle.sweep_incomplete(conn, run_name, now)
-
-        return {
-            "run_name": run_name,
-            "already_closed": already_closed,
-            "swept": swept,
-        }
+            closed = await transitions.close_run(conn, name, "completed", None, now=utcnow())
+        if closed is None:
+            raise HTTPException(status_code=404, detail=f"No workflow run with name '{name}'")
+        return {"run_name": name, "already_closed": closed.already_closed, "swept": closed.swept}
 
     @router.post(
         "/expire-stale-runs",
-        summary="Close workflow runs stuck in a non-terminal state",
-        description=(
-            "Finds workflow runs that have been in `running` or `submitted` state for longer "
-            "than `older_than_hours` hours and closes them, sweeping any associated jobs "
-            "through the retry/dead-letter logic. Use this to recover from batches of runs "
-            "that crashed without sending a Nextflow `completed` event before the SLURM "
-            "close-run hook was in place."
-        ),
+        response_model=ExpiredStaleRuns,
+        dependencies=[Depends(require_service)],
+        deprecated=True,
+        summary="Deprecated no-op: run expiry is a per-run deadline",
     )
-    async def expire_stale_runs(older_than_hours: float = 2.0):
-        cutoff = (
-            datetime.datetime.now(datetime.timezone.utc)
-            - datetime.timedelta(hours=older_than_hours)
-        )
-        now = datetime.datetime.now(datetime.timezone.utc)
-        total_swept = 0
-
-        async with engine.begin() as conn:
-            stale = (await conn.execute(
-                select(workflow_runs_tbl.c.run_name)
-                .where(
-                    workflow_runs_tbl.c.status.in_(["running", "submitted"]),
-                    workflow_runs_tbl.c.claimed_at < cutoff,
-                )
-            )).scalars().all()
-
-            for run_name in stale:
-                await lifecycle.close_run(conn, run_name, RunStatus.completed, now)
-                total_swept += await lifecycle.sweep_incomplete(conn, run_name, now)
-
-        return {"stale_runs_closed": len(stale), "jobs_swept": total_swept}
+    async def expire_stale_runs(response: Response):
+        response.headers["Deprecation"] = "true"
+        return {"stale_runs_closed": 0, "jobs_swept": 0}
 
     @router.post(
         "/heartbeat-watchdog",
-        summary="Fail zombie 'running' runs that stopped heartbeating",
-        description=(
-            "Finds runs in `running` state whose most recent liveness signal "
-            "(`last_heartbeat_at`, falling back to `started_at`) is older than "
-            "`stale_after_minutes`, marks each `failed`, and sweeps its jobs "
-            "through the retry/dead-letter logic. This is the real backstop for "
-            "SLURM walltime-TIMEOUT and node failures, where the run wrapper (and "
-            "its heartbeat thread) is killed but no Nextflow `completed` event is "
-            "ever sent — so the run would otherwise sit `running` forever. "
-            "Intended to be called periodically (cron / daemon loop). "
-            "Deliberately does NOT touch `submitted` runs: those are queued in "
-            "SLURM and legitimately have no heartbeat yet (queue wait, e.g. behind "
-            "a maintenance reservation); the coarse `expire-stale-runs` covers that."
-        ),
+        response_model=HeartbeatWatchdog,
+        dependencies=[Depends(require_service)],
+        deprecated=True,
+        summary="Deprecated no-op: liveness is a per-run deadline",
     )
-    async def heartbeat_watchdog(stale_after_minutes: float = _HEARTBEAT_STALE_MINUTES_DEFAULT):
-        now = datetime.datetime.now(datetime.timezone.utc)
-        cutoff = now - datetime.timedelta(minutes=stale_after_minutes)
-        # Fresh heartbeats keep this in the future of the cutoff; a wrapper that
-        # died stops updating it, so it falls behind. started_at is the fallback
-        # for a run that reached 'running' before its first heartbeat landed.
-        signal = func.coalesce(
-            workflow_runs_tbl.c.last_heartbeat_at,
-            workflow_runs_tbl.c.started_at,
-        )
-        reason = f"heartbeat watchdog: no heartbeat for >{stale_after_minutes:g} min"
-        swept_runs: list[dict] = []
-        total_swept = 0
-
-        async with engine.begin() as conn:
-            stale = (await conn.execute(
-                select(workflow_runs_tbl.c.run_name, signal.label("last_signal"))
-                .where(
-                    workflow_runs_tbl.c.status == "running",
-                    signal < cutoff,
-                )
-            )).all()
-
-            for r in stale:
-                await lifecycle.close_run(conn, r.run_name, RunStatus.failed, now, reason=reason)
-                jobs = await lifecycle.sweep_incomplete(conn, r.run_name, now)
-                total_swept += jobs
-                swept_runs.append({
-                    "run_name": r.run_name,
-                    "last_signal_at": r.last_signal,
-                    "jobs_swept": jobs,
-                })
-
-        return {
-            "checked_at": now,
-            "stale_after_minutes": stale_after_minutes,
-            "stale_runs_failed": len(stale),
-            "jobs_swept": total_swept,
-            "runs": swept_runs,
-        }
+    async def heartbeat_watchdog(response: Response):
+        response.headers["Deprecation"] = "true"
+        return {"checked_at": utcnow(), "stale_after_minutes": 0, "stale_runs_failed": 0, "jobs_swept": 0, "runs": []}
 
     @router.post(
         "/requeue-dead-letter",
-        summary="Requeue dead-letter jobs",
+        response_model=RequeuedDeadLetter,
+        dependencies=[Depends(require_service)],
+        summary="Return dead-lettered jobs to pending",
         description=(
-            "Moves all unresolved dead-letter entries back to `pending` by resetting the "
-            "associated job status and retry_count, then marks the dead_letter row as resolved. "
-            "Use this to recover samples that were dead-lettered due to infrastructure failures "
-            "rather than application errors."
+            "Optional filters in the JSON body: `workflow_pk`, `collection`, `job_ids`. No body, or `{}`, "
+            "requeues every unresolved row. Only jobs still `failed` move; every matching row is resolved."
         ),
     )
-    async def requeue_dead_letter():
-        now = datetime.datetime.now(datetime.timezone.utc)
+    async def requeue_dead_letter(req: RequeueDeadLetterRequest | None = Body(None)):
+        req = req or RequeueDeadLetterRequest()
         async with engine.begin() as conn:
-            rows = (await conn.execute(
-                select(dead_letter_tbl.c.id, dead_letter_tbl.c.job_id)
-                .where(dead_letter_tbl.c.resolved_at.is_(None))
-            )).all()
+            requeued = await transitions.requeue_dead_letter(
+                conn, workflow_pk=req.workflow_pk, collection=req.collection, job_ids=req.job_ids, now=utcnow()
+            )
+        return {"requeued": requeued}
 
-            if not rows:
-                return {"requeued": 0}
-
-            job_ids = [r.job_id for r in rows]
-            dlq_ids = [r.id for r in rows]
-
-            count = await lifecycle.requeue_dead_letter(conn, job_ids, dlq_ids, now)
-
-        return {"requeued": count}
+    @router.get(
+        "/dead-letter",
+        response_model=DeadLetterList,
+        summary="Dead-lettered jobs, newest first",
+        description="Filter by `workflow_pk`, `collection` and `resolved` (omit for both).",
+    )
+    async def list_dead_letter(
+        workflow_pk: int | None = None,
+        collection: str | None = None,
+        resolved: bool | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        limit, offset = clamp(limit, 1, 1000), max(0, offset)
+        async with engine.connect() as conn:
+            items, total = await control_reads.list_dead_letter(
+                conn, workflow_pk=workflow_pk, collection=collection, resolved=resolved, limit=limit, offset=offset
+            )
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
 
     @router.get(
         "/dispatchability",
-        summary="Find pending work that no active daemon will claim",
-        description=(
-            "Cross-checks pending jobs on `active` workflows against the set of currently "
-            "active daemons (heartbeat within the last 2 minutes) and their `workflow_id` "
-            "claim filters. Returns the workflows that have pending jobs but no active daemon "
-            "configured to claim them — i.e. work that will silently sit forever. This is the "
-            "fast answer to 'why isn't anything running?' when a daemon has died."
-        ),
+        response_model=Dispatchability,
+        summary="Pending work no active daemon can claim",
     )
     async def dispatchability():
-        now = datetime.datetime.now(datetime.timezone.utc)
-        async with engine.begin() as conn:
-            pending_rows = (await conn.execute(
-                select(
-                    jobs_tbl.c.workflow_pk,
-                    jobs_tbl.c.workflow_id,
-                    func.count().label("pending"),
-                )
-                .select_from(jobs_tbl.join(workflows_tbl, jobs_tbl.c.workflow_pk == workflows_tbl.c.id))
-                .where(jobs_tbl.c.status == "pending", workflows_tbl.c.status == "active")
-                .group_by(jobs_tbl.c.workflow_pk, jobs_tbl.c.workflow_id)
-            )).all()
+        async with engine.connect() as conn:
+            return await control_reads.dispatchability(conn, utcnow())
 
-            daemon_rows = (await conn.execute(
-                select(daemon_agents_tbl.c.workflow_id, daemon_agents_tbl.c.last_seen_at)
-            )).all()
-
-        # An active daemon claims a workflow if its filter is empty (claims any)
-        # or the workflow_id is in its comma-separated filter list.
-        active_filters: list[set[str] | None] = []
-        for d in daemon_rows:
-            last_seen = d.last_seen_at
-            if last_seen.tzinfo is None:
-                last_seen = last_seen.replace(tzinfo=datetime.timezone.utc)
-            if (now - last_seen) >= _DAEMON_ACTIVE_THRESHOLD:
-                continue
-            wf = (d.workflow_id or "").strip()
-            active_filters.append({x.strip() for x in wf.split(",") if x.strip()} if wf else None)
-
-        def claimed_by_active(workflow_id: str) -> bool:
-            return any(f is None or workflow_id in f for f in active_filters)
-
-        stuck = [
-            {
-                "workflow_id": r.workflow_id,
-                "workflow_pk": r.workflow_pk,
-                "pending": r.pending,
-                "reason": "no active daemon claims this workflow",
-            }
-            for r in pending_rows
-            if not claimed_by_active(r.workflow_id)
-        ]
-
-        return {
-            "checked_at": now,
-            "active_daemons": len(active_filters),
-            "stuck": stuck,
-            "stuck_pending_total": sum(s["pending"] for s in stuck),
-        }
-
-    @router.get(
-        "/stats",
-        summary="Summary counts across the catalog and dispatch tables",
-        description=(
-            "Returns total sample/workflow counts, jobs grouped by status, "
-            "workflow runs grouped by status, and the count of unresolved "
-            "dead-letter entries. `jobs_by_status` counts every job across all "
-            "workflow versions (including retired ones); `jobs_by_status_active` "
-            "counts only jobs under a currently-active workflow version — the "
-            "actionable numbers, undiluted by orphaned retired-version jobs "
-            "(#114/#116). Lightweight — used by `nf-client stats` to give "
-            "operators a one-shot system overview."
-        ),
-    )
+    @router.get("/stats", response_model=Stats, summary="Counts of samples, workflows, jobs, runs and dead letters")
     async def stats():
-        async with engine.begin() as conn:
-            samples_total = (await conn.execute(
-                select(func.count()).select_from(samples_tbl)
-            )).scalar_one()
-            workflows_total = (await conn.execute(
-                select(func.count()).select_from(workflows_tbl)
-            )).scalar_one()
-            jobs_rows = (await conn.execute(
-                select(jobs_tbl.c.status, func.count())
-                .group_by(jobs_tbl.c.status)
-            )).all()
-            # Same breakdown, but only jobs whose workflow version is active.
-            # workflow_pk identifies the exact (workflow_id, version) row, so the
-            # join is precise — retired-version jobs are excluded (#114/#116).
-            jobs_active_rows = (await conn.execute(
-                select(jobs_tbl.c.status, func.count())
-                .select_from(
-                    jobs_tbl.join(workflows_tbl, jobs_tbl.c.workflow_pk == workflows_tbl.c.id)
-                )
-                .where(workflows_tbl.c.status == "active")
-                .group_by(jobs_tbl.c.status)
-            )).all()
-            runs_rows = (await conn.execute(
-                select(workflow_runs_tbl.c.status, func.count())
-                .group_by(workflow_runs_tbl.c.status)
-            )).all()
-            dlq_unresolved = (await conn.execute(
-                select(func.count()).select_from(dead_letter_tbl)
-                .where(dead_letter_tbl.c.resolved_at.is_(None))
-            )).scalar_one()
-
-        return {
-            "samples": samples_total,
-            "workflows": workflows_total,
-            "jobs_by_status": {status: count for status, count in jobs_rows},
-            "jobs_by_status_active": {status: count for status, count in jobs_active_rows},
-            "runs_by_status": {status: count for status, count in runs_rows},
-            "dead_letter_unresolved": dlq_unresolved,
-        }
+        async with engine.connect() as conn:
+            return await control_reads.stats(conn)
 
     return router

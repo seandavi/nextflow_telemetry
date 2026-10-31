@@ -6,6 +6,7 @@ scheduler state — those decisions belong to the caller.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import httpx
@@ -152,6 +153,22 @@ class JobClient:
         if biosample_id:
             body["biosample_id"] = biosample_id
         response = await self._client.post("samples", json=body)
+        response.raise_for_status()
+        return response.json()
+
+    async def register_samples_bulk(self, rows: list[dict]) -> dict | None:
+        """Register many samples in one request (``POST /samples/bulk``, NDJSON).
+
+        Returns the server's counts, or None when the server has no bulk route
+        (404 or 405), so the caller can fall back to ``register_sample``.
+        """
+        body = "\n".join(json.dumps(r) for r in rows) + "\n"
+        response = await self._client.post(
+            "samples/bulk", content=body, headers={"Content-Type": "application/x-ndjson"},
+            timeout=SUBMISSION_TIMEOUT_S,
+        )
+        if response.status_code in (404, 405):
+            return None
         response.raise_for_status()
         return response.json()
 

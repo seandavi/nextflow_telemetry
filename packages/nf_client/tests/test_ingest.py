@@ -39,6 +39,7 @@ async def test_ingest_rows_skips_non_accession_and_falls_back_to_study_name(conf
         {"ncbi_accession": "SRR200;SRR201", "study_name": "StudyB", "biosample": "SAMN1"},
     ]
     with respx.mock(base_url="http://test.local") as mock:
+        mock.post("/samples/bulk").mock(return_value=httpx.Response(404))
         route = mock.post("/samples").mock(return_value=httpx.Response(201, json={}))
         async with JobClient(config) as client:
             result = await _ingest_rows(client, rows, collection=None, limit=None)
@@ -55,6 +56,7 @@ async def test_ingest_rows_skips_non_accession_and_falls_back_to_study_name(conf
 async def test_ingest_rows_explicit_collection_and_limit(config: ClientConfig):
     rows = [{"ncbi_accession": f"SRR{i}", "study_name": "Ignored"} for i in range(5)]
     with respx.mock(base_url="http://test.local") as mock:
+        mock.post("/samples/bulk").mock(return_value=httpx.Response(404))
         route = mock.post("/samples").mock(return_value=httpx.Response(201, json={}))
         async with JobClient(config) as client:
             result = await _ingest_rows(client, rows, collection="Fixed", limit=3)
@@ -68,9 +70,60 @@ async def test_ingest_rows_counts_unattached(config: ClientConfig):
     # No --collection and a blank study_name → registered but in no collection.
     rows = [{"ncbi_accession": "SRR1", "study_name": ""}]
     with respx.mock(base_url="http://test.local") as mock:
+        mock.post("/samples/bulk").mock(return_value=httpx.Response(404))
         route = mock.post("/samples").mock(return_value=httpx.Response(201, json={}))
         async with JobClient(config) as client:
             result = await _ingest_rows(client, rows, collection=None, limit=None)
 
     assert result == {"registered": 1, "skipped": 0, "unattached": 1}
     assert "collection" not in json.loads(route.calls.last.request.content)
+
+
+@pytest.mark.asyncio
+async def test_ingest_rows_uses_bulk_when_supported(config: ClientConfig):
+    rows = [
+        {"ncbi_accession": "SRR100", "study_name": "StudyA"},
+        {"ncbi_accession": "Not applicable", "study_name": "StudyA"},  # skipped
+        {"ncbi_accession": "SRR200;SRR201", "study_name": "StudyB", "biosample": "SAMN1"},
+        {"ncbi_accession": "SRR300", "study_name": ""},  # no collection
+    ]
+    with respx.mock(base_url="http://test.local", assert_all_called=False) as mock:
+        bulk = mock.post("/samples/bulk").mock(return_value=httpx.Response(200, json={"received": 3}))
+        single = mock.post("/samples").mock(return_value=httpx.Response(201, json={}))
+        async with JobClient(config) as client:
+            result = await _ingest_rows(client, rows, collection=None, limit=None)
+
+    assert result == {"registered": 3, "skipped": 1, "unattached": 1}
+    assert not single.called and bulk.call_count == 1
+    request = bulk.calls.last.request
+    assert request.headers["content-type"] == "application/x-ndjson"
+    lines = [json.loads(line) for line in request.content.decode().splitlines()]
+    assert [set(line) for line in lines] == [
+        {"sample_id", "ncbi_accession", "collection"},
+        {"sample_id", "ncbi_accession", "collection", "biosample_id"},
+        {"sample_id", "ncbi_accession"},
+    ]
+    assert lines[1]["biosample_id"] == "SAMN1" and lines[1]["ncbi_accession"] == "SRR200;SRR201"
+
+
+@pytest.mark.asyncio
+async def test_ingest_rows_falls_back_on_404(config: ClientConfig):
+    rows = [{"ncbi_accession": "SRR100", "study_name": "StudyA"}, {"ncbi_accession": "SRR200", "study_name": "StudyA"}]
+    with respx.mock(base_url="http://test.local") as mock:
+        bulk = mock.post("/samples/bulk").mock(return_value=httpx.Response(404, json={"detail": "Not Found"}))
+        single = mock.post("/samples").mock(return_value=httpx.Response(201, json={}))
+        async with JobClient(config) as client:
+            result = await _ingest_rows(client, rows, collection=None, limit=None)
+
+    assert result == {"registered": 2, "skipped": 0, "unattached": 0}
+    assert bulk.call_count == 1 and single.call_count == 2
+    assert [json.loads(c.request.content)["ncbi_accession"] for c in single.calls] == ["SRR100", "SRR200"]
+
+
+@pytest.mark.asyncio
+async def test_bulk_error_is_not_swallowed(config: ClientConfig):
+    with respx.mock(base_url="http://test.local") as mock:
+        mock.post("/samples/bulk").mock(return_value=httpx.Response(422, json={"detail": "line 2: bad"}))
+        async with JobClient(config) as client:
+            with pytest.raises(httpx.HTTPStatusError):
+                await _ingest_rows(client, [{"ncbi_accession": "SRR1", "study_name": "S"}], collection=None, limit=None)

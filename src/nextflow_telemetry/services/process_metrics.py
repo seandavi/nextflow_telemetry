@@ -5,11 +5,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.concurrency import run_in_threadpool
 
-from . import v2_api
+from . import control_reads, v2_api
 from .event_archive import EventArchive
 
 
@@ -682,60 +681,45 @@ class ProcessMetricsService:
         }
 
     async def running(self) -> dict[str, Any]:
-        """Tasks currently in flight across all active Nextflow runs."""
-        sql = text(
-            """
-            with active_runs as (
-                select run_name from v1_workflow_runs where status = 'running'
-            ),
-            events as (
-                select
-                    t.run_name,
-                    t.trace->>'task_id' as task_id,
-                    coalesce(t.trace->>'process', '<null>') as process,
-                    t.event
-                from v1_telemetry t
-                join active_runs ar on t.run_name = ar.run_name
-                where t.event in ('process_submitted', 'process_started', 'process_completed')
-                  and t.trace is not null
-            ),
-            task_state as (
+        """Tasks currently in flight across all running Nextflow runs.
+
+        The running runs come from the control plane; the per-process counts come from the event
+        archive, so they trail by the archive refresh plus the sink flush.
+        """
+        async with self.engine.connect() as conn:
+            names = await control_reads.active_run_names(conn)
+        rows: list[dict[str, Any]] = []
+        if names:
+            sql = """
+                with task_state as (
+                    select
+                        process,
+                        bool_or(event = 'process_submitted') as is_submitted,
+                        bool_or(event = 'process_started')   as is_started,
+                        bool_or(event = 'process_completed') as is_completed
+                    from telemetry
+                    where list_contains($runs, run_name)
+                      and has_trace
+                      and event in ('process_submitted', 'process_started', 'process_completed')
+                    group by run_name, task_id, process
+                )
                 select
                     process,
-                    bool_or(event = 'process_submitted')  as is_submitted,
-                    bool_or(event = 'process_started')    as is_started,
-                    bool_or(event = 'process_completed')  as is_completed
-                from events
-                group by run_name, task_id, process
-            )
-            select
-                process,
-                count(*) filter (where is_started and not is_completed)          as running,
-                count(*) filter (where is_submitted and not is_started)           as queued
-            from task_state
-            group by process
-            having count(*) filter (where is_started and not is_completed) > 0
-                or count(*) filter (where is_submitted and not is_started) > 0
-            order by running desc, queued desc
+                    count(*) filter (where is_started and not is_completed) as running,
+                    count(*) filter (where is_submitted and not is_started) as queued
+                from task_state
+                group by process
+                having count(*) filter (where is_started and not is_completed) > 0
+                    or count(*) filter (where is_submitted and not is_started) > 0
+                order by running desc, queued desc
             """
-        )
-
-        active_runs_sql = text(
-            "select count(*) as n from v1_workflow_runs where status = 'running'"
-        )
-
-        async with self.engine.connect() as conn:
-            rows = [dict(r) for r in (await conn.execute(sql)).mappings().all()]
-            active_nf_runs = (await conn.execute(active_runs_sql)).scalar_one()
-
-        total_running = sum(r["running"] for r in rows)
-        total_queued  = sum(r["queued"]  for r in rows)
+            rows = await self.archive.fetch(sql, {"runs": names})
 
         return {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-            "active_nf_runs": active_nf_runs,
-            "total_running": total_running,
-            "total_queued": total_queued,
+            "active_nf_runs": len(names),
+            "total_running": sum(r["running"] for r in rows),
+            "total_queued": sum(r["queued"] for r in rows),
             "by_process": rows,
         }
 

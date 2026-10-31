@@ -506,9 +506,10 @@ async def _ingest_rows(
     carry placeholders like "Not applicable"). Membership goes through the
     server's ``collection`` field — never ``metadata.cohort`` (retired).
     """
-    registered = skipped = unattached = 0
+    batch: list[dict] = []
+    skipped = unattached = 0
     for row in rows:
-        if limit is not None and registered >= limit:
+        if limit is not None and len(batch) >= limit:
             break
         acc = (row.get("ncbi_accession") or "").strip()
         sample_id = derive_sample_id(acc)
@@ -518,9 +519,17 @@ async def _ingest_rows(
         coll = collection or (row.get("study_name") or "").strip() or None
         if coll is None:
             unattached += 1  # registered to the catalog but in no collection
-        await client.register_sample(sample_id, ncbi_accession=acc, collection=coll,
-                                     biosample_id=(row.get("biosample") or "").strip() or None)
-        registered += 1
+        biosample = (row.get("biosample") or "").strip() or None
+        fields = {"sample_id": sample_id, "ncbi_accession": acc, "collection": coll, "biosample_id": biosample}
+        batch.append({k: v for k, v in fields.items() if v is not None})
+    registered = len(batch)
+    # One request when the server has the bulk route; per-row POSTs against an older server.
+    if batch and await client.register_samples_bulk(batch) is None:
+        for fields in batch:
+            await client.register_sample(
+                fields["sample_id"], ncbi_accession=fields["ncbi_accession"],
+                collection=fields.get("collection"), biosample_id=fields.get("biosample_id"),
+            )
     return {"registered": registered, "skipped": skipped, "unattached": unattached}
 
 
