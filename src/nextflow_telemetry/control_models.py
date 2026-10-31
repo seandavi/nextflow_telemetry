@@ -250,23 +250,6 @@ class RunEventAccepted(BaseModel):
     wrapper_output_log_uploaded: bool
 
 
-class Cohort(Loose):
-    collection_id: str
-    source: str
-    label: str | None
-    sample_count: int
-
-
-class CohortSummary(Loose):
-    collection_id: str
-    sample_count: int
-    samples_completed: int
-    total_jobs: int
-    job_status_counts: dict[str, int]
-    completion_pct: float
-    generated_at_utc: datetime
-
-
 class Daemon(Loose):
     agent_id: str
     hostname: str | None

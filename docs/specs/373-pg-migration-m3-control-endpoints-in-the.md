@@ -1170,3 +1170,21 @@ inside `engine.begin()`.
   x86_64 and aarch64 wheels, which cover the `python:3.11-slim` image and local 3.14.
 - **Bulk memory.** A 100,000-row request is parsed in memory, about 50 MB at the limit.
   That is accepted at this scale (58,699 rows was the largest batch so far).
+- **Reconcile: a departure from the spec's statement, and a miss on the 10 s target.**
+  `reconcile_jobs` finds the earliest sample of each readset with the hashed set
+  `s.id in (select min(id) from samples where readset_id is not null group by readset_id)`
+  instead of v2's correlated `s.id = (select min(s2.id) … where s2.readset_id = s.readset_id)`.
+  The results are the same. With no statistics on `samples`, which is the state right after
+  a bulk load and before autovacuum's analyze, the planner turned the correlated form into
+  a quadratic index scan on `samples_pkey` that ran past four minutes at 76,000 samples; the
+  hashed form took 0.3 s for the same select. Measured on a scratch `postgres:16` through
+  the API, 76,000 samples × 3 active workflows (228,000 jobs): 12.6 s straight after the
+  bulk load, 10.2 s with fresh statistics, and 3.4–4.0 s when every job already exists.
+  The select is 0.3–0.6 s of that; the rest is the insert with its indexes and foreign-key
+  checks on `jobs`, so getting under 10 s on a cold first run would need a schema change.
+  `POST /samples/bulk` took 7.1 s for 58,699 rows.
+- **Shutdown.** The service has no lifespan hook or background task; an idle `uvicorn` exits
+  on SIGTERM in 0.2 s. A server stopped while a request is in flight waits for that request,
+  so a slow `reconcile-jobs` (above) is what held the earlier dev run past SIGTERM and
+  SIGINT. A deploy that restarts the container during a first-time reconcile pays the full
+  stop timeout; M4's sweep and M5's ingester must be cancelled in the lifespan.

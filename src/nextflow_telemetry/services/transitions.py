@@ -36,6 +36,8 @@ JOB_INFLIGHT = ("claimed", "submitted", "running")
 SWEEP_REASON_DEFAULT = "run completed without MARK_COMPLETE"
 RUN_FAILED_TASKS_MAX = 200
 
+# The earliest sample of each readset is a hashed set, not a correlated min(): with stale statistics
+# (right after a bulk load) the planner turned the correlated form into a quadratic index scan.
 _RECONCILE_SQL = text(
     """
     insert into jobs (sample_id, workflow_pk, workflow_id, workflow_version, status, retry_count)
@@ -46,7 +48,7 @@ _RECONCILE_SQL = text(
              select 1 from collection_samples cs
               where cs.sample_id = s.sample_id and cs.collection_id = any(w.collections)))
        and (w.sample_key = 'sample_id'
-            or s.id = (select min(s2.id) from samples s2 where s2.readset_id = s.readset_id))
+            or s.id in (select min(id) from samples where readset_id is not null group by readset_id))
     on conflict (sample_id, workflow_pk) do nothing
     """
 )
