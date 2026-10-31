@@ -49,9 +49,9 @@ doctor:
 	@echo "python: $$(uv run python --version)"
 	@echo "docker compose: $$(docker compose version --short)"
 
-# Run API locally with auto-reload (expects SQLALCHEMY_URI in env).
+# Run API locally with auto-reload (expects SQLALCHEMY_URI in env; BLOB_STORE_URL defaults to ./.blobs).
 run:
-	uv run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000 --reload-dir src
+	BLOB_STORE_URL=${BLOB_STORE_URL:-$PWD/.blobs} uv run uvicorn nextflow_telemetry.main:app --reload --host 0.0.0.0 --port 8000 --reload-dir src
 
 # Validate local API + DB connectivity.
 health:

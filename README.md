@@ -259,7 +259,7 @@ Manager through `gcloud`. Without it they use a local file catalog for dev and t
 uv sync --group dev      # install Python dependencies
 just up-db               # start PostgreSQL via Docker Compose
 just migrate             # run Alembic migrations
-just run                 # start the API server (hot reload)
+just run                 # start the API server (hot reload); BLOB_STORE_URL is required, `just run` defaults it to ./.blobs
 
 cd frontend && npm install && npm run dev   # frontend dev server
 ```

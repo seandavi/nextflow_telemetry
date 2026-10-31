@@ -172,6 +172,9 @@ until M4 lands (see Departures, 1).
 | `deploy/onclappc02/fetch-secrets.sh` | writes `DISPATCH_TOKEN` from `cdsci-nf-telemetry-v2-api-token` |
 | `pyproject.toml`, `uv.lock` | `uv add "obstore>=0.12.1,<0.13.0"` |
 | `README.md` | the "HTTP contract suite" subsection: `CONTRACT_DISPOSABLE_HOST` and `just pg-local`. The "API reference" section: the catalog service's control routes are no longer "v1 copies", the table gains `POST /samples/bulk`, `GET /workflows/{pk}/jobs`, `GET /admin/dead-letter`, `POST /admin/requeue-dead-letter` and `/api/health`, and heartbeat is `PUT` |
+| `justfile` (`run`), `.gitignore`, `env` | `just run` defaults `BLOB_STORE_URL` to `$PWD/.blobs` (ignored by git); the root `env` template sets `BLOB_STORE_URL=./.blobs` for the dev compose container |
+| `README.md` Quick start, `CONTRIBUTING.md`, `AGENTS.md` | one line each: `BLOB_STORE_URL` is required |
+| `deploy/onclappc02/README.md` | `.env` description names `BLOB_STORE_URL`; a one-time "add `BLOB_STORE_URL=r2://nf-telemetry` to `.env` before the first M3 deploy" step; the secrets table gains the `DISPATCH_TOKEN` row |
 | `deploy/onclappc02/.env.example` | `DISPATCH_TOKEN` comment (set by `fetch-secrets.sh`, guards every control write); `BLOB_STORE_URL=r2://nf-telemetry` set explicitly; the other three settings as commented defaults |
 
 `models.py` and the `v1_*` tables in `db.py` don't change. Some models in `models.py` lose
