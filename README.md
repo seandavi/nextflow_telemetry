@@ -306,26 +306,28 @@ against a local v2 on every PR (`.github/workflows/contract.yml`).
 
 ### API reference
 
-Two APIs serve different concerns. The **v2 control plane** keeps the v1 wire paths for
-dispatch, runs, telemetry, task logs, daemons and process metrics; its endpoint status is
-in [`cf/README.md`](cf/README.md#endpoint-status). The **catalog service** (this FastAPI
-app) has interactive OpenAPI docs at `/docs`. The table lists its routers. Production
-clusters and the dashboard use v2 for the dispatch-side groups; the v1 copies retire
-under [ADR 0009](docs/adr/0009-catalog-in-postgres-control-plane-in-worker.md).
+The **catalog service** (this FastAPI app) has interactive OpenAPI docs at `/docs`. Under
+[ADR 0013](docs/adr/0013-postgres-control-plane-edge-event-sink.md) it is also the
+control plane: dispatch, registration, runs, task logs, daemons and workflows run on
+Postgres with the same wire paths as the Worker in `cf/`, whose endpoint status is in
+[`cf/README.md`](cf/README.md#endpoint-status). Until the clients and dashboard move
+(M8, M9) production still talks to the Worker. Control writes need
+`Authorization: Bearer $DISPATCH_TOKEN`; the event routes do not.
 
 | Group | Endpoints |
 |-------|-----------|
 | Telemetry ingest | `POST /telemetry` (Nextflow `-with-weblog`) |
 | Run-lifecycle events | `POST /api/runs/{run_name}/event` (wrapper, pipeline hooks, daemon sacct polling) |
+| Health | `GET /health`, `GET /api/health` |
 | Dispatch | `POST /dispatch/batch`, `/dispatch/submitted`, `/dispatch/requeue-expired` |
-| Samples | `GET/POST /samples`, `GET /samples/{id}`, `GET /samples/by-srr/{srr}`, `GET /samples/by-biosample/{id}` |
-| Workflows | `GET/POST /workflows`, `PATCH /workflows/{pk}/status`, `/revision`, `GET /workflows/{pk}/job-summary` |
+| Samples | `GET/POST /samples`, `POST /samples/bulk` (NDJSON or TSV), `GET /samples/{id}`, `GET /samples/by-srr/{srr}`, `GET /samples/by-biosample/{id}` |
+| Workflows | `GET/POST /workflows`, `PATCH /workflows/{pk}/status`, `/revision`, `GET /workflows/{pk}/job-summary`, `/jobs` |
 | Cohorts | `GET /cohorts`, `/cohorts/{id}/summary`, `/cohorts/{id}/failures` |
 | Process metrics | `GET /metrics/processes/running`, `/summary`, `/failures`, `/retries`, `/resources-by-attempt`, `/failure-signatures`, `/timeline`, `/tasks` |
 | Task logs | `POST /task-logs`, `GET /task-logs/{run_name}/{task_hash}` |
-| Daemons | `GET /daemons/`, `POST /daemons/heartbeat` |
+| Daemons | `GET /daemons/`, `PUT /daemons/heartbeat` |
 | Curated | `GET/POST /curated/studies`, `/curated/samples` |
-| Admin | `POST /admin/reconcile-jobs`, `/admin/expire-stale-runs`, `GET /admin/stats` |
+| Admin | `POST /admin/reconcile-jobs`, `/admin/close-run`, `/admin/requeue-dead-letter`, `GET /admin/dead-letter`, `/admin/stats`; `POST /admin/expire-stale-runs` and `/admin/heartbeat-watchdog` are deprecated no-ops (deadlines are per run) |
 | Submissions | `POST /submissions` (study by accession), `GET /submissions/{submission_id}` |
 | Auth | `GET /auth/login`, `/auth/callback`, `/auth/me`, `POST /auth/logout` (Google OAuth) |
 

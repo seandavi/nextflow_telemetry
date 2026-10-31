@@ -63,6 +63,8 @@ class Settings:
     SUBMIT_BACKSTOP_HOURS: float
     LIVENESS_MINUTES: float
     # Where task logs and run logs live: r2://<bucket>, or a local directory path.
+    # No default: the service refuses to start without it, so a dev or contract
+    # run can never write into the production bucket the Worker owns.
     BLOB_STORE_URL: str
 
 settings = Settings(
@@ -89,5 +91,5 @@ settings = Settings(
     CLAIM_TTL_MINUTES=float(os.environ.get("CLAIM_TTL_MINUTES", "5")),
     SUBMIT_BACKSTOP_HOURS=float(os.environ.get("SUBMIT_BACKSTOP_HOURS", "168")),
     LIVENESS_MINUTES=float(os.environ.get("LIVENESS_MINUTES", "10")),
-    BLOB_STORE_URL=os.environ.get("BLOB_STORE_URL", "r2://nf-telemetry"),
+    BLOB_STORE_URL=os.environ.get("BLOB_STORE_URL", ""),
 )

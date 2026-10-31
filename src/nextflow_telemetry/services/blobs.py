@@ -16,7 +16,12 @@ TASK_LOG_KEY = "task-logs/{run_name}/{task_hash}/{log_type}"
 
 
 def blob_store(url: str, *, r2_account_id: str, r2_access_key_id: str, r2_secret_access_key: str) -> ObjectStore:
-    """``r2://<bucket>`` is Cloudflare R2; anything else is a local directory (tests, contract target)."""
+    """``r2://<bucket>`` is Cloudflare R2; anything else is a local directory (tests, contract target).
+
+    An empty ``url`` is an error: there is no default bucket, so nothing writes to production by accident.
+    """
+    if not url:
+        raise RuntimeError("BLOB_STORE_URL is not set: use r2://<bucket> or a local directory")
     if url.startswith("r2://"):
         return S3Store(
             url.removeprefix("r2://"),

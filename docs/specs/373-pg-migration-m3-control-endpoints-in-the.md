@@ -161,6 +161,7 @@ until M4 lands (see Departures, 1).
 | deleted: `tests/test_integration.py`, `tests/test_e2e.py`, `tests/test_runs_router.py`, `tests/test_task_logs_router.py`, `tests/test_cohorts_router.py`, `tests/test_lifecycle.py`, `tests/test_dispatch_service.py` | tests of the deleted v1 routes and services. The contract suite and the new tests cover their behaviour |
 | `tests/test_api.py` | delete `test_parse_tag_handles_bare_and_colon_forms` and `test_telemetry_happy_path_calls_ingest`. Keep the two health tests |
 | `tests/test_readset.py`, `tests/test_control_transitions.py`, `tests/test_control_registry.py`, `tests/test_control_api.py` | **new** (Test plan) |
+| `tests/conftest.py` | sets `BLOB_STORE_URL` to a temp directory before anything imports `config`, because `main` refuses to import without it |
 | `tests/test_historical_metrics.py` | add `test_running_counts_tasks_of_running_runs` |
 | `packages/nf_client/src/nf_client/client.py`, `cli.py` | `register_samples_bulk`, and `_ingest_rows` uses it, falling back to single POSTs |
 | `packages/nf_client/tests/test_ingest.py` | bulk and fallback tests |
@@ -170,7 +171,8 @@ until M4 lands (see Departures, 1).
 | `.github/workflows/contract.yml` | a second job, `pg-local` |
 | `deploy/onclappc02/fetch-secrets.sh` | writes `DISPATCH_TOKEN` from `cdsci-nf-telemetry-v2-api-token` |
 | `pyproject.toml`, `uv.lock` | `uv add "obstore>=0.12.1,<0.13.0"` |
-| `README.md` | the "HTTP contract suite" subsection: `CONTRACT_DISPOSABLE_HOST` and `just pg-local` |
+| `README.md` | the "HTTP contract suite" subsection: `CONTRACT_DISPOSABLE_HOST` and `just pg-local`. The "API reference" section: the catalog service's control routes are no longer "v1 copies", the table gains `POST /samples/bulk`, `GET /workflows/{pk}/jobs`, `GET /admin/dead-letter`, `POST /admin/requeue-dead-letter` and `/api/health`, and heartbeat is `PUT` |
+| `deploy/onclappc02/.env.example` | `DISPATCH_TOKEN` comment (set by `fetch-secrets.sh`, guards every control write); `BLOB_STORE_URL=r2://nf-telemetry` set explicitly; the other three settings as commented defaults |
 
 `models.py` and the `v1_*` tables in `db.py` don't change. Some models in `models.py` lose
 their last user; M10 prunes them.
@@ -184,7 +186,7 @@ Add to `Settings` in `config.py`, with the same `os.environ.get` style:
 | `CLAIM_TTL_MINUTES` | `float` | `5` | `runs.claim_expires_at = claimed_at + ttl` |
 | `SUBMIT_BACKSTOP_HOURS` | `float` | `168` | `runs.submit_deadline = submitted_at + backstop` |
 | `LIVENESS_MINUTES` | `float` | `10` | `runs.liveness_deadline = now + liveness`, on every wrapper sign of life |
-| `BLOB_STORE_URL` | `str` | `r2://nf-telemetry` | Where task logs and run logs live: `r2://<bucket>`, or a local directory path for tests and the contract target |
+| `BLOB_STORE_URL` | `str` | empty | Where task logs and run logs live: `r2://<bucket>`, or a local directory path for tests and the contract target. **No default:** `blob_store()` raises at startup when it is empty, so a dev or contract run can never write to the production bucket the Worker owns. Production sets `r2://nf-telemetry` in `deploy/onclappc02/.env` |
 
 The values match `cf/wrangler.jsonc`. They are floats so a contract target can use
 fractional minutes, as v2 does. **M3 owns these three deadline settings, and M4 reads them
@@ -1148,7 +1150,8 @@ inside `engine.begin()`.
 
 - **Deploy order on onclappc02.** The new routes need M1's migration on `pg_main`. Deploy
   only after `alembic upgrade head` there (M1 Risks), and after `fetch-secrets.sh` has
-  written `DISPATCH_TOKEN`. Without the token the control writes are open on a public
+  written `DISPATCH_TOKEN`, and with `BLOB_STORE_URL=r2://nf-telemetry` in `.env` (the service
+  refuses to start without it). Without the token the control writes are open on a public
   host. A deploy replaces the v1 control routes on `nf-telemetry.cancerdatasci.org` with
   the new ones. Nothing calls them before M8 and M9 (checked: client configs, `etl/v2.py`,
   `health_report.py` and the frontend all use `workers.dev`). The catalog routes, and the
