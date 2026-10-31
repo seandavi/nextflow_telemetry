@@ -13,7 +13,9 @@ import PageWrap from '../components/PageWrap'
 import Btn from '../components/Btn'
 import Select from '../components/Select'
 import NotAvailable from '../components/NotAvailable'
+import { workflowNames, workflowVersions } from '../lib/workflowFilter'
 import type {
+  WorkflowResponse,
   ProcessSummaryResponse,
   ProcessFailuresResponse,
   ProcessRetriesResponse,
@@ -53,8 +55,9 @@ function FilterBar({
 }: {
   filters: MetricsFilters
   onChange: (f: MetricsFilters) => void
-  workflows: string[]
+  workflows: WorkflowResponse[]
 }) {
+  const versions = workflowVersions(workflows, filters.workflowId)
   const presetOptions = WINDOW_PRESETS.map(p => ({ value: p.label, label: p.label }))
   const currentPresetLabel = windowLabel(filters)
 
@@ -80,9 +83,19 @@ function FilterBar({
           label="Workflow"
           value={filters.workflowId ?? ''}
           onChange={v => onChange({ ...filters, workflowId: v || undefined, workflowVersion: undefined })}
-          options={[{ value: '', label: 'All workflows' }, ...workflows.map(w => ({ value: w, label: w }))]}
+          options={[{ value: '', label: 'All workflows' }, ...workflowNames(workflows).map(w => ({ value: w, label: w }))]}
         />
       </div>
+      {filters.workflowId && (
+        <div style={{ width: 140 }}>
+          <Select
+            label="Version"
+            value={filters.workflowVersion ?? ''}
+            onChange={v => onChange({ ...filters, workflowVersion: v || undefined })}
+            options={[{ value: '', label: 'All versions' }, ...versions.map(v => ({ value: v, label: v }))]}
+          />
+        </div>
+      )}
       {(filters.workflowId || filters.windowHours || filters.windowDays) && (
         <Btn variant="ghost" small onClick={() => onChange({})}>Clear filters</Btn>
       )}
@@ -682,7 +695,7 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
   const [tab, setTab]         = useState<Tab>('failures')
   const [filters, setFilters] = useUrlFilters({ windowDays: 30 })
   const [bucket, setBucket]   = useState<'hour' | 'day' | 'week'>('hour')
-  const [workflows, setWorkflows] = useState<string[]>([])
+  const [workflows, setWorkflows] = useState<WorkflowResponse[]>([])
 
   const [summary,    setSummary]    = useState<ProcessSummaryResponse | NotAvailableValue | null>(null)
   const [failures,   setFailures]   = useState<ProcessFailuresResponse | NotAvailableValue | null>(null)
@@ -693,10 +706,10 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
 
   const { tick, refresh, lastUpdated } = usePoll(pollInterval)
 
-  // Load workflow names once for the filter dropdown
+  // Load workflows once for the name/version filter dropdowns
   useEffect(() => {
     api.workflows.list()
-      .then(wfs => setWorkflows([...new Set(wfs.map(w => w.workflow_id))]))
+      .then(setWorkflows)
       .catch(console.error)
   }, [])
 
@@ -715,7 +728,9 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
     : filters.windowDays
       ? `last ${filters.windowDays}d`
       : 'all time'
-  const filterDesc = filters.workflowId ? ` · ${filters.workflowId}` : ''
+  const filterDesc = filters.workflowId
+    ? ` · ${filters.workflowId}${filters.workflowVersion ? ` ${filters.workflowVersion}` : ''}`
+    : ''
 
   return (
     <PageWrap>
