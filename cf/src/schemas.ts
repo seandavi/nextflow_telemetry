@@ -295,3 +295,13 @@ export const TaskLogs = z.object({
     }),
   ),
 });
+
+export const ExportManifest = z.object({
+  format: z.literal(1),
+  export_id: z.string(),
+  exported_at: z.string().describe("ISO time the ControlDO snapshot began"),
+  settings: z.object({ CLAIM_TTL_MINUTES: z.number(), SUBMIT_BACKSTOP_HOURS: z.number(), LIVENESS_MINUTES: z.number() }),
+  sequences: z.record(z.string(), z.number().int()).describe("sqlite_sequence high-water marks"),
+  tables: z.record(z.string(), z.object({ rows: z.number().int(), objects: z.array(z.string()) })),
+  events_cursor: z.object({ stream: z.string(), object_key: z.string(), line_offset: z.number().int() }).nullable(),
+});

@@ -138,6 +138,15 @@ v2-e2e: v2-reset v2-seed
 	just v2-run test,stochastic SRR9990004
 	curl -s {{v2_url}}/api/admin/stats
 
+# M6 (#376): export v2's ControlDO to R2 and copy it to dir/<export_id> (prints the path).
+v2-export dir:
+	id=$(curl -sf -X POST -H "Authorization: Bearer $(gcloud secrets versions access latest --secret=cdsci-nf-telemetry-v2-api-token --project=cdsci-infra)" {{v2_url}}/api/admin/export | python3 -c 'import sys,json;print(json.load(sys.stdin)["export_id"])'); \
+	  rclone copy r2:nf-telemetry/exports/$id {{dir}}/$id && echo {{dir}}/$id
+
+# M6 (#376): import an export into $SQLALCHEMY_URI (alembic head) and print the verification report.
+v2-import dir *flags:
+	uv run python -m nextflow_telemetry.v2_import {{dir}} {{flags}}
+
 # Local v2 for the contract suite (#372): miniflare, no Cloudflare credentials,
 # 6 s claim TTL and liveness, no catalog proxy. Same flags as .github/workflows/contract.yml.
 v2-local:

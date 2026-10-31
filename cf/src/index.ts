@@ -39,6 +39,7 @@ const R2_PREFIXES = [
   "snapshots/",
   "nextflow-logs/",
   "task-logs/",
+  "exports/",
 ];
 
 /** Fails closed: only the exact string "true" enables the reset route. */
@@ -559,6 +560,37 @@ api.post("/admin/reset", describeRoute({ summary: "Wipe all DO state and R2 pref
   }
 
   return c.json({ cleared, runs_finalized: runs.length, r2_objects_deleted: objects });
+});
+
+api.post("/admin/export", describeRoute({
+  summary: "Consistent ControlDO export to R2 (exports/<id>/) with the event cursor, for the Postgres import (#376)",
+  tags: ["admin"],
+  responses: { "200": { description: "OK", content: { "application/json": { schema: resolver(S.ExportManifest) } } } },
+}), async (c) => {
+  // Flush first: every event in R2 at or before flushed.key was applied to
+  // ControlDO before the snapshot (each route awaits ControlDO before sink.write).
+  const flushed = await sink(c.env).flush();
+  const export_id = new Date().toISOString().replace(/[-:.]/g, "");
+  const prefix = `exports/${export_id}`;
+  const snap = await control(c.env).exportSnapshot(prefix);
+  const manifest = {
+    format: 1,
+    export_id,
+    exported_at: snap.exported_at,
+    settings: {
+      CLAIM_TTL_MINUTES: num(c.env.CLAIM_TTL_MINUTES, 5),
+      SUBMIT_BACKSTOP_HOURS: num(c.env.SUBMIT_BACKSTOP_HOURS, 48),
+      LIVENESS_MINUTES: num(c.env.LIVENESS_MINUTES, 10),
+    },
+    sequences: snap.sequences,
+    tables: snap.tables,
+    events_cursor: flushed
+      ? { stream: "telemetry/events", object_key: flushed.key, line_offset: flushed.lines }
+      : null,
+  };
+  // Written last: its presence means the export is complete.
+  await c.env.STORE.put(`${prefix}/manifest.json`, JSON.stringify(manifest, null, 2));
+  return c.json(manifest);
 });
 
 api.get("/admin/dispatchability", describeRoute({ summary: "Pending work no active daemon can claim", tags: ["admin"], responses: { "200": { description: "OK" } } }), async (c) => c.json(await control(c.env).dispatchability()));
