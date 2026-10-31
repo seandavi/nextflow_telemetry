@@ -43,7 +43,11 @@
     // Base of the catalog service's API (v1 mounts it at /api). The eight
     // historical-tier routes proxy GETs there and answer 501 when it is unset
     // or not answering (#211).
-    "CATALOG_URL": "https://nf-telemetry.cancerdatasci.org/api"
+    "CATALOG_URL": "https://nf-telemetry.cancerdatasci.org/api",
+    // "full": the event routes drive ControlDO and RunDO as well as archiving. Set
+    // "sink-only" at cutover (M8): they then only archive to R2, and the Postgres
+    // ingester applies the events.
+    "MODE": "full"
   }
   // Secrets (wrangler secret put): API_TOKEN — when set, bearer auth is
   // enforced on every mutating route except /telemetry (Nextflow's weblog

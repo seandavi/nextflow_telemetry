@@ -254,6 +254,7 @@ def build_submission_context(
         "workflow_revision": batch.revision,
         "profile": cfg.profile,
         "server_url": cfg.server_url,
+        "event_url": cfg.event_url or cfg.server_url,
         "weblog_url": cfg.weblog_url,
         "workflow_id": batch.workflow_id,
         "workflow_version": batch.workflow_version,

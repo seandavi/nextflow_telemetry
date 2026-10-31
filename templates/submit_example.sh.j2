@@ -20,7 +20,7 @@ echo "Samples: {{ sample_ids }}"
 set +e
 nf-client run-wrapper \
   --run-name {{ run_name }} \
-  --telemetry-url {{ server_url }} \
+  --telemetry-url {{ event_url | default(server_url) }} \
   -- \
   nextflow run {{ workflow_repository }} \
     -revision {{ workflow_revision }} \

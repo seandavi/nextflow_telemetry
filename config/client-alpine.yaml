@@ -2,6 +2,7 @@
 # ${NAME} is expanded from the daemon's environment
 # (~/.nf_tel.env, ~/.nf_tel.secrets); an unset variable fails the load.
 server_url: "https://nf-telemetry.seandavi.workers.dev/api"
+event_url: "https://nf-telemetry.seandavi.workers.dev/api"
 weblog_url: "https://nf-telemetry.seandavi.workers.dev/telemetry"
 token: "${NF_OPERATOR_TOKEN}"
 

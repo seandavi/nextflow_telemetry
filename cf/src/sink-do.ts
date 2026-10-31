@@ -34,6 +34,8 @@ export interface TelemetryEnvelope {
   run_id?: string | null;
   sample_id?: string | null;
   process?: string | null;
+  /** Set on run events whose nextflow_log attachment was stored; the ingester stamps nextflow_log_uploaded_at. */
+  nextflow_log_uploaded?: true;
   payload: unknown;
 }
 

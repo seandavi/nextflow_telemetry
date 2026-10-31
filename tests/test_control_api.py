@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -143,6 +144,11 @@ def test_claim_to_completion_over_http(control_client: TestClient) -> None:
     assert leaderboard[0]["collection_id"] == "e2e" and leaderboard[0]["samples_remaining"] == 1
     stats = control_client.get("/api/admin/stats").json()
     assert stats["samples"] == 2 and stats["jobs_by_status"] == {"completed": 1, "pending": 1}
+
+
+def test_ill_typed_run_event_values_are_accepted(control_client: TestClient) -> None:
+    for event in ({"type": "pre_nextflow", "wait_seconds": 1.5}, {"type": "wrapper_exited", "exit_code": "x"}):
+        assert control_client.post("/api/runs/nosuch/event", data={"event": json.dumps(event)}).status_code == 201
 
 
 def test_bulk_endpoint_content_types_and_limits(control_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

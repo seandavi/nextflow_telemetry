@@ -265,6 +265,26 @@ to R2 for the Postgres import (ADR-0013 §8, #376; `src/nextflow_telemetry/v2_im
   `DIR/<export_id>`; `just v2-import DIR/<export_id> [--replace]` imports it into
   `$SQLALCHEMY_URI` and prints the verification report.
 
+## Sink-only mode (M5/M8)
+
+`MODE=sink-only` (a `wrangler.jsonc` var, `"full"` by default) makes the Worker the edge
+event sink for the Postgres control plane (ADR-0013 §3 and §7, #375).
+
+- **Event routes.** `POST /telemetry`, `POST /runs/{run}/event` and `POST /task-logs`
+  answer as in full mode, and write through SinkDO (and R2 for attachments). They never
+  create a ControlDO or RunDO stub. Run-event attachments are stored without the orphan
+  check (404 for an unknown run), because the Worker can't ask ControlDO.
+- **Cron.** Only flushes SinkDO. The ControlDO snapshot and `archiveRetiredJobs` are
+  skipped; the Python service owns the retired-job archive after cutover.
+- **Envelope.** A run event whose `nextflow_log` attachment was stored carries
+  `nextflow_log_uploaded: true`, in both modes. The ingester
+  (`services/event_ingest.py`, `EVENT_INGEST_*`) stamps `runs.nextflow_log_uploaded_at`
+  from it.
+- **Everything else** (dispatch, samples, workflows, daemons, admin, reads) is unchanged
+  in both modes until M10 deletes it.
+- Only the exact string `sink-only` enables it; any other value is full mode. Flip it at
+  cutover with the M8 runbook, not before.
+
 ## Cost shape
 
 Durable Objects bill rows read ($0.001/M after 25B/month), rows written ($1/M

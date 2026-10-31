@@ -13,12 +13,14 @@ from nextflow_telemetry.config import settings
 from nextflow_telemetry.control_db import (
     dead_letter_tbl,
     deadline_sweep_tbl,
+    ingest_cursor_tbl,
     jobs_tbl,
     runs_tbl,
     samples_tbl,
     workflows_tbl,
 )
 from nextflow_telemetry.services import deadlines
+from nextflow_telemetry.services.event_ingest import EVENTS_STREAM
 from nextflow_telemetry.services.deadlines import (
     BACKSTOP_REASON,
     CLAIM_EXPIRED_REASON,
@@ -254,6 +256,32 @@ async def test_locked_run_is_skipped_until_released(engine: AsyncEngine) -> None
         assert (await _run(engine, "r1")).status == "claimed"
     assert (await _sweep(engine, now + timedelta(seconds=30))).expired_claims == 1
     assert (await _run(engine, "r1")).status == "expired"
+
+
+@pytest.mark.parametrize("cursor, stale", [
+    (None, False),                                    # no cursor row: contract suite, pg-local
+    ((None,), True),                                  # imported, never caught up
+    ((T0 + timedelta(minutes=4, seconds=59),), True),  # just over liveness / 2 old
+    ((T0 + timedelta(minutes=5),), False),            # exactly liveness / 2 old
+])
+async def test_ingest_stale_holds_liveness_and_backstop_not_claims(
+        engine: AsyncEngine, cursor: tuple[datetime | None] | None, stale: bool) -> None:
+    deadline = T0 + timedelta(minutes=10)
+    async with engine.begin() as conn:
+        await _seed(conn, "rl", "running", "liveness_deadline", deadline, [("running", 0)])
+        await _seed(conn, "rb", "submitted", "submit_deadline", deadline, [("submitted", 0)])
+        await _seed(conn, "rc", "claimed", "claim_expires_at", deadline, [("claimed", 0)])
+        if cursor is not None:
+            await conn.execute(insert(ingest_cursor_tbl).values(
+                stream=EVENTS_STREAM, object_key="", line_offset=0, caught_up_at=cursor[0]))
+    result = await _sweep(engine, deadline)
+
+    assert result.ingest_stale is stale
+    assert result.expired_claims == 1
+    assert (result.liveness_failures, result.backstop_failures) == ((0, 0) if stale else (1, 1))
+    assert (await _run(engine, "rl")).status == ("running" if stale else "failed")
+    assert (await _run(engine, "rb")).status == ("submitted" if stale else "failed")
+    assert (await _run(engine, "rc")).status == "expired"
 
 
 async def test_noop_transition_disarms_deadline(engine: AsyncEngine) -> None:

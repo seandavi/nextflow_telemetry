@@ -93,6 +93,11 @@ api.post("/dispatch/requeue-expired", describeRoute({ summary: "Deprecated no-op
 // reporter has no way to send a bearer token.
 // ====================================================================
 
+/** Fails safe to full mode: only the exact string "sink-only" turns ControlDO and RunDO off for events. */
+export function sinkOnly(env: Pick<Env, "MODE">): boolean {
+  return env.MODE === "sink-only";
+}
+
 api.post("/telemetry", describeRoute({ summary: "Nextflow weblog event (unauthenticated: the reporter cannot send headers)", tags: ["telemetry"], responses: { "200": { description: "OK" } } }), async (c) => {
   const body = await json(c);
   stripZoneIds(body?.metadata);
@@ -103,29 +108,31 @@ api.post("/telemetry", describeRoute({ summary: "Nextflow weblog event (unauthen
   // The pipeline tags every process with a bare "${meta.sample}"; the
   // historical "sample_id:run_name" form is tolerated by taking the head.
   const sampleId = trace?.tag ? String(trace.tag).split(":")[0] : null;
-  const ctl = control(c.env);
+  if (!sinkOnly(c.env)) {
+    const ctl = control(c.env);
 
-  if (event === "started") {
-    await ctl.markRunning(runName, body.runId ?? body.run_id ?? null);
-  } else if (
-    event === "process_completed" &&
-    sampleId &&
-    String(trace?.process ?? "").endsWith("MARK_COMPLETE") &&
-    trace?.status === "COMPLETED"
-  ) {
-    // Marked complete the moment the sentinel lands, not at run close, so
-    // dashboards move in real time.
-    await ctl.completeSample(runName, sampleId);
-  }
-  if (event === "process_completed" && trace) await ctl.recordTask(runName, sampleId, trace);
-  if (event === "completed") {
-    // Nextflow sends `completed` for failed runs too; success and the reason
-    // are in metadata.workflow.
-    const wf = body.metadata?.workflow;
-    const failed = wf?.success === false;
-    const why = failed ? String(wf?.errorMessage ?? wf?.errorReport ?? "nextflow reported success=false").slice(0, 1000) : null;
-    await ctl.closeRun(runName, failed ? "failed" : "completed", why);
-    await runDo(c.env, runName).finalize();
+    if (event === "started") {
+      await ctl.markRunning(runName, body.runId ?? body.run_id ?? null);
+    } else if (
+      event === "process_completed" &&
+      sampleId &&
+      String(trace?.process ?? "").endsWith("MARK_COMPLETE") &&
+      trace?.status === "COMPLETED"
+    ) {
+      // Marked complete the moment the sentinel lands, not at run close, so
+      // dashboards move in real time.
+      await ctl.completeSample(runName, sampleId);
+    }
+    if (event === "process_completed" && trace) await ctl.recordTask(runName, sampleId, trace);
+    if (event === "completed") {
+      // Nextflow sends `completed` for failed runs too; success and the reason
+      // are in metadata.workflow.
+      const wf = body.metadata?.workflow;
+      const failed = wf?.success === false;
+      const why = failed ? String(wf?.errorMessage ?? wf?.errorReport ?? "nextflow reported success=false").slice(0, 1000) : null;
+      await ctl.closeRun(runName, failed ? "failed" : "completed", why);
+      await runDo(c.env, runName).finalize();
+    }
   }
 
   await sink(c.env).write({
@@ -169,8 +176,8 @@ api.post("/runs/:run_name/event", describeRoute({ summary: "Run-lifecycle event 
       422,
     );
   }
-  const ctl = control(c.env);
-  if (attachments.length && (await ctl.getRunStatus(runName)) === null) {
+  const live = !sinkOnly(c.env);
+  if (live && attachments.length && (await control(c.env).getRunStatus(runName)) === null) {
     return c.json({ detail: `No run '${runName}'; refusing to store attachments as orphan.` }, 404);
   }
   if (nextflowLog instanceof File && nextflowLog.size > NEXTFLOW_LOG_MAX) {
@@ -185,7 +192,7 @@ api.post("/runs/:run_name/event", describeRoute({ summary: "Run-lifecycle event 
   let wrapperUploaded = false;
   if (nextflowLog instanceof File) {
     await c.env.STORE.put(`nextflow-logs/${runName}/nextflow.log`, await nextflowLog.arrayBuffer());
-    await ctl.markLogUploaded(runName, now);
+    if (live) await control(c.env).markLogUploaded(runName, now);
     logUploaded = true;
   }
   if (wrapperLog instanceof File) {
@@ -193,22 +200,25 @@ api.post("/runs/:run_name/event", describeRoute({ summary: "Run-lifecycle event 
     wrapperUploaded = true;
   }
 
-  await ctl.applyRunEvent(runName, ev, now);
+  if (live) {
+    const ctl = control(c.env);
+    await ctl.applyRunEvent(runName, ev, now);
 
-  if (ev.type === "heartbeat" || ev.type === "wrapper_started") {
-    // Any sign of life pushes the liveness deadline out. Nothing else needs to
-    // happen: the absence of this call is what eventually closes the run.
-    await runDo(c.env, runName).heartbeat(runName, mins(c.env.LIVENESS_MINUTES, 10));
-  } else if (ev.type === "wrapper_exited") {
-    // The driver is gone and we know its exit status — no reason to wait out
-    // the liveness window. closeRun is idempotent, so a `completed` weblog
-    // that already closed this run wins and this is a no-op.
-    await ctl.closeRun(
-      runName,
-      ev.exit_code === 0 ? "completed" : "failed",
-      ev.exit_code === 0 ? null : `wrapper exited ${ev.exit_code}`,
-    );
-    await runDo(c.env, runName).finalize();
+    if (ev.type === "heartbeat" || ev.type === "wrapper_started") {
+      // Any sign of life pushes the liveness deadline out. Nothing else needs to
+      // happen: the absence of this call is what eventually closes the run.
+      await runDo(c.env, runName).heartbeat(runName, mins(c.env.LIVENESS_MINUTES, 10));
+    } else if (ev.type === "wrapper_exited") {
+      // The driver is gone and we know its exit status — no reason to wait out
+      // the liveness window. closeRun is idempotent, so a `completed` weblog
+      // that already closed this run wins and this is a no-op.
+      await ctl.closeRun(
+        runName,
+        ev.exit_code === 0 ? "completed" : "failed",
+        ev.exit_code === 0 ? null : `wrapper exited ${ev.exit_code}`,
+      );
+      await runDo(c.env, runName).finalize();
+    }
   }
 
   await sink(c.env).write({
@@ -216,6 +226,7 @@ api.post("/runs/:run_name/event", describeRoute({ summary: "Run-lifecycle event 
     event: `run_${ev.type}`,
     utc_time: ev.utc_time ?? null,
     source: "run_event",
+    ...(logUploaded ? { nextflow_log_uploaded: true as const } : {}),
     payload: ev,
   } satisfies TelemetryEnvelope);
 
@@ -680,6 +691,10 @@ export default {
    * assumed two independent state stores to reconcile; there is only one.
    */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    if (sinkOnly(env)) {
+      await sink(env).flush();
+      return;
+    }
     const snap = await control(env).snapshot();
     const day = new Date().toISOString().slice(0, 10);
     await env.STORE.put(`snapshots/${day}.json.gz`, await gzip(JSON.stringify(snap)));

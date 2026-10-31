@@ -848,7 +848,7 @@ def upload_logs(
 def run_wrapper_cmd(
     ctx: typer.Context,
     run_name: str = typer.Option(..., "--run-name", help="Nextflow run name (-name)."),
-    telemetry_url: str = typer.Option(..., "--telemetry-url", help="Telemetry API base URL (same as ClientConfig.server_url)."),
+    telemetry_url: str = typer.Option(..., "--telemetry-url", help="Telemetry API base URL (same as ClientConfig.event_url)."),
     heartbeat_seconds: float | None = typer.Option(None, "--heartbeat-seconds", help="Heartbeat interval in seconds; 0 disables. Omit for the default."),
     nextflow_log: Path | None = typer.Option(None, "--nextflow-log", help="Path to .nextflow.log to upload on exit (default: cwd/.nextflow.log)."),
 ) -> None:

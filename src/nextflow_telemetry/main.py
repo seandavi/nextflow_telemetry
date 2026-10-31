@@ -5,7 +5,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -30,7 +30,7 @@ from .routers.samples import create_samples_router
 from .routers.submissions import create_submissions_router
 from .routers.task_logs import create_task_logs_router
 from .routers.workflows import create_workflows_router
-from .services import deadlines
+from .services import deadlines, event_ingest
 from .services.event_archive import EventArchive
 from .services.process_metrics import ProcessMetricsService
 from .services import transitions
@@ -45,6 +45,20 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         tasks.append(asyncio.create_task(deadlines.run_deadline_sweeps(engine, policy)))
     if settings.RETIRED_ARCHIVE_ENABLED:
         tasks.append(asyncio.create_task(retired_job_archive.run_daily()))
+    if settings.EVENT_INGEST_ENABLED:
+        if not settings.EVENT_INGEST_URL or settings.EVENT_INGEST_SECONDS <= 0:
+            raise RuntimeError(
+                "EVENT_INGEST_ENABLED needs EVENT_INGEST_URL (r2://<bucket> or a directory) "
+                "and EVENT_INGEST_SECONDS > 0"
+            )
+        events_store = blob_store(
+            settings.EVENT_INGEST_URL,
+            r2_account_id=settings.R2_ACCOUNT_ID,
+            r2_access_key_id=settings.R2_ACCESS_KEY_ID,
+            r2_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+        )
+        tasks.append(asyncio.create_task(event_ingest.run_event_ingest(
+            engine, events_store, timedelta(seconds=settings.EVENT_INGEST_SECONDS))))
     yield
     for task in tasks:
         task.cancel()

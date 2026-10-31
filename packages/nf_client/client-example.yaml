@@ -18,6 +18,10 @@ token: "${NF_OPERATOR_TOKEN}"
 # URL of the telemetry API server (no trailing slash).
 server_url: "https://nf-telemetry-example.run.app/api"
 
+# URL of the API the run wrapper posts lifecycle events to (ends in /api, like
+# server_url): the edge Worker (ADR-0013 §7). Empty means server_url.
+event_url: "https://nf-telemetry-example.run.app/api"
+
 # URL that Nextflow sends weblog events to (-with-weblog).
 weblog_url: "https://nf-telemetry-example.run.app/telemetry"
 

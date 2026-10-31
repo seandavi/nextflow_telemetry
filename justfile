@@ -148,6 +148,10 @@ v2-export dir:
 v2-import dir *flags:
 	uv run python -m nextflow_telemetry.v2_import {{dir}} {{flags}}
 
+# M5 (#375): replay the events between two exports into $SQLALCHEMY_URI (a scratch database) and compare with the second.
+v2-replay before after events:
+	uv run python -m nextflow_telemetry.v2_replay {{before}} {{after}} {{events}}
+
 # Local v2 for the contract suite (#372): miniflare, no Cloudflare credentials,
 # 6 s claim TTL and liveness, no catalog proxy. Same flags as .github/workflows/contract.yml.
 v2-local:

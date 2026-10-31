@@ -266,8 +266,22 @@ ingest_cursor_tbl = Table(
     Column("object_key", String, nullable=False),
     # Not "offset": reserved word.
     Column("line_offset", BigInteger, nullable=False, server_default="0"),
+    # Start of the last poll that applied everything it listed; the deadline sweep reads it.
+    Column("caught_up_at", DateTime(timezone=True), nullable=True),
     _updated_at(),
     CheckConstraint("line_offset >= 0", name="ck_ingest_cursor_line_offset"),
+)
+
+# Event lines the ingester could not apply (#375); the cursor moved past them.
+ingest_rejects_tbl = Table(
+    "ingest_rejects", metadata,
+    Column("stream", String, primary_key=True),
+    Column("object_key", String, primary_key=True),
+    Column("line_no", Integer, primary_key=True),  # 0-based line in the object
+    Column("error", Text, nullable=False),
+    Column("line", Text, nullable=False),
+    Column("rejected_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    CheckConstraint("line_no >= 0", name="ck_ingest_rejects_line_no"),
 )
 
 # Append-only; the latest `at` per subject wins. No FK on subject_id (polymorphic).

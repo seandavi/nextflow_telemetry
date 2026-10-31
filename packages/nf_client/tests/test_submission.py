@@ -384,3 +384,35 @@ def test_walltime_signal_stops_wrapper_and_cleans_up(tmp_path) -> None:
     assert rc == 143, out
     assert (tmp_path / "term_seen").exists(), out
     assert not rundir.exists(), out
+
+
+def test_slurm_template_sends_wrapper_events_to_event_url() -> None:
+    """#375: the wrapper posts to the edge (event_url); -with-weblog keeps weblog_url."""
+    from pathlib import Path
+
+    from nf_client.config import ClientConfig
+    from nf_client.models import DispatchBatchResponse
+    from nf_client.submission import build_submission_context, render_submission_script
+
+    tmpl = Path(__file__).resolve().parents[3] / "templates" / "submit_slurm.sh.j2"
+    batch = DispatchBatchResponse.model_validate({
+        "run_name": "r1", "workflow_id": "wf", "workflow_version": "1", "workflow_pk": 1,
+        "repository_url": "o/r", "revision": "1.0", "params": {},
+        "jobs": [{"sample_id": "s1", "ncbi_accession": "SRR1"}],
+    })
+    base = {"server_url": "https://origin/api", "weblog_url": "https://edge/telemetry",
+            "submission": {"mode": "slurm", "defaults": {
+                "mem": "8G", "cpus": 2, "time": "1:00:00", "partition": "p", "log_dir": "/l"}}}
+
+    cfg = ClientConfig.model_validate({**base, "event_url": "https://edge/api"})
+    ctx = build_submission_context(batch, cfg, ["s1"])
+    script = render_submission_script(tmpl, ctx)
+    assert "--telemetry-url https://edge/api" in script and "-with-weblog https://edge/telemetry" in script
+
+    # Empty event_url falls back to server_url.
+    fallback = build_submission_context(batch, ClientConfig.model_validate(base), ["s1"])
+    assert fallback["event_url"] == "https://origin/api"
+
+    # A context built before event_url existed (template drift, #249) still renders.
+    legacy = {k: v for k, v in ctx.items() if k != "event_url"} | {"server_url": "https://origin/api"}
+    assert "--telemetry-url https://origin/api" in render_submission_script(tmpl, legacy)
