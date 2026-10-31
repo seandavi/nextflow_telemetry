@@ -317,7 +317,7 @@ under [ADR 0009](docs/adr/0009-catalog-in-postgres-control-plane-in-worker.md).
 | Samples | `GET/POST /samples`, `GET /samples/{id}`, `GET /samples/by-srr/{srr}`, `GET /samples/by-biosample/{id}` |
 | Workflows | `GET/POST /workflows`, `PATCH /workflows/{pk}/status`, `/revision`, `GET /workflows/{pk}/job-summary` |
 | Cohorts | `GET /cohorts`, `/cohorts/{id}/summary`, `/cohorts/{id}/failures` |
-| Process metrics | `GET /metrics/processes/running`, `/summary`, `/failures`, `/retries`, `/resources-by-attempt`, `/failure-signatures`, `/timeline`, `/tasks` |
+| Process metrics | `GET /metrics/processes/running`, `/summary`, `/failures`, `/retries`, `/resources-by-attempt`, `/hosts`, `/failure-signatures`, `/timeline`, `/tasks` |
 | Task logs | `POST /task-logs`, `GET /task-logs/{run_name}/{task_hash}` |
 | Daemons | `GET /daemons/`, `POST /daemons/heartbeat` |
 | Curated | `GET/POST /curated/studies`, `/curated/samples` |

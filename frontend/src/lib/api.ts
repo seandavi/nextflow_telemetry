@@ -7,6 +7,8 @@ import type {
   ProcessFailuresResponse,
   ProcessRetriesResponse,
   ProcessResourcesByAttemptResponse,
+  ProcessHostsResponse,
+  HostGroupBy,
   ProcessFailureSignaturesResponse,
   ProcessTimelineResponse,
   TasksResponse,
@@ -125,6 +127,8 @@ export const api = {
     failures:   (f: MetricsFilters = {}) => get<ProcessFailuresResponse>(`/metrics/processes/failures${metricsParams(f)}`),
     retries:    (f: MetricsFilters = {}) => get<ProcessRetriesResponse>(`/metrics/processes/retries${metricsParams(f)}`),
     resources:  (f: MetricsFilters = {}) => get<ProcessResourcesByAttemptResponse>(`/metrics/processes/resources-by-attempt${metricsParams(f)}`),
+    hosts:      (f: MetricsFilters = {}, group_by: HostGroupBy = 'launch_host') =>
+      get<ProcessHostsResponse>(`/metrics/processes/hosts${metricsParams(f, { group_by })}`),
     signatures: (f: MetricsFilters = {}) => get<ProcessFailureSignaturesResponse>(`/metrics/processes/failure-signatures${metricsParams(f)}`),
     timeline:   (f: MetricsFilters = {}, bucket: 'hour' | 'day' | 'week' = 'hour') =>
       get<ProcessTimelineResponse>(`/metrics/processes/timeline${metricsParams(f, { bucket })}`),

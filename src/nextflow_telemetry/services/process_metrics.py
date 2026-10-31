@@ -569,6 +569,81 @@ class ProcessMetricsService:
             "rows": rows,
         }
 
+    async def hosts(
+        self,
+        *,
+        group_by: Literal["launch_host", "cpu_model"] = "launch_host",
+        window_days: int | None = None,
+        window_hours: int | None = None,
+        since: dt.datetime | None = None,
+        until: dt.datetime | None = None,
+        workflow_id: str | None = None,
+        workflow_version: str | None = None,
+        run_name: str | None = None,
+        sample_id: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Throughput and utilisation per host.
+
+        Weblog traces carry no task hostname (#17), so ``launch_host`` is the
+        node the run's wrapper (the Nextflow head job) reported, and
+        ``cpu_model`` is the task's node class. Unknown hosts group as null.
+        """
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        key = {"launch_host": "h.hostname", "cpu_model": "t.cpu_model"}[group_by]
+
+        window_days, window_hours = _normalize_window(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+        )
+        fc, params = self._filter_clause(
+            window_days=window_days, window_hours=window_hours,
+            since=since, until=until,
+            workflow_id=workflow_id, workflow_version=workflow_version,
+            run_name=run_name, sample_id=sample_id,
+        )
+        params = {**params, "limit": limit}
+
+        sql = (
+            f"""
+            select
+              {key} as host,
+              count(*) as tasks,
+              count(distinct t.run_name) as runs,
+              count(*) filter (where t.status = 'COMPLETED') as success,
+              count(*) filter (where t.status in ('FAILED', 'ABORTED')) as failed,
+              round(100.0 * count(*) filter (where t.status in ('FAILED', 'ABORTED')) / count(*), 2) as failure_pct,
+              round(sum(t.realtime_ms) / 3600000, 2) as task_hours,
+              round(sum(t.realtime_ms * t.requested_cpus) / 3600000, 2) as cpu_hours,
+              round(avg(t.realtime_ms) / 60000, 2) as avg_realtime_min,
+              round((percentile_cont(0.95) within group (order by t.realtime_ms)) / 60000, 2) as p95_realtime_min,
+              round(avg(t.pct_cpu / nullif(t.requested_cpus * 100, 0)) * 100, 2) as avg_cpu_efficiency_pct,
+              round(avg(t.peak_rss / nullif(t.requested_memory_bytes, 0)) * 100, 2) as avg_memory_efficiency_pct,
+              round(avg(t.peak_rss) / (1024*1024*1024), 2) as avg_peak_rss_gb,
+              round(sum(t.read_bytes) / (1024*1024*1024), 2) as total_read_gb,
+              round(sum(t.write_bytes) / (1024*1024*1024), 2) as total_write_gb,
+              min(t.utc_time) as first_task_utc,
+              max(t.utc_time) as last_task_utc
+            from task_executions t
+            left join run_hosts h using (run_name)
+            where true
+              {fc}
+            group by host
+            order by tasks desc, host
+            limit $limit
+            """
+        )
+
+        rows = await self.archive.fetch(sql, params)
+
+        return {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "window_days": window_days,
+            "group_by": group_by,
+            "rows": rows,
+        }
+
     async def failure_signatures(
         self,
         *,

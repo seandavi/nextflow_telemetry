@@ -9,6 +9,7 @@ HISTORICAL_ROUTES = [
     "metrics/processes/summary",
     "metrics/processes/retries",
     "metrics/processes/resources-by-attempt",
+    "metrics/processes/hosts",
     "metrics/processes/failures",
     "metrics/processes/failure-signatures",
     "metrics/processes/tasks",

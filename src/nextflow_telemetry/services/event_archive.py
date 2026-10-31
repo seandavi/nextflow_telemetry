@@ -9,6 +9,7 @@ today. It exposes the same two relations the v1 Postgres queries used:
 - ``telemetry``: one row per Nextflow weblog event.
 - ``task_executions``: one row per ``process_completed`` event with a trace,
   columns derived from the trace exactly as v1's migration ``e3f4a5b6`` did.
+- ``run_hosts``: the head node each run's wrapper reported in ``pre_nextflow``.
 
 Both carry ``workflow_id`` / ``workflow_version`` from v2 ``GET /api/runs``. The
 archived ``started`` event's manifest version is not used: a run of registered
@@ -44,9 +45,12 @@ create table events (
     error_action varchar, realtime_ms double, requested_cpus double,
     requested_memory_bytes double, requested_time_ms double, pct_cpu double,
     pct_mem double, peak_rss double, read_bytes double, write_bytes double,
-    rchar double, wchar double
+    rchar double, wchar double, cpu_model varchar
 );
 create table runs (run_name varchar primary key, workflow_id varchar, workflow_version varchar);
+-- The node the nf-client wrapper (and so the Nextflow head job) ran on, from
+-- its pre_nextflow run event. Weblog traces carry no hostname (#17).
+create table run_hosts (run_name varchar primary key, hostname varchar);
 create view telemetry as
     select e.*, r.workflow_id, r.workflow_version from events e left join runs r using (run_name);
 create view task_executions as
@@ -83,10 +87,25 @@ select
     {_trace('read_bytes', 'DOUBLE')},
     {_trace('write_bytes', 'DOUBLE')},
     {_trace('rchar', 'DOUBLE')},
-    {_trace('wchar', 'DOUBLE')}
-from read_json($files, format='newline_delimited', columns={_COLUMNS})
+    {_trace('wchar', 'DOUBLE')},
+    {_trace('cpu_model')}
+from staged
 where source = 'weblog'
 order by utc_time
+"""
+
+_STAGE = f"""
+create or replace temp table staged as
+select * from read_json($files, format='newline_delimited', columns={_COLUMNS})
+"""
+
+_INSERT_HOSTS = """
+insert or replace into run_hosts
+select run_name, arg_max(json_extract_string(payload, '$.hostname'), utc_time)
+from staged
+where source = 'run_event' and event = 'run_pre_nextflow'
+  and json_extract_string(payload, '$.hostname') is not null
+group by run_name
 """
 
 
@@ -179,7 +198,10 @@ class EventArchive:
         if not new:
             return
         new.sort()
-        self._con.execute(_INSERT, {"files": new})
+        self._con.execute(_STAGE, {"files": new})
+        self._con.execute(_INSERT)
+        self._con.execute(_INSERT_HOSTS)
+        self._con.execute("drop table staged")
         self._files.update(new)
         for f in new:
             part = f.rsplit("/", 2)[-2]

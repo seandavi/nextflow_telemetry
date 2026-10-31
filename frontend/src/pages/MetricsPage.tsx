@@ -18,6 +18,9 @@ import type {
   ProcessFailuresResponse,
   ProcessRetriesResponse,
   ProcessResourcesByAttemptResponse,
+  ProcessHostsResponse,
+  HostMetricsRow,
+  HostGroupBy,
   ProcessFailureSignaturesResponse,
   ProcessTimelineResponse,
   TasksResponse,
@@ -495,6 +498,73 @@ function TaskLogViewer({ runName, taskHash }: { runName: string; taskHash: strin
   )
 }
 
+function HostsTab({ filters }: { filters: MetricsFilters }) {
+  const [groupBy, setGroupBy] = useState<HostGroupBy>('launch_host')
+  const [data, setData] = useState<ProcessHostsResponse | NotAvailableValue | null>(null)
+
+  useEffect(() => {
+    setData(null)
+    unless501(api.metrics.hosts(filters, groupBy)).then(setData).catch(console.error)
+  }, [filters, groupBy])
+
+  if (data === NOT_AVAILABLE) {
+    return <Panel><SectionHeader title="Throughput by Host" /><NotAvailable what="Host metrics" /></Panel>
+  }
+
+  const effBar = (color: string) => (v: unknown) => {
+    const n = v as number | null
+    return n != null
+      ? <MiniBar pct={n} color={n > 90 ? T.red : n > 70 ? T.amber : color} height={5} />
+      : <span style={{ color: T.muted }}>—</span>
+  }
+  const gb = (v: unknown) => (v as number | null)?.toFixed(1) ?? '—'
+
+  return (
+    <Panel>
+      <SectionHeader title="Throughput by Host"
+        sub={groupBy === 'launch_host'
+          ? 'Grouped by the node the run’s Nextflow head job ran on — traces carry no per-task hostname'
+          : 'Grouped by the CPU model each task reported (node class)'} />
+      <div style={{ display: 'flex', gap: 8 }}>
+        {([['launch_host', 'Launch host'], ['cpu_model', 'CPU model']] as const).map(([g, label]) => (
+          <button key={g} onClick={() => setGroupBy(g)} style={{
+            background: groupBy === g ? T.accentDim : T.elevated,
+            border: `1px solid ${groupBy === g ? T.accent : T.border}`,
+            color: groupBy === g ? T.accent : T.muted,
+            borderRadius: 20, padding: '4px 12px', fontSize: 11,
+            fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+          }}>{label}</button>
+        ))}
+      </div>
+      {!data
+        ? <div style={{ color: T.muted, fontSize: 14, padding: '24px 0' }}>Loading…</div>
+        : (
+          <DataTable<HostMetricsRow>
+            emptyMsg="No tasks recorded."
+            columns={[
+              { key: 'host',        label: groupBy === 'launch_host' ? 'Host' : 'CPU model', mono: true,
+                render: v => (v as string | null) ?? <span style={{ color: T.muted }}>unknown</span> },
+              { key: 'tasks',       label: 'Tasks',      align: 'right', mono: true, render: v => fmtNum(v as number) },
+              { key: 'runs',        label: 'Runs',       align: 'right', mono: true, render: v => fmtNum(v as number) },
+              { key: 'failure_pct', label: 'Fail',       align: 'right', mono: true, render: v => fmtPct(v as number) },
+              { key: 'cpu_hours',   label: 'CPU h',      align: 'right', mono: true, render: v => (v as number | null)?.toFixed(0) ?? '—' },
+              { key: 'avg_realtime_min', label: 'Avg min', align: 'right', mono: true, render: v => (v as number | null)?.toFixed(1) ?? '—' },
+              { key: 'p95_realtime_min', label: 'P95 min', align: 'right', mono: true, render: v => (v as number | null)?.toFixed(1) ?? '—' },
+              { key: 'avg_cpu_efficiency_pct',    label: 'CPU eff', render: effBar(T.accent) },
+              { key: 'avg_memory_efficiency_pct', label: 'Mem eff', render: effBar(T.blue) },
+              { key: 'avg_peak_rss_gb', label: 'RSS avg (GB)', align: 'right', mono: true, render: gb },
+              { key: 'total_read_gb',   label: 'Read (GB)',    align: 'right', mono: true, render: gb },
+              { key: 'total_write_gb',  label: 'Write (GB)',   align: 'right', mono: true, render: gb },
+              { key: 'last_task_utc',   label: 'Last task',    mono: true, render: v => fmtDate(v as string) },
+            ]}
+            rows={data.rows}
+          />
+        )
+      }
+    </Panel>
+  )
+}
+
 function TasksTab({ filters }: { filters: MetricsFilters }) {
   const PAGE_SIZE = 50
   const [processFilter, setProcessFilter] = useState('')
@@ -668,11 +738,12 @@ function TasksTab({ filters }: { filters: MetricsFilters }) {
   )
 }
 
-type Tab = 'failures' | 'retries' | 'resources' | 'signatures' | 'timeline' | 'tasks'
+type Tab = 'failures' | 'retries' | 'resources' | 'hosts' | 'signatures' | 'timeline' | 'tasks'
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'failures',   label: 'Failures'   },
   { id: 'retries',    label: 'Retries'    },
   { id: 'resources',  label: 'Resources'  },
+  { id: 'hosts',      label: 'Hosts'      },
   { id: 'signatures', label: 'Signatures' },
   { id: 'timeline',   label: 'Timeline'   },
   { id: 'tasks',      label: 'Tasks'      },
@@ -743,8 +814,8 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
           }}>{t.label}</button>
         ))}
       </div>
-      {tab === 'tasks'
-        ? <TasksTab filters={filters} />
+      {tab === 'tasks' || tab === 'hosts'
+        ? (tab === 'tasks' ? <TasksTab filters={filters} /> : <HostsTab filters={filters} />)
         : (tab !== 'timeline' && (!failures || !retries || !resources || !signatures)) ||
           (tab === 'timeline' && !timeline)
           ? <div style={{ color: T.muted, fontSize: 14, padding: '32px 0' }}>Loading…</div>

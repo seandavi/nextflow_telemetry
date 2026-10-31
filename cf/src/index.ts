@@ -468,7 +468,7 @@ api.get("/metrics/processes/running", describeRoute({ summary: "In-flight proces
 // The analytical endpoints need per-task history, which lives as NDJSON on R2
 // and is queried by the catalog service. Explicit 501 beats a silently empty
 // response when it is not there — see cf/README.md "historical tier".
-for (const p of ["summary", "retries", "resources-by-attempt", "failures", "failure-signatures", "tasks", "timeline"]) {
+for (const p of ["summary", "retries", "resources-by-attempt", "hosts", "failures", "failure-signatures", "tasks", "timeline"]) {
   api.get(`/metrics/processes/${p}`, describeRoute({ summary: `Historical tier (${p}): proxied to the catalog service; 501 when it is not configured or not answering`, tags: ["metrics"], responses: { "200": { description: "Proxied from CATALOG_URL" }, "501": { description: "Catalog not configured or not answering" } } }), (c) => historicalTier(c));
 }
 

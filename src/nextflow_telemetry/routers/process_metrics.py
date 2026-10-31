@@ -150,6 +150,42 @@ def create_process_metrics_router(service: ProcessMetricsService) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.get(
+        "/hosts",
+        response_model=models.ProcessHostsResponse,
+        summary="Throughput and resource utilisation by host",
+        description=(
+            "Groups process_completed events by host and returns task counts, failure rate, "
+            "task/CPU hours, wall-time spread, and CPU/memory efficiency. Nextflow traces carry "
+            "no task hostname, so `group_by=launch_host` uses the node the run's wrapper (the "
+            "Nextflow head job) reported, and `group_by=cpu_model` groups by the task's node class. "
+            "Use it to spot hot or slow nodes and uneven load."
+        ),
+    )
+    async def process_hosts(
+        group_by: Literal["launch_host", "cpu_model"] = Query(default="launch_host", description="Host dimension to group by."),
+        window_days: int | None = Query(default=None, ge=1, description=_WINDOW_DAYS_DESC),
+        window_hours: int | None = Query(default=None, ge=1, description=_WINDOW_HOURS_DESC),
+        since: dt.datetime | None = Query(default=None, description=_SINCE_DESC),
+        until: dt.datetime | None = Query(default=None, description=_UNTIL_DESC),
+        workflow_id: str | None = Query(default=None, description=_WORKFLOW_ID_DESC),
+        workflow_version: str | None = Query(default=None, description=_WORKFLOW_VERSION_DESC),
+        run_name: str | None = Query(default=None, description=_RUN_NAME_DESC),
+        sample_id: str | None = Query(default=None, description=_SAMPLE_ID_DESC),
+        limit: int = Query(default=100, ge=1, le=1000, description=_LIMIT_DESC),
+    ):
+        try:
+            return await service.hosts(
+                group_by=group_by,
+                window_days=window_days, window_hours=window_hours,
+                since=since, until=until,
+                workflow_id=workflow_id, workflow_version=workflow_version,
+                run_name=run_name, sample_id=sample_id,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.get(
         "/failures",
         response_model=models.ProcessFailuresResponse,
         summary="Failure rate by process",

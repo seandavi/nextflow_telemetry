@@ -189,6 +189,35 @@ export interface ProcessResourcesByAttemptResponse {
   rows: ResourceByAttemptRow[]
 }
 
+export interface HostMetricsRow {
+  host: string | null
+  tasks: number
+  runs: number
+  success: number
+  failed: number
+  failure_pct: number
+  task_hours: number | null
+  cpu_hours: number | null
+  avg_realtime_min: number | null
+  p95_realtime_min: number | null
+  avg_cpu_efficiency_pct: number | null
+  avg_memory_efficiency_pct: number | null
+  avg_peak_rss_gb: number | null
+  total_read_gb: number | null
+  total_write_gb: number | null
+  first_task_utc: string
+  last_task_utc: string
+}
+
+export type HostGroupBy = 'launch_host' | 'cpu_model'
+
+export interface ProcessHostsResponse {
+  generated_at_utc: string
+  window_days: number | null
+  group_by: HostGroupBy
+  rows: HostMetricsRow[]
+}
+
 export interface FailureSignatureRow {
   process: string
   exit_code: string

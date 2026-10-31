@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from nextflow_telemetry import models
 from nextflow_telemetry.routers.cohorts import CohortFailuresResponse, create_cohorts_router
+from nextflow_telemetry.routers.process_metrics import create_process_metrics_router
 from nextflow_telemetry.services import v2_api
 from nextflow_telemetry.services.event_archive import EventArchive
 from nextflow_telemetry.services.process_metrics import ProcessMetricsService
@@ -37,6 +38,7 @@ def _task(run, sample, process, status, *, attempt=1, exit_="0", action=None, ho
             "error_action": action, "cpus": 8, "memory": 16 * 1024**3, "time": 86400000,
             "realtime": 60000, "%cpu": 400.0, "%mem": 1.5, "peak_rss": 4 * 1024**3,
             "read_bytes": 1024**3, "write_bytes": 1024**3, "rchar": 2 * 1024**3, "wchar": 1024**3,
+            "cpu_model": "AMD EPYC 7763 64-Core Processor",
         }},
     }
 
@@ -52,6 +54,8 @@ EVENTS = [
      "payload": {"metadata": {"workflow": {"manifest": {"version": "2.2.3"}}}}},
     {"run_name": "run-a", "event": "run_heartbeat", "source": "run_event", "utc_time": NOW.isoformat(),
      "payload": {"type": "heartbeat"}},
+    {"run_name": "run-a", "event": "run_pre_nextflow", "source": "run_event", "utc_time": (NOW - timedelta(hours=3)).isoformat(),
+     "payload": {"type": "pre_nextflow", "hostname": "a123"}},
     _task("run-a", "s1", "kneaddata", "COMPLETED"),
     _task("run-a", "s1", "fasterq_dump", "COMPLETED"),
     _task("run-a", "s2", "kneaddata", "FAILED", exit_="137", action="RETRY", hash_="aa/000001", hours_ago=2),
@@ -146,6 +150,28 @@ async def test_resources_by_attempt(svc):
     assert row.avg_requested_memory_gb == 16.0
     assert row.avg_cpu_efficiency_pct == 50.0
     assert row.avg_peak_rss_gb == 4.0
+
+
+async def test_hosts_by_launch_host_and_cpu_model(svc):
+    body = models.ProcessHostsResponse.model_validate(await svc.hosts())
+    by_host = {r.host: r for r in body.rows}
+    # run-b's wrapper never reported a host.
+    assert {h: r.tasks for h, r in by_host.items()} == {"a123": 5, None: 1}
+    a = by_host["a123"]
+    assert (a.runs, a.success, a.failed, a.failure_pct) == (1, 3, 2, 40.0)
+    assert a.cpu_hours == round(5 * 8 / 60, 2) and a.avg_cpu_efficiency_pct == 50.0
+
+    body = models.ProcessHostsResponse.model_validate(await svc.hosts(group_by="cpu_model"))
+    assert [(r.host, r.tasks, r.runs) for r in body.rows] == [("AMD EPYC 7763 64-Core Processor", 6, 2)]
+
+
+def test_hosts_route(svc):
+    app = FastAPI()
+    app.include_router(create_process_metrics_router(svc))
+    with TestClient(app) as client:
+        assert client.get("/metrics/processes/hosts", params={"group_by": "nope"}).status_code == 422
+        resp = client.get("/metrics/processes/hosts", params={"group_by": "cpu_model"})
+    assert resp.status_code == 200 and resp.json()["group_by"] == "cpu_model"
 
 
 async def test_tasks_paginates_newest_first(svc):

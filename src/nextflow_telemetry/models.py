@@ -207,6 +207,35 @@ class ProcessResourcesByAttemptResponse(BaseModel):
     rows: list[ResourceByAttemptRow]
 
 
+class HostMetricsRow(BaseModel):
+    """Task throughput and resource utilisation for one host (see `group_by`)."""
+    host: Optional[str] = Field(description="Launch host or CPU model; null when the run or trace did not report one.")
+    tasks: int
+    runs: int
+    success: int
+    failed: int
+    failure_pct: float
+    task_hours: Optional[float] = Field(description="Summed task wall time, in hours.")
+    cpu_hours: Optional[float] = Field(description="Summed wall time × requested CPUs, in hours.")
+    avg_realtime_min: Optional[float]
+    p95_realtime_min: Optional[float]
+    avg_cpu_efficiency_pct: Optional[float] = Field(description="Average pct_cpu / (requested_cpus × 100).")
+    avg_memory_efficiency_pct: Optional[float] = Field(description="Average peak_rss / requested_memory.")
+    avg_peak_rss_gb: Optional[float]
+    total_read_gb: Optional[float]
+    total_write_gb: Optional[float]
+    first_task_utc: datetime.datetime
+    last_task_utc: datetime.datetime
+
+
+class ProcessHostsResponse(BaseModel):
+    """Response from GET /metrics/processes/hosts."""
+    generated_at_utc: datetime.datetime
+    window_days: Optional[int] = Field(description="Effective time window applied (default 7 days when no time filter is supplied; null only when since/until or window_hours was used instead).")
+    group_by: Literal["launch_host", "cpu_model"]
+    rows: list[HostMetricsRow]
+
+
 class ProcessFailuresRow(BaseModel):
     """Success/failure breakdown for a single process."""
     process: str
