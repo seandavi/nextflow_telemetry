@@ -72,6 +72,12 @@ class Settings:
     # No default: the service refuses to start without it, so a dev or contract
     # run can never write into the production bucket the Worker owns.
     BLOB_STORE_URL: str
+    # R2 → Postgres event ingester (ADR-0013 §3, #375). Off until cutover (M8).
+    # EVENT_INGEST_URL is the bucket root holding telemetry/events/ (r2://<bucket> or a
+    # local directory); required when enabled.
+    EVENT_INGEST_ENABLED: bool
+    EVENT_INGEST_SECONDS: float
+    EVENT_INGEST_URL: str
 
 settings = Settings(
     SQLALCHEMY_URI=_normalize_sqlalchemy_uri(
@@ -102,4 +108,7 @@ settings = Settings(
     DEADLINE_SWEEP_ENABLED=_as_bool(os.environ.get("DEADLINE_SWEEP_ENABLED", "0")),
     RETIRED_ARCHIVE_ENABLED=_as_bool(os.environ.get("RETIRED_ARCHIVE_ENABLED", "0")),
     RETIRED_ARCHIVE_URL=os.environ.get("RETIRED_ARCHIVE_URL", "r2://nf-telemetry/archive/jobs"),
+    EVENT_INGEST_ENABLED=_as_bool(os.environ.get("EVENT_INGEST_ENABLED", "0")),
+    EVENT_INGEST_SECONDS=float(os.environ.get("EVENT_INGEST_SECONDS", "30")),
+    EVENT_INGEST_URL=os.environ.get("EVENT_INGEST_URL", ""),
 )

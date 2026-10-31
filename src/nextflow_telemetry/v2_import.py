@@ -24,10 +24,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from . import control_db as cdb
 from .db import metadata
 from .meta.store import readset_id
+from .services.event_ingest import EVENTS_STREAM
 from .utils import parse_srrs, srrs_to_sample_id
 
 EXPORT_FORMAT = 1
-EVENTS_STREAM = "telemetry/events"
 # Insert order (FK parents first). job_counts is read only for the drift note.
 IMPORT_TABLES = ("samples", "collections", "collection_samples", "workflows", "runs", "jobs",
                  "dead_letter", "daemons", "run_task_counts", "run_failed_tasks")

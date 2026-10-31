@@ -5,6 +5,7 @@ Every function is idempotent under a repeated call with the same arguments, exce
 """
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -35,6 +36,7 @@ RUN_TERMINAL = ("completed", "failed", "expired")
 JOB_INFLIGHT = ("claimed", "submitted", "running")
 SWEEP_REASON_DEFAULT = "run completed without MARK_COMPLETE"
 RUN_FAILED_TASKS_MAX = 200
+_INT4_MIN, _INT4_MAX = -(2**31), 2**31 - 1
 
 # The earliest sample of each readset is a hashed set, not a correlated min(): with stale statistics
 # (right after a bulk load) the planner turned the correlated form into a quadratic index scan.
@@ -54,6 +56,31 @@ _RECONCILE_SQL = text(
 )
 
 _PRIORITY_ORDER = (jobs_tbl.c.priority.desc(), jobs_tbl.c.created_at, jobs_tbl.c.id)
+
+
+def _int(v: Any) -> int | None:
+    """Event values bound for integer columns. Bools and non-numbers become None; a finite
+    float is truncated toward zero; anything outside int4 becomes None."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, float):
+        if not math.isfinite(v):
+            return None
+        v = int(v)
+    return v if isinstance(v, int) and _INT4_MIN <= v <= _INT4_MAX else None
+
+
+def _str(v: Any) -> str | None:
+    """Event values bound for text columns: strings, and numbers (not bools) as text. NUL removed (Postgres text rejects it)."""
+    if isinstance(v, str):
+        return v.replace("\x00", "")
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return str(v)
+    return None
+
+
+def _dict(v: Any) -> dict[str, Any]:
+    return v if isinstance(v, dict) else {}
 
 
 @dataclass(frozen=True)
@@ -231,7 +258,7 @@ async def record_task(
     conn: AsyncConnection, run_name: str, sample_id: str | None, trace: dict[str, Any], *, now: datetime
 ) -> None:
     """Count a task outcome and keep the first ``RUN_FAILED_TASKS_MAX`` non-COMPLETED tasks. Unknown runs are skipped."""
-    status = str(trace.get("status") or "unknown")
+    status = _str(trace.get("status")) or "unknown"
     counted = pg_insert(run_task_counts_tbl).from_select(
         ["run_name", "status", "n"],
         select(literal(run_name, String), literal(status, String), literal(1)).where(
@@ -253,12 +280,12 @@ async def record_task(
     await conn.execute(
         insert(run_failed_tasks_tbl).values(
             run_name=run_name,
-            process=str(trace.get("process") or "unknown"),
+            process=_str(trace.get("process")) or "unknown",
             sample_id=sample_id,
-            exit_code=None if trace.get("exit") is None else str(trace["exit"]),
-            task_hash=trace.get("hash"),
-            attempt=trace.get("attempt"),
-            error_action=trace.get("error_action"),
+            exit_code=_str(trace.get("exit")),
+            task_hash=_str(trace.get("hash")),
+            attempt=_int(trace.get("attempt")),
+            error_action=_str(trace.get("error_action")),
             utc_time=now,
         )
     )
@@ -385,31 +412,32 @@ async def expire_claim(conn: AsyncConnection, run_name: str, *, now: datetime) -
 
 async def apply_weblog_event(conn: AsyncConnection, body: dict[str, Any], *, now: datetime) -> None:
     """The state changes of one Nextflow weblog event (``POST /telemetry``)."""
-    run_name = str(body.get("runName") or body.get("run_name") or "")
-    event = str(body.get("event") or "")
+    run_name = _str(body.get("runName") or body.get("run_name")) or ""
+    event = _str(body.get("event")) or ""
     trace = body["trace"] if isinstance(body.get("trace"), dict) else None
-    sample_id = str(trace["tag"]).split(":")[0] if trace and trace.get("tag") else None
+    tag = _str(trace.get("tag")) if trace else None
+    sample_id = tag.split(":")[0] if tag else None
 
     if event == "started":
-        await mark_running(conn, run_name, body.get("runId") or body.get("run_id"), now=now)
+        await mark_running(conn, run_name, _str(body.get("runId") or body.get("run_id")), now=now)
     elif (
         event == "process_completed"
         and sample_id
         and trace is not None
-        and str(trace.get("process") or "").endswith("MARK_COMPLETE")
+        and (_str(trace.get("process")) or "").endswith("MARK_COMPLETE")
         and trace.get("status") == "COMPLETED"
     ):
         await complete_sample(conn, run_name, sample_id, now=now)
     if event == "process_completed" and trace:
         await record_task(conn, run_name, sample_id, trace, now=now)
     if event == "completed":
-        wf = (body.get("metadata") or {}).get("workflow") or {}
+        wf = _dict(_dict(body.get("metadata")).get("workflow"))
         if wf.get("success") is False:
             why = next(
-                (wf[k] for k in ("errorMessage", "errorReport") if wf.get(k) is not None),
+                (s for k in ("errorMessage", "errorReport") if (s := _str(wf.get(k))) is not None),
                 "nextflow reported success=false",
             )
-            await close_run(conn, run_name, "failed", str(why)[:1000], now=now)
+            await close_run(conn, run_name, "failed", why[:1000], now=now)
         else:
             await close_run(conn, run_name, "completed", None, now=now)
 
@@ -431,6 +459,7 @@ async def _refresh_liveness(conn: AsyncConnection, run_name: str, *, now: dateti
 
 async def apply_run_event(conn: AsyncConnection, run_name: str, event: dict[str, Any], *, now: datetime) -> None:
     """The state changes of one wrapper or daemon event (``POST /runs/{run}/event``)."""
+    run_name = _str(run_name) or ""
     kind = event.get("type")
     if kind == "wrapper_started":
         await mark_submitted(conn, run_name, None, now=now)
@@ -438,18 +467,17 @@ async def apply_run_event(conn: AsyncConnection, run_name: str, event: dict[str,
     elif kind == "heartbeat":
         await _refresh_liveness(conn, run_name, now=now)
     elif kind == "pre_nextflow":
-        if event.get("wait_seconds") is not None:
-            await conn.execute(
-                update(runs_tbl).where(runs_tbl.c.run_name == run_name).values(wait_seconds=event["wait_seconds"])
-            )
+        wait_seconds = _int(event.get("wait_seconds"))
+        if wait_seconds is not None:
+            await conn.execute(update(runs_tbl).where(runs_tbl.c.run_name == run_name).values(wait_seconds=wait_seconds))
     elif kind == "slurm_state":
         await conn.execute(
             update(runs_tbl)
             .where(runs_tbl.c.run_name == run_name)
-            .values(last_known_slurm_state=event.get("state"), slurm_reason=event.get("reason"))
+            .values(last_known_slurm_state=_str(event.get("state")), slurm_reason=_str(event.get("reason")))
         )
     elif kind == "wrapper_exited":
-        exit_code = event.get("exit_code")
+        exit_code = _int(event.get("exit_code"))
         await conn.execute(
             update(runs_tbl).where(runs_tbl.c.run_name == run_name).values(wrapper_exit_code=exit_code)
         )

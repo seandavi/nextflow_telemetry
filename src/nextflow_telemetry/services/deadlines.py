@@ -19,9 +19,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from ..config import Settings
-from ..control_db import deadline_sweep_tbl, runs_tbl
+from ..control_db import deadline_sweep_tbl, ingest_cursor_tbl, runs_tbl
 from ..log import logger
 from . import transitions
+from .event_ingest import EVENTS_STREAM
 
 CLAIM_EXPIRED_REASON = "claim expired without submitted confirmation"
 BACKSTOP_REASON = "no wrapper activity within submit backstop"
@@ -68,6 +69,7 @@ class SweepResult:
     backstop_failures: int = 0
     liveness_failures: int = 0
     errors: int = 0                  # runs whose transition raised; retried next sweep
+    ingest_stale: bool = False       # liveness and backstop expiry held: the event ingester is behind
 
 
 async def sweep_deadlines(conn: AsyncConnection, policy: DeadlinePolicy, now: datetime) -> SweepResult:
@@ -106,11 +108,23 @@ async def sweep_deadlines(conn: AsyncConnection, policy: DeadlinePolicy, now: da
                 extra={"gap_seconds": gap.total_seconds(), "shifted": result.shifted},
             )
 
+    cursor = (await conn.execute(
+        select(ingest_cursor_tbl.c.caught_up_at).where(ingest_cursor_tbl.c.stream == EVENTS_STREAM)
+    )).first()
+    result.ingest_stale = cursor is not None and (
+        cursor[0] is None or now - cursor[0] > policy.liveness / 2)
+    if result.ingest_stale:
+        logger.warning("deadline.sweep.ingest_stale", extra={"caught_up_at": cursor[0] if cursor else None})
+    due = (
+        runs_tbl.c.claim_expires_at <= now
+        if result.ingest_stale
+        else or_(runs_tbl.c.claim_expires_at <= now, runs_tbl.c.submit_deadline <= now,
+                 runs_tbl.c.liveness_deadline <= now)
+    )
     expired = (await conn.execute(
         select(runs_tbl.c.run_name, runs_tbl.c.claim_expires_at, runs_tbl.c.submit_deadline,
                runs_tbl.c.liveness_deadline)
-        .where(or_(runs_tbl.c.claim_expires_at <= now, runs_tbl.c.submit_deadline <= now,
-                   runs_tbl.c.liveness_deadline <= now))
+        .where(due)
         .order_by(runs_tbl.c.run_name)
         .with_for_update(skip_locked=True)
     )).all()
@@ -150,7 +164,7 @@ async def run_deadline_sweeps(engine: AsyncEngine, policy: DeadlinePolicy) -> No
             async with engine.begin() as conn:
                 result = await sweep_deadlines(conn, policy, datetime.now(timezone.utc))
             if (result.shifted or result.expired_claims or result.backstop_failures
-                    or result.liveness_failures or result.errors):
+                    or result.liveness_failures or result.errors or result.ingest_stale):
                 logger.info("deadline.sweep", extra={
                     **asdict(result),
                     "gap": None if result.gap is None else result.gap.total_seconds(),
