@@ -56,6 +56,17 @@ class Settings:
     # Bearer token for v2 writes (GSM cdsci-nf-telemetry-v2-api-token). Empty
     # disables the submission write-through to v2 POST /samples.
     V2_API_TOKEN: str
+    # Control-plane deadlines (ADR-0013 decision 4, #374). Names and units are v2's
+    # (cf/wrangler.jsonc), so CLAIM_TTL_MINUTES=0.1 means the same on both targets.
+    # The sweep and the daily retired-job archive are off until cutover (M8).
+    CLAIM_TTL_MINUTES: float
+    SUBMIT_BACKSTOP_HOURS: float
+    LIVENESS_MINUTES: float
+    DEADLINE_SWEEP_SECONDS: float
+    DEADLINE_SWEEP_ENABLED: bool
+    RETIRED_ARCHIVE_ENABLED: bool
+    # Directory (r2:// or local path) for retired versions' gzipped NDJSON jobs.
+    RETIRED_ARCHIVE_URL: str
 
 settings = Settings(
     SQLALCHEMY_URI=_normalize_sqlalchemy_uri(
@@ -78,4 +89,11 @@ settings = Settings(
     R2_SECRET_ACCESS_KEY=os.environ.get("R2_SECRET_ACCESS_KEY", ""),
     V2_API_URL=os.environ.get("V2_API_URL", "https://nf-telemetry.seandavi.workers.dev/api"),
     V2_API_TOKEN=os.environ.get("V2_API_TOKEN", ""),
+    CLAIM_TTL_MINUTES=float(os.environ.get("CLAIM_TTL_MINUTES", "5")),
+    SUBMIT_BACKSTOP_HOURS=float(os.environ.get("SUBMIT_BACKSTOP_HOURS", "168")),
+    LIVENESS_MINUTES=float(os.environ.get("LIVENESS_MINUTES", "10")),
+    DEADLINE_SWEEP_SECONDS=float(os.environ.get("DEADLINE_SWEEP_SECONDS", "30")),
+    DEADLINE_SWEEP_ENABLED=_as_bool(os.environ.get("DEADLINE_SWEEP_ENABLED", "0")),
+    RETIRED_ARCHIVE_ENABLED=_as_bool(os.environ.get("RETIRED_ARCHIVE_ENABLED", "0")),
+    RETIRED_ARCHIVE_URL=os.environ.get("RETIRED_ARCHIVE_URL", "r2://nf-telemetry/archive/jobs"),
 )

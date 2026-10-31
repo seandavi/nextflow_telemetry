@@ -190,7 +190,7 @@ def migrated_url(db_asyncpg_url: str) -> Iterator[str]:
 
 def test_columns_match_table_definitions(migrated_url: str) -> None:
     async def check(con: AsyncConnection) -> None:
-        for name in (*NEW_TABLES, "submissions"):
+        for name in (*NEW_TABLES, "submissions", "deadline_sweep"):
             expected = {col.name: col.nullable for col in metadata.tables[name].columns}
             actual = {
                 col["name"]: col["nullable"]

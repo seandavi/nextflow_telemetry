@@ -11,6 +11,7 @@ from sqlalchemy import (
     Index,
     Integer,
     PrimaryKeyConstraint,
+    SmallInteger,
     String,
     Table,
     Text,
@@ -282,4 +283,13 @@ curation_decisions_tbl = Table(
     CheckConstraint("subject_type in ('study','readset','run')", name="ck_curation_decisions_subject_type"),
     CheckConstraint("decision in ('include','exclude')", name="ck_curation_decisions_decision"),
     Index("ix_curation_decisions_subject", "subject_type", "subject_id", "at"),
+)
+
+# One row (id = 1): when the last deadline sweep committed. The outage grace
+# period measures the gap from it (#374).
+deadline_sweep_tbl = Table(
+    "deadline_sweep", metadata,
+    Column("id", SmallInteger, primary_key=True),
+    Column("last_swept_at", DateTime(timezone=True), nullable=True),
+    CheckConstraint("id = 1", name="ck_deadline_sweep_singleton"),
 )
