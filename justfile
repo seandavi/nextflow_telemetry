@@ -162,12 +162,12 @@ pg-local:
 	until docker exec nf-pg-local pg_isready -U postgres -h 127.0.0.1 >/dev/null 2>&1; do sleep 1; done
 	d=$(mktemp -d); mkdir -p "$d/events" "$d/blobs"; \
 	export SQLALCHEMY_URI=postgresql://postgres:postgres@127.0.0.1:55432/postgres DISPATCH_TOKEN=contract-token \
-	  CLAIM_TTL_MINUTES=0.1 LIVENESS_MINUTES=0.1 BLOB_STORE_URL="$d/blobs" EVENTS_ARCHIVE_URL="$d/events" \
+	  CLAIM_TTL_MINUTES=0.1 LIVENESS_MINUTES=0.1 DEADLINE_SWEEP_ENABLED=1 DEADLINE_SWEEP_SECONDS=1 BLOB_STORE_URL="$d/blobs" EVENTS_ARCHIVE_URL="$d/events" \
 	  V2_API_URL=http://127.0.0.1:8000/api; \
 	uv run alembic upgrade head && uv run uvicorn nextflow_telemetry.main:app --host 127.0.0.1 --port 8000
 
 # HTTP contract suite against a running target; defaults match `just v2-local`.
-# An empty fast_clock leaves the timer tier skipped (pg-local until M4's sweep exists).
+# An empty fast_clock leaves the timer tier skipped. Both v2-local and pg-local fire deadlines within 20 s.
 contract url="http://127.0.0.1:8787" token="contract-token" fast_clock="20":
 	CONTRACT_BASE_URL={{url}} CONTRACT_TOKEN={{token}} CONTRACT_ALLOW_WRITES=1 CONTRACT_FAST_CLOCK_SECONDS={{fast_clock}} \
 	  uv run pytest contract -v

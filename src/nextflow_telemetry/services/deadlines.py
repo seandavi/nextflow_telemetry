@@ -5,8 +5,8 @@ since the previous sweep is longer than the liveness window (the service was dow
 every open deadline is first pushed out by the gap, so a run is not failed for
 heartbeats nobody could receive.
 
-``_expire_claim`` and ``_fail_run`` are temporary copies of v2's ``expireClaim`` and
-``closeRun(run, "failed", reason)`` until M3's transition module replaces them.
+Each expiry goes through the shared transition module (``transitions.expire_claim`` and
+``transitions.close_run``), the only code that writes job and run status (#373).
 """
 from __future__ import annotations
 
@@ -14,13 +14,14 @@ import asyncio
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, or_, select, text, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from ..config import Settings
-from ..control_db import deadline_sweep_tbl, jobs_tbl, runs_tbl
+from ..control_db import deadline_sweep_tbl, runs_tbl
 from ..log import logger
+from . import transitions
 
 CLAIM_EXPIRED_REASON = "claim expired without submitted confirmation"
 BACKSTOP_REASON = "no wrapper activity within submit backstop"
@@ -118,13 +119,13 @@ async def sweep_deadlines(conn: AsyncConnection, policy: DeadlinePolicy, now: da
             async with conn.begin_nested():
                 # ck_runs_one_deadline: exactly one of the three is set.
                 if claim_expires_at is not None:
-                    await _expire_claim(conn, run_name, now)
+                    await transitions.expire_claim(conn, run_name, now=now)
                     result.expired_claims += 1
                 elif submit_deadline is not None:
-                    await _fail_run(conn, run_name, BACKSTOP_REASON, now)
+                    await transitions.close_run(conn, run_name, "failed", BACKSTOP_REASON, now=now)
                     result.backstop_failures += 1
                 else:
-                    await _fail_run(conn, run_name, LIVENESS_REASON, now)
+                    await transitions.close_run(conn, run_name, "failed", LIVENESS_REASON, now=now)
                     result.liveness_failures += 1
                 # RunDO's deleteAll() after every alarm: a no-op transition must not
                 # leave the row to be selected on every sweep.
@@ -157,53 +158,3 @@ async def run_deadline_sweeps(engine: AsyncEngine, policy: DeadlinePolicy) -> No
         except Exception:
             logger.exception("deadline.sweep.failed")
         await asyncio.sleep(policy.sweep_interval.total_seconds())
-
-
-async def _expire_claim(conn: AsyncConnection, run_name: str, now: datetime) -> None:
-    """v2 ControlDO.expireClaim: back to pending, no retry used."""
-    expired = await conn.execute(
-        update(runs_tbl)
-        .where(runs_tbl.c.run_name == run_name, runs_tbl.c.status == "claimed")
-        .values(status="expired", completed_at=now, slurm_reason=CLAIM_EXPIRED_REASON,
-                **_NO_DEADLINES)
-    )
-    if expired.rowcount:
-        await conn.execute(
-            update(jobs_tbl)
-            .where(jobs_tbl.c.run_name == run_name, jobs_tbl.c.status == "claimed")
-            .values(status="pending", run_name=None)
-        )
-
-
-async def _fail_run(conn: AsyncConnection, run_name: str, reason: str, now: datetime) -> None:
-    """v2 ControlDO.closeRun(run, "failed", reason) and sweepIncomplete, minus the R2 ledger."""
-    await conn.execute(
-        update(runs_tbl)
-        .where(runs_tbl.c.run_name == run_name, runs_tbl.c.status.not_in(RUN_TERMINAL))
-        .values(status="failed", completed_at=now, slurm_reason=reason, **_NO_DEADLINES)
-    )
-    params = {"run_name": run_name, "reason": reason, "now": now}
-    await conn.execute(text("""
-        with failed as (
-          update jobs j
-             set retry_count = j.retry_count + 1, status = 'failed',
-                 failed_at = :now, failure_reason = :reason
-            from workflows w
-           where w.id = j.workflow_pk and j.run_name = :run_name
-             and j.status in ('claimed', 'submitted', 'running')
-             and j.retry_count >= w.max_retries
-          returning j.id, j.sample_id, j.workflow_id, j.workflow_version)
-        insert into dead_letter (job_id, run_name, sample_id, workflow_id, workflow_version, reason, created_at)
-        select id, cast(:run_name as varchar), sample_id, workflow_id, workflow_version,
-               cast(:reason as text), cast(:now as timestamptz) from failed
-        on conflict (job_id) do nothing
-    """), params)
-    await conn.execute(text("""
-        update jobs j
-           set retry_count = j.retry_count + 1, status = 'pending', run_name = null,
-               failed_at = null, failure_reason = null
-          from workflows w
-         where w.id = j.workflow_pk and j.run_name = :run_name
-           and j.status in ('claimed', 'submitted', 'running')
-           and j.retry_count < w.max_retries
-    """), params)

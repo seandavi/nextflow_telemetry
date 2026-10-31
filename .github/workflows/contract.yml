@@ -55,6 +55,8 @@ jobs:
       DISPATCH_TOKEN: contract-token
       CLAIM_TTL_MINUTES: "0.1"
       LIVENESS_MINUTES: "0.1"
+      DEADLINE_SWEEP_ENABLED: "1"
+      DEADLINE_SWEEP_SECONDS: "1"   # at most half of LIVENESS_MINUTES, or the lifespan refuses to start
       V2_API_URL: http://127.0.0.1:8000/api
     steps:
       - uses: actions/checkout@v4
@@ -68,11 +70,12 @@ jobs:
             uv run uvicorn nextflow_telemetry.main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
           for i in $(seq 60); do curl -sf http://127.0.0.1:8000/api/health && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/api.log"; exit 1
-      - name: Contract suite (timer tier waits for M4)
+      - name: Contract suite
         env:
           CONTRACT_BASE_URL: http://127.0.0.1:8000
           CONTRACT_TOKEN: contract-token
           CONTRACT_ALLOW_WRITES: "1"
+          CONTRACT_FAST_CLOCK_SECONDS: "20"
         run: uv run pytest contract -v
       - if: failure()
         run: cat "$RUNNER_TEMP/api.log"

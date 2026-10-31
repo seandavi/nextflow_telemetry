@@ -167,6 +167,7 @@ async def test_archive_endpoint_requires_operator(
         engine: AsyncEngine, tmp_path: Path, monkeypatch, request: pytest.FixtureRequest) -> None:
     monkeypatch.setenv("OPERATOR_TOKEN", "t")
     monkeypatch.setenv("RETIRED_ARCHIVE_URL", str(tmp_path / "jobs"))
+    monkeypatch.setenv("RETIRED_ARCHIVE_ENABLED", "1")
     pk = await _seed_version(engine, "1", "retired", ["completed"])
     client, _ = request.getfixturevalue("integration_client")
 
@@ -177,3 +178,18 @@ async def test_archive_endpoint_requires_operator(
     assert resp.status_code == 200
     assert resp.json() == {"workflows_archived": 1, "jobs_archived": 1}
     assert len(_objects(tmp_path, pk)) == 1
+
+
+async def test_archive_endpoint_is_off_unless_enabled(
+        engine: AsyncEngine, tmp_path: Path, monkeypatch, request: pytest.FixtureRequest) -> None:
+    """With the flag off the route refuses and writes nothing, whatever the token (#399)."""
+    monkeypatch.setenv("OPERATOR_TOKEN", "t")
+    monkeypatch.setenv("RETIRED_ARCHIVE_URL", str(tmp_path / "jobs"))
+    monkeypatch.delenv("RETIRED_ARCHIVE_ENABLED", raising=False)
+    pk = await _seed_version(engine, "1", "retired", ["completed"])
+    client, _ = request.getfixturevalue("integration_client")
+
+    resp = client.post("/api/admin/archive-retired", params={"workflow_pk": pk},
+                       headers={"Authorization": "Bearer t"})
+    assert resp.status_code == 503
+    assert _objects(tmp_path, pk) == []
