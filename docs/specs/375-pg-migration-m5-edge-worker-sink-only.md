@@ -718,8 +718,24 @@ routes are unchanged (Decision 1).
 The issue is done when "a replay of one day of production R2 events into a scratch
 database gives the same job and run states v2 holds for those runs, apart from
 documented differences". The documented differences are `deadline`, `reclaimed` and
-`archived` above, and timestamps compared only as set or unset. After merge, the
-operator:
+`archived` above, and timestamps compared only as set or unset.
+
+Two more can show up as mismatches. Both come from state that isn't carried by events,
+each in a window of seconds, so expect at most a handful per replay and explain each one
+by hand (#409 code-r0-1):
+
+- **Claimed at BEFORE.** `executor_job_id`, and `claimed` → `submitted`, come from the
+  origin call `/dispatch/submitted`, not from an event. A run claimed at the BEFORE export
+  keeps a null `executor_job_id` in the replay, and stays `claimed` if its SLURM job was
+  still queued at AFTER.
+- **Applied just before AFTER's flush.** The Worker applies an event to ControlDO first
+  and writes it to SinkDO second. An event between the two, at the moment of AFTER's
+  export, is in AFTER's state but its line lands after AFTER's cursor, so the replay
+  never applies it.
+
+A mismatch outside these two cases is a real difference.
+
+After merge, the operator:
 
 1. Deploys the Worker (`cd cf && npx wrangler deploy`). It stays in full mode; this
    adds only the envelope key.
