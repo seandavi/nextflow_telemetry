@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,14 +22,31 @@ from .routers.curated import create_curated_router
 from .routers.daemons import create_daemons_router
 from .routers.dispatch import create_dispatch_router
 from .routers.process_metrics import create_process_metrics_router
+from .routers.retired_archive import create_retired_archive_router
 from .routers.runs import create_runs_router
 from .routers.samples import create_samples_router
 from .routers.submissions import create_submissions_router
 from .routers.task_logs import create_task_logs_router
 from .routers.workflows import create_workflows_router
+from .services import deadlines
 from .services.event_archive import EventArchive
 from .services.process_metrics import ProcessMetricsService
+from .services.retired_archive import RetiredJobArchive
 from .services.telemetry import TelemetryService
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    tasks: list[asyncio.Task[None]] = []
+    if settings.DEADLINE_SWEEP_ENABLED:
+        policy = deadlines.DeadlinePolicy.from_settings(settings)
+        tasks.append(asyncio.create_task(deadlines.run_deadline_sweeps(engine, policy)))
+    if settings.RETIRED_ARCHIVE_ENABLED:
+        tasks.append(asyncio.create_task(retired_job_archive.run_daily()))
+    yield
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
 
 app = FastAPI(
     title="Nextflow Telemetry API",
@@ -48,6 +67,7 @@ app = FastAPI(
         "routing to the dead-letter queue."
     ),
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 engine = create_async_engine(settings.SQLALCHEMY_URI)
@@ -172,6 +192,13 @@ event_archive = EventArchive(
     r2_access_key_id=settings.R2_ACCESS_KEY_ID,
     r2_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
 )
+retired_job_archive = RetiredJobArchive(
+    engine,
+    settings.RETIRED_ARCHIVE_URL,
+    settings.R2_ACCOUNT_ID,
+    settings.R2_ACCESS_KEY_ID,
+    settings.R2_SECRET_ACCESS_KEY,
+)
 process_metrics_service = ProcessMetricsService(engine=engine, archive=event_archive)
 telemetry_service = TelemetryService(engine=engine)
 
@@ -186,6 +213,7 @@ app.include_router(create_curated_router(engine), prefix="/api")
 app.include_router(create_runs_router(engine), prefix="/api")
 app.include_router(create_cohorts_router(engine, process_metrics_service), prefix="/api")
 app.include_router(create_submissions_router(engine), prefix="/api")
+app.include_router(create_retired_archive_router(retired_job_archive), prefix="/api")
 # /auth/* lives at root (not under /api) so the OAuth redirect URI is a
 # tidy origin-relative path that fits naturally into Google's allowed-redirect
 # list and avoids stuffing /api into user-facing URLs.

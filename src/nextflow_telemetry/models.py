@@ -75,6 +75,12 @@ class HealthResponse(BaseModel):
     database: str = Field(description="'Connected' when the database is reachable.")
 
 
+class ArchiveRetiredResponse(BaseModel):
+    """Result of archiving retired workflow versions' jobs to R2."""
+    workflows_archived: int = Field(description="Retired versions with at least one job archived.")
+    jobs_archived: int = Field(description="Jobs written to R2 and deleted from Postgres.")
+
+
 class HealthErrorResponse(BaseModel):
     """Health check error wrapper returned with HTTP 503."""
     detail: HealthResponse
