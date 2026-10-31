@@ -20,7 +20,7 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./types";
-import { gzip } from "./util";
+import { gzip, serialized } from "./util";
 
 /** Flush when either bound is hit; whichever comes first. */
 const FLUSH_ROWS = 500;
@@ -37,6 +37,12 @@ export interface TelemetryEnvelope {
   payload: unknown;
 }
 
+/** The last NDJSON object written under telemetry/events/, and its line count. */
+export interface FlushedObject {
+  key: string;
+  lines: number;
+}
+
 export class SinkDO extends DurableObject<Env> {
   private sql: SqlStorage;
 
@@ -50,6 +56,12 @@ export class SinkDO extends DurableObject<Env> {
         submitted integer not null default 0,
         started integer not null default 0,
         completed integer not null default 0
+      );
+      create table if not exists flush_state (
+        id    integer primary key check (id = 1),
+        seq   integer not null,
+        key   text not null,
+        lines integer not null
       );
     `);
   }
@@ -120,6 +132,7 @@ export class SinkDO extends DurableObject<Env> {
   async reset(): Promise<void> {
     this.sql.exec(`delete from buf`);
     this.sql.exec(`delete from proc`);
+    this.sql.exec(`delete from flush_state`); // its key names an object reset just deleted
     await this.ctx.storage.deleteAlarm();
   }
 
@@ -127,22 +140,39 @@ export class SinkDO extends DurableObject<Env> {
     await this.flush();
   }
 
-  async flush(): Promise<void> {
-    const rows = this.sql.exec(`select id, line from buf order by id`).toArray() as any[];
-    if (!rows.length) return;
-    const body = rows.map((r) => r.line).join("\n") + "\n";
+  /**
+   * Serialized: an alarm flush and an explicit flush can't write the same rows
+   * twice. The key suffix is a per-DO counter, so objects sort in write order
+   * and "everything after key K" is an exact cursor (#376).
+   */
+  async flush(): Promise<FlushedObject | null> {
+    return serialized(this.ctx, async () => {
+      const rows = this.sql.exec(`select id, line from buf order by id`).toArray() as any[];
+      const state = this.sql.exec(`select seq, key, lines from flush_state where id = 1`).toArray()[0] as
+        | { seq: number; key: string; lines: number }
+        | undefined;
+      if (!rows.length) return state ? { key: state.key, lines: state.lines } : null;
+      const body = rows.map((r) => r.line).join("\n") + "\n";
 
-    const now = new Date();
-    const dt = now.toISOString().slice(0, 10);
-    const key = `telemetry/events/dt=${dt}/${now.toISOString().slice(11, 19).replace(/:/g, "")}-${crypto
-      .randomUUID()
-      .slice(0, 8)}.ndjson.gz`;
+      const seq = (state?.seq ?? 0) + 1;
+      const now = new Date();
+      const dt = now.toISOString().slice(0, 10);
+      const key = `telemetry/events/dt=${dt}/${now.toISOString().slice(11, 19).replace(/:/g, "")}-${seq
+        .toString(16)
+        .padStart(8, "0")}.ndjson.gz`;
 
-    await this.env.STORE.put(key, await gzip(body));
+      await this.env.STORE.put(key, await gzip(body));
 
-    // Delete only what was written: rows added while the R2 put was in flight
-    // keep their place in the next batch.
-    this.sql.exec(`delete from buf where id <= ?`, rows[rows.length - 1].id);
-    await this.ctx.storage.deleteAlarm();
+      this.sql.exec(`delete from buf where id <= ?`, rows[rows.length - 1].id);
+      this.sql.exec(
+        `insert into flush_state (id, seq, key, lines) values (1, ?, ?, ?)
+         on conflict(id) do update set seq = excluded.seq, key = excluded.key, lines = excluded.lines`,
+        seq,
+        key,
+        rows.length,
+      );
+      await this.ctx.storage.deleteAlarm();
+      return { key, lines: rows.length };
+    });
   }
 }

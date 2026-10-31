@@ -21,7 +21,7 @@ import { DurableObject } from "cloudflare:workers";
 import { readsetIdForRuns } from "./readset";
 import { SCHEMA } from "./schema";
 import type { Env } from "./types";
-import { gzip, ndjson, uuidv7 } from "./util";
+import { gzip, ndjson, serialized, uuidv7 } from "./util";
 
 /** Run states that have already had their terminal write; closing again is a no-op. */
 const RUN_TERMINAL = ["completed", "failed", "expired"];
@@ -32,6 +32,11 @@ const SWEEP_REASON_DEFAULT = "run completed without MARK_COMPLETE";
 
 /** Rows per archive object — bounds both the JSON in memory and the R2 body. */
 const ARCHIVE_CHUNK = 5_000;
+/** Every ControlDO table, in the issue's order (#376). */
+const EXPORT_TABLES = ["samples", "collections", "collection_samples", "workflows", "jobs",
+  "job_counts", "runs", "dead_letter", "daemons", "run_task_counts", "run_failed_tasks"];
+/** Rows per export object. */
+const EXPORT_CHUNK = 10_000;
 
 type Row = Record<string, any>;
 
@@ -1189,6 +1194,47 @@ export class ControlDO extends DurableObject<Env> {
       "daemons",
     ];
     return Object.fromEntries(tables.map((t) => [t, this.all(`select * from ${t}`)]));
+  }
+
+  /**
+   * Consistent whole-DO export for the Postgres migration (ADR-0013 §8, #376).
+   * blockConcurrencyWhile holds every other request until the last object is written,
+   * so the R2 puts between chunks can't interleave a claim or an event.
+   */
+  async exportSnapshot(prefix: string, chunk = EXPORT_CHUNK): Promise<{
+    exported_at: string;
+    sequences: Record<string, number>;
+    tables: Record<string, { rows: number; objects: string[] }>;
+  }> {
+    return serialized(this.ctx, async () => {
+      const exported_at = iso();
+      const sequences = Object.fromEntries(
+        this.all(`select name, seq from sqlite_sequence`).map((r) => [r.name as string, r.seq as number]),
+      );
+      const tables: Record<string, { rows: number; objects: string[] }> = {};
+      for (const t of EXPORT_TABLES) {
+        const out = { rows: 0, objects: [] as string[] };
+        let after = 0;
+        for (;;) {
+          // Every v2 table is a rowid table, so rowid is a stable keyset.
+          const rows = this.all(
+            `select rowid as __export_rowid, * from ${t} where rowid > ? order by rowid limit ?`,
+            after,
+            chunk,
+          );
+          if (!rows.length) break;
+          after = rows[rows.length - 1].__export_rowid as number;
+          for (const r of rows) delete r.__export_rowid;
+          const key = `${prefix}/${t}/${String(out.objects.length).padStart(4, "0")}.ndjson.gz`;
+          await this.env.STORE.put(key, await gzip(ndjson(rows)));
+          out.objects.push(key);
+          out.rows += rows.length;
+          if (rows.length < chunk) break;
+        }
+        tables[t] = out;
+      }
+      return { exported_at, sequences, tables };
+    });
   }
 
   private async appendLedger(runName: string, outcome: Row): Promise<void> {

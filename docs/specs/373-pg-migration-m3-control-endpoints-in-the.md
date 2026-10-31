@@ -193,7 +193,9 @@ Add to `Settings` in `config.py`, with the same `os.environ.get` style:
 
 The values match `cf/wrangler.jsonc`. They are floats so a contract target can use
 fractional minutes, as v2 does. **M3 owns these three deadline settings, and M4 reads them
-rather than adding its own.** M4 adds its sweep interval itself.
+rather than adding its own.** M4 adds its sweep interval itself. (M4 has since landed on
+main as `services/deadlines.py` and declared the same three settings with the same names,
+defaults and units; the merge keeps one declaration, with M4's comment.)
 
 `DISPATCH_TOKEN` keeps its semantics: when empty, writes are open and a warning is logged
 once. Replace its comment with: "Bearer token for every control-plane write (ADR-0013 §6):
@@ -462,6 +464,11 @@ and for an expired `liveness_deadline`
 `close_run(conn, run, "failed", "presumed dead: heartbeats stopped")`. These are v2's
 `RunDO.alarm` reasons, and the contract's liveness test checks for "presumed dead". Nothing
 here needs to be duplicated in M4.
+
+*Integration note:* M4 merged first, and `services/deadlines.py` carries temporary copies
+of `expire_claim` and `close_run` (its `_expire_claim` and `_fail_run`) instead of calling
+`services/transitions.py`. The copies follow the same v2 reasons. Replacing them with the
+calls above is a follow-up, not part of this change.
 
 **For M5:** the ingester calls `apply_weblog_event(conn, envelope["payload"], now=received_at)`
 for `source == "weblog"`, and `apply_run_event(conn, run_name, envelope["payload"], now=received_at)`
