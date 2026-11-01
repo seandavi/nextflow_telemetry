@@ -39,7 +39,8 @@ from .services.retired_archive import RetiredJobArchive
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    tasks: list[asyncio.Task[None]] = []
+    # The history tier's first load reads the whole R2 event archive (~90 s, #413).
+    tasks: list[asyncio.Task[None]] = [asyncio.create_task(event_archive.warm())]
     if settings.DEADLINE_SWEEP_ENABLED:
         policy = deadlines.DeadlinePolicy.from_settings(settings)
         tasks.append(asyncio.create_task(deadlines.run_deadline_sweeps(engine, policy)))
@@ -62,6 +63,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
     for task in tasks:
         task.cancel()
+    event_archive.interrupt()
     await asyncio.gather(*tasks, return_exceptions=True)
 
 

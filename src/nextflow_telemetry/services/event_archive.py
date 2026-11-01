@@ -16,6 +16,7 @@ version 2.2.1 at revision 2.2.3 reports manifest 2.2.3 (ADR-0004).
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import re
 import tempfile
@@ -136,6 +137,32 @@ class EventArchive:
 
     async def fetch(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         return await run_in_threadpool(self.query, sql, params)
+
+    def refresh(self) -> None:
+        """Bring the copy up to date now, the same way the next query would."""
+        with self._lock:
+            self._refresh_if_stale()
+
+    async def warm(self) -> None:
+        """Load the archive in a worker thread so the first request finds it loaded.
+
+        Run from the app lifespan. A failed load is logged, not raised; the next
+        query retries it on the request path, as it would without warming.
+        """
+        started = time.monotonic()
+        try:
+            await asyncio.to_thread(self.refresh)
+        except Exception:
+            logger.exception("event_archive.warm_failed")
+            return
+        logger.info(
+            "event_archive.warmed",
+            extra={"files": len(self._files), "seconds": round(time.monotonic() - started, 1)},
+        )
+
+    def interrupt(self) -> None:
+        """Abort the DuckDB statement running on the connection, if any (shutdown)."""
+        self._con.interrupt()
 
     def _refresh_if_stale(self) -> None:
         now = time.monotonic()
