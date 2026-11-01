@@ -527,6 +527,30 @@ api.post("/admin/requeue-dead-letter", describeRoute({ summary: "Return dead-let
   c.json({ requeued: await control(c.env).requeueDeadLetter() }),
 );
 
+api.post("/admin/job-priority", describeRoute({
+  summary: "Set the claim priority of a collection's pending jobs (higher is claimed first)",
+  tags: ["admin"],
+  requestBody: { content: { "application/json": { schema: resolver(S.JobPriorityRequest) } } },
+  responses: {
+    "200": { description: "OK", content: { "application/json": { schema: resolver(S.JobPriorityUpdated) } } },
+    "404": { description: "Unknown collection or workflow" },
+    "422": { description: "Invalid body" },
+  },
+}), async (c) => {
+  const parsed = S.JobPriorityRequest.safeParse(await json(c));
+  if (!parsed.success) {
+    return c.json({ detail: "collection_id (non-empty string) and priority (integer) are required; workflow_pk is an integer or null" }, 422);
+  }
+  const { collection_id, priority, workflow_pk } = parsed.data;
+  const pk = workflow_pk ?? null;
+  const updated = await control(c.env).setJobPriority(collection_id, priority, pk);
+  if (updated === null) {
+    const what = pk === null ? `Collection '${collection_id}'` : `Collection '${collection_id}' or workflow ${pk}`;
+    return c.json({ detail: `${what} not found` }, 404);
+  }
+  return c.json({ updated });
+});
+
 // Housekeeping the daily cron also does; exposed so an operator who just
 // retired a version does not have to wait for it.
 api.post("/admin/archive-retired", describeRoute({ summary: "Archive retired versions' jobs to R2 now instead of at the daily cron", tags: ["admin"], responses: { "200": { description: "OK" } } }), async (c) => {

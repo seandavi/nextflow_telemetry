@@ -86,9 +86,17 @@ export const DaemonHeartbeatRequest = z.looseObject({
 
 export const CloseRunRequest = z.object({ run_name: z.string() });
 
+export const JobPriorityRequest = z.object({
+  collection_id: z.string().min(1),
+  priority: z.number().int().min(-2147483648).max(2147483647),
+  workflow_pk: z.number().int().nullish(),
+});
+
 // --------------------------------------------------------------- responses
 
 export const Detail = z.object({ detail: z.string() });
+
+export const JobPriorityUpdated = z.object({ updated: z.number().int() });
 
 export const Sample = z.looseObject({
   id: z.number().int(),

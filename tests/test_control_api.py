@@ -76,7 +76,7 @@ def test_writes_need_token_events_do_not(control_client: TestClient) -> None:
         ("DELETE", "/api/daemons/x"), ("POST", "/api/dispatch/batch"), ("POST", "/api/dispatch/submitted"),
         ("POST", "/api/dispatch/requeue-expired"), ("POST", "/api/admin/reconcile-jobs"),
         ("POST", "/api/admin/reset-running"), ("POST", "/api/admin/close-run"),
-        ("POST", "/api/admin/requeue-dead-letter"), ("POST", "/api/admin/expire-stale-runs"),
+        ("POST", "/api/admin/requeue-dead-letter"), ("POST", "/api/admin/job-priority"), ("POST", "/api/admin/expire-stale-runs"),
         ("POST", "/api/admin/heartbeat-watchdog"),
     ]
     for method, path in writes:
@@ -102,6 +102,27 @@ def test_422_detail_is_a_string(control_client: TestClient) -> None:
     assert bad_status.status_code == 422 and isinstance(bad_status.json()["detail"], str)
     # The token gate runs before body validation.
     assert control_client.post("/api/samples", json={"sample_id": "x"}).status_code == 401
+
+
+def test_job_priority_over_http(control_client: TestClient) -> None:
+    wf = workflow(control_client, "jp")
+    sample(control_client, "jp", "SRR7000001")
+    control_client.post("/api/admin/reconcile-jobs", headers=TOKEN)
+
+    def post(body: dict[str, Any]):
+        return control_client.post("/api/admin/job-priority", json=body, headers=TOKEN)
+
+    for _ in range(2):
+        resp = post({"collection_id": "jp", "priority": 5})
+        assert resp.status_code == 200 and resp.json() == {"updated": 1}
+    resp = post({"collection_id": "jp", "priority": 5, "workflow_pk": wf["id"]})
+    assert resp.status_code == 200 and resp.json() == {"updated": 1}
+    resp = post({"collection_id": "nope", "priority": 1})
+    assert resp.status_code == 404 and resp.json()["detail"] == "Collection 'nope' not found"
+    for bad in ({"collection_id": "jp", "priority": True}, {"collection_id": "jp", "priority": "3"},
+                {"priority": 1}, {"collection_id": "jp", "priority": 2**31}):
+        resp = post(bad)
+        assert resp.status_code == 422 and isinstance(resp.json()["detail"], str), bad
 
 
 def test_claim_to_completion_over_http(control_client: TestClient) -> None:
