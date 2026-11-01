@@ -473,7 +473,6 @@ def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
         rcon.close()
         release_dir = root / contract.id / manifest.release
         release_url = f"{public_base_url.rstrip('/')}/{contract.id}/{manifest.release}"
-        write_views_db(extras / VIEWS_DB, release_dir, release_url)
         for extra in sorted(extras.iterdir()):
             shutil.move(str(extra), str(release_dir / extra.name))
         source_releases = []
@@ -483,6 +482,12 @@ def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
             source_releases = [dict(zip(rel.columns, r)) for r in rel.fetchall()]
     add_provenance(release_dir, workflow_id, version, registration, manifest, source_releases)
     add_readme_query(release_dir, release_url)
+    # Last of the release's own files, after studies/, genefamilies/ and provenance are in
+    # place: a failed views build then loses only cmgd.duckdb, never half-written (#419 review).
+    tmp_db = release_dir / f".{VIEWS_DB}.tmp"
+    tmp_db.unlink(missing_ok=True)
+    write_views_db(tmp_db, release_dir, release_url)
+    tmp_db.replace(release_dir / VIEWS_DB)
     site.write_study_pages(release_dir, public_base_url)
     update_root_index(root, workflow_id, version, manifest.release)
     site.write_site(root, public_base_url)

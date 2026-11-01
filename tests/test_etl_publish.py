@@ -234,6 +234,24 @@ def test_genefamilies_url_is_null_without_raw_base(tmp_path):
     assert not list((tmp_path / "store").glob(".staging-*"))  # staging cleaned up
 
 
+def test_failed_views_build_keeps_the_rest_of_the_release(tmp_path, monkeypatch):
+    """cmgd.duckdb is built last: if it fails, studies/, genefamilies/ and provenance are
+    already in the release and no half-written cmgd.duckdb is left (#419 review)."""
+    con = build_lake(tmp_path / "lake")
+
+    def boom(out, release_dir, release_url):
+        out.write_bytes(b"partial")
+        raise RuntimeError("views build failed")
+
+    monkeypatch.setattr(publish, "write_views_db", boom)
+    with pytest.raises(RuntimeError, match="views build failed"):
+        publish.publish(con, *HUMANN, tmp_path / "store", raw_base_url=None)
+    [rdir] = [d for d in (tmp_path / "store").glob("*/*") if (d / "manifest.json").exists()]
+    assert (rdir / "studies").is_dir() and (rdir / "genefamilies").is_dir()
+    assert (rdir / "provenance.json").exists()
+    assert not (rdir / publish.VIEWS_DB).exists()
+
+
 def test_contract_documents_every_published_column():
     for reg in SPECS:
         for t in publish.published_tables(*reg):
