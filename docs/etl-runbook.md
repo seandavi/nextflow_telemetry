@@ -161,11 +161,13 @@ uv run python scripts/smoke_public_data.py                     # run docs/data-a
 ```
 
 A build reads the registration's rows at one lake snapshot, then runs cdsci-lake's
-`publish_release`: sorted Parquet, a frozen read-only `catalog.ducklake`,
-manifest and checksums, acceptance checks, then `releases.json`/`latest.json`. A
-failed acceptance leaves no `manifest.json` and the index untouched. `studies/`
+`publish_release`: sorted Parquet, a frozen `catalog.ducklake` (still built,
+no longer documented for readers), manifest and checksums, acceptance checks, then
+`releases.json`/`latest.json`. A failed acceptance leaves no `manifest.json` and the index untouched. `studies/`
 and `genefamilies/` are added to the release directory afterwards, and the
-dataset's entry in the store's root `index.json` is replaced last.
+dataset's entry in the store's root `index.json` is replaced last. `publish` then
+writes `cmgd.duckdb` (one view per table over the release's public Parquet URLs,
+from `files.json`) and appends a query section to `README.md`.
 
 The sync copies release directories with `rclone copy --immutable` (a published
 object is never rewritten), then the two pointer files with

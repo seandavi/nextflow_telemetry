@@ -5,9 +5,12 @@ from __future__ import annotations
 import csv
 import gzip
 import hashlib
+import functools
+import http.server
 import io
 import json
 import subprocess
+import threading
 
 import duckdb
 import pytest
@@ -15,7 +18,8 @@ from cdsci.lake.publish.builder import LocalDirStore
 from cdsci.lake.publish.frozen import frozen_ducklake_attach_sql
 from cdsci.lake.publish.verify import verify_release
 from cmgd_release_fixture import (  # noqa: F401 -- public_site is a fixture
-    GF_FILE, GF_ROWS, HUMANN, LEGACY, REGS, SPECIES, STUDIES, build_lake, public_site, sample_keys,
+    GF_FILE, GF_ROWS, HUMANN, LEGACY, REGS, SPECIES, STUDIES, RangeHandler, build_lake, public_site,
+    sample_keys,
 )
 
 from nextflow_telemetry.etl import cli, export, lake, publish
@@ -86,6 +90,62 @@ def test_frozen_catalog_attaches_over_http(public_site):
         assert con.sql(f"SELECT count(*) FROM cmgd.{t.name}").fetchone()[0] == t.row_count
     n = con.sql("SELECT count(*) FROM cmgd.qc_metrics WHERE study_name = 'ArtachoA_2021'").fetchone()[0]
     assert n == STUDIES["ArtachoA_2021"]
+
+
+def _attach_views(url):
+    con = duckdb.connect()
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+    con.execute(f"ATTACH '{url}/cmgd.duckdb' AS cmgd")
+    return con
+
+
+def test_views_db_attaches_over_http_and_matches_manifest(public_site):
+    for reg in REGS:
+        m, rdir = _release(public_site, reg)
+        url = f"{public_site.base}/{m.dataset}/{m.release}"
+        assert (rdir / "cmgd.duckdb").exists() and not (rdir / "cmgd.duckdb.wal").exists()
+        con = _attach_views(url)
+        views = dict(con.execute("SELECT view_name, sql FROM duckdb_views() "
+                                 "WHERE database_name = 'cmgd' AND NOT internal").fetchall())
+        assert set(views) == {t.name for t in m.tables}
+        assert not con.execute("SELECT 1 FROM duckdb_tables() WHERE database_name = 'cmgd'").fetchall()
+        for t in m.tables:
+            assert con.sql(f"SELECT count(*) FROM cmgd.{t.name}").fetchone()[0] == t.row_count
+            files = json.loads((rdir / "tables" / t.name / "files.json").read_text())["files"]
+            for f in files:
+                assert f"{url}/tables/{t.name}/{f['uri']}" in views[t.name]
+
+
+def test_views_db_builds_before_upload_from_every_file(tmp_path):
+    rdir = tmp_path / "rel"
+    (rdir / "tables" / "t" / "data").mkdir(parents=True)
+    for i, n in enumerate((3, 4)):
+        duckdb.sql(f"COPY (SELECT range AS x FROM range({n})) TO "
+                   f"'{rdir}/tables/t/data/part-0000{i}.parquet' (FORMAT parquet)")
+    (rdir / "manifest.json").write_text(json.dumps(
+        {"tables": [{"name": "t", "files": "tables/t/files.json"}]}))
+    uris = ["data/part-00000.parquet", "data/part-00001.parquet"]
+    (rdir / "tables" / "t" / "files.json").write_text(
+        json.dumps({"files": [{"uri": u} for u in uris]}))
+
+    # nothing is uploaded and the host never resolves: the build serves the URLs locally
+    invalid = "https://cmgd-public.invalid/d/2026-10-08"
+    publish.write_views_db(tmp_path / "invalid.duckdb", rdir, invalid)
+    local = duckdb.connect(str(tmp_path / "invalid.duckdb"), read_only=True)
+    sql = local.execute("SELECT sql FROM duckdb_views() WHERE view_name = 't'").fetchone()[0]
+    assert [sql.index(f"{invalid}/tables/t/{u}") for u in uris] == sorted(
+        sql.index(f"{invalid}/tables/t/{u}") for u in uris)
+    local.close()
+
+    server = http.server.ThreadingHTTPServer(
+        ("127.0.0.1", 0), functools.partial(RangeHandler, directory=str(tmp_path)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/rel"
+        publish.write_views_db(rdir / "cmgd.duckdb", rdir, url)
+        assert _attach_views(url).sql("SELECT count(*) FROM cmgd.t").fetchone()[0] == 7
+    finally:
+        server.shutdown()
 
 
 def _sha(path):
@@ -234,7 +294,11 @@ def test_samples_table_provenance_and_site(public_site):
     landing, llms = (root / "index.html").read_text(), (root / "llms.txt").read_text()
     assert f"{m.dataset}/{m.release}/index.html" in landing and "not part of this release" in landing
     assert f"/{{dataset}}/{{release}}/tables/{{table}}/data/part-00000.parquet" in llms
-    assert (rdir / "index.html").exists()
+    assert "/{dataset}/{release}/cmgd.duckdb" in llms and "catalog.ducklake" not in llms
+    page = (rdir / "index.html").read_text()
+    assert "cmgd.duckdb" in page and "catalog.ducklake" not in page
+    assert (f"ATTACH '{public_site.base}/{m.dataset}/{m.release}/cmgd.duckdb' AS cmgd;"
+            in (rdir / "README.md").read_text())
     for study in STUDIES:
         page = (rdir / "studies" / study / "index.html").read_text()
         assert all(k in page for k in sample_keys(HUMANN[0], study))

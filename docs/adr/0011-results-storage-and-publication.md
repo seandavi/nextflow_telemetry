@@ -136,6 +136,17 @@ Plan `docs/plans/onboarding-and-publication.md` §4–5, #270.
     not in the manifest. R2 does not map `/` to `/index.html`, so the landing
     URL is `/index.html` until a rewrite rule exists (plan L8).
 
+## Amendment (2026-11-01): `cmgd.duckdb` is the reader entry point (#416)
+
+12. **Each release has `cmgd.duckdb`**: a DuckDB database of views, one per table,
+    `read_parquet` over the absolute public URLs of the table's `files.json`. Readers
+    `ATTACH` it; no `ducklake` extension. Measured on a live release: 274 KB vs 1.5 MB,
+    about 1 s vs 2.3 s per query. `nf-etl publish` builds it locally before upload by
+    serving the release URLs from the local directory while the views bind. It is not in
+    the manifest (cdsci-lake#134). `catalog.ducklake` is still built by `publish_release`
+    but no longer documented; removing it is a cdsci-lake change. This replaces the first
+    Consequence ("Readers attach a frozen catalog").
+
 ## References
 
 - Issues #229, #230, #234; monode#52 (`cmgd-public` bucket and domain).

@@ -38,7 +38,7 @@ def token(env: str, secret: str) -> str:
 
 
 def release_files(release_dir: Path) -> list[Path]:
-    """The upload set: every file of the release (tables, catalog, manifest,
+    """The upload set: every file of the release (tables, cmgd.duckdb, manifest,
     provenance, README, studies/), without the HTML pages (they link back to
     cmgd-public relative paths that don't exist on a mirror)."""
     return sorted(p for p in release_dir.rglob("*") if p.is_file() and p.suffix != ".html")
@@ -61,8 +61,9 @@ def zenodo_metadata(manifest: dict, base_url: str) -> dict:
         "title": f"curatedMetagenomicData {manifest['dataset']} release {manifest['release']}",
         "version": manifest["release"],
         "creators": [{"name": "curatedMetagenomicData"}],
-        "description": (f"<p>Mirror of {url}, the canonical copy. Parquet tables, a read-only "
-                        "DuckLake catalog, manifest with per-file sha256, and per-study downloads. "
+        "description": (f"<p>Mirror of {url}, the canonical copy. Parquet tables, "
+                        "cmgd.duckdb (DuckDB views over the canonical copy's Parquet URLs), "
+                        "manifest with per-file sha256, and per-study downloads. "
                         "File names flatten the release paths ('/' → '__').</p>"
                         f"<p>Per-table licences:</p><ul>{licences}</ul>"),
         "license": _license(manifest),
@@ -115,8 +116,8 @@ $configs
 
 # curatedMetagenomicData `$dataset`, release `$release`
 
-Mirror of <$url>, the canonical copy (manifest with sha256 per file, frozen
-DuckLake catalog, per-study downloads, provenance). One config per table:
+Mirror of <$url>, the canonical copy (manifest with sha256 per file, cmgd.duckdb views,
+per-study downloads, provenance). One config per table:
 
 ```python
 from datasets import load_dataset

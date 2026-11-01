@@ -39,7 +39,7 @@ Curated public-facing artifacts, served at `https://cmgd-public.cancerdatasci.or
 
 ```
 cmgd-public/<workflow_id>-<version>/{latest.json,releases.json}
-cmgd-public/<workflow_id>-<version>/<release>/{manifest.json,catalog.ducklake,tables/,studies/,genefamilies/}
+cmgd-public/<workflow_id>-<version>/<release>/{manifest.json,cmgd.duckdb,tables/,studies/,genefamilies/}
 ```
 
 ### `cdsci-lake`
