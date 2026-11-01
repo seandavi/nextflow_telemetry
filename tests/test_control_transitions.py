@@ -402,3 +402,25 @@ async def test_ill_typed_event_values_are_coerced(engine: AsyncEngine) -> None:
     third = (await claim(engine, "ill3"))["run_name"]
     await apply(engine, transitions.apply_run_event, third, {"type": "wrapper_exited", "exit_code": "x"}, now=NOW)
     assert (await run_row(engine, third))["wrapper_exit_code"] is None
+
+
+async def test_set_job_priority_pending_members_only(engine: AsyncEngine) -> None:
+    pk_a, _ = await seed(engine, "pri-a", samples=2, collection="pri-col-a")
+    pk_b, _ = await seed(engine, "pri-b", samples=1, collection="pri-col-b")
+
+    async def priority(collection_id: str, value: int, workflow_pk: int | None = None) -> int | None:
+        return await apply(engine, transitions.set_job_priority, collection_id=collection_id, priority=value, workflow_pk=workflow_pk)
+
+    assert await priority("pri-col-a", -1) == 2
+    assert await priority("pri-col-a", -1) == 2
+    await claim(engine, "pri-a", limit=1)
+    assert await priority("pri-col-a", 4) == 1
+    assert await priority("pri-col-b", 3, pk_a) == 0
+    assert await priority("pri-col-b", 3, pk_b) == 1
+    assert await priority("nosuch", 1) is None
+    assert await priority("pri-col-a", 1, 999999) is None
+
+    async with engine.connect() as conn:
+        rows = (await conn.execute(select(jobs_tbl.c.workflow_pk, jobs_tbl.c.status, jobs_tbl.c.priority))).all()
+    assert sorted((r.status, r.priority) for r in rows if r.workflow_pk == pk_a) == [("claimed", -1), ("pending", 4)]
+    assert [(r.status, r.priority) for r in rows if r.workflow_pk == pk_b] == [("pending", 3)]

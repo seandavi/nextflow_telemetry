@@ -297,6 +297,19 @@ def test_verify_reports_tampering(db_url, export_dir, statement, failure):
     assert any(f.startswith(failure) for f in report["failures"]), report["failures"]
 
 
+def test_import_and_verify_carry_job_priority(db_url, tmp_path):
+    tables = v2_tables()
+    for job in tables["jobs"]:
+        job["priority"] = -1 if job["id"] == 5 else 0
+    snapshot = read_snapshot(write_export(tmp_path, tables, cursor=CURSOR))
+    assert import_and_verify(db_url, snapshot)["clean"]
+    assert sql(db_url, "select priority from jobs where id = 5")[0][0] == -1
+    sql(db_url, "update jobs set priority = 0 where id = 5")
+    report = with_engine(db_url, lambda engine: verify(engine, snapshot))
+    assert not report["clean"]
+    assert len([f for f in report["failures"] if f.startswith("tables.jobs")]) == 1, report["failures"]
+
+
 def test_missing_events_cursor_imports_but_is_not_clean(db_url, tmp_path):
     snapshot = read_snapshot(write_export(tmp_path, v2_tables(), cursor=None))
     report = import_and_verify(db_url, snapshot)
