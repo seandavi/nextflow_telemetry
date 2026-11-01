@@ -147,16 +147,17 @@ Writer:
 def write_views_db(out: Path, release_dir: Path, release_url: str) -> None:
     """``out`` (cmgd.duckdb): one view per table in ``release_dir``'s manifest.json,
     ``read_parquet`` over the absolute URLs of the files in the table's files.json
-    (``<release_url>/<dir of files_path>/<uri>``), in files.json order. Views only:
+    (``<release_url>/<dir of the table's "files" path>/<uri>``), in files.json order. Views only:
     a reader ATTACHes it and DuckDB fetches the Parquet a query needs."""
 ```
 
 Behaviour:
 
 - Read `release_dir / "manifest.json"`. For each entry in `manifest["tables"]`, in
-  manifest order, read `release_dir / table["files_path"]`. The URL of each
+  manifest order, read `release_dir / table["files"]` (the JSON key is `files`; cdsci-lake's
+  `ManifestTable` names the dataclass field `files_path`). The URL of each
   `files[*].uri` is
-  `f"{release_url}/{posixpath.dirname(table['files_path'])}/{f['uri']}"`, which is
+  `f"{release_url}/{posixpath.dirname(table['files'])}/{f['uri']}"`, which is
   `…/tables/<table>/data/part-00000.parquet` today.
 - `con = duckdb.connect(str(out))`, then
   `con.register_filesystem(_ReleaseMirror(release_url, release_dir))`, then for each table
@@ -327,7 +328,7 @@ over-HTTP query of `cmgd.duckdb`. No existing test asserts the production base i
    - Each view's `sql` contains `f"{public_site.base}/{m.dataset}/{m.release}/tables/{t}/{uri}"`
      for every `uri` in that table's `files.json`.
 2. `test_views_db_builds_before_upload_from_every_file(tmp_path)`: a hand-made release dir
-   with `manifest.json` (`{"tables": [{"name": "t", "files_path": "tables/t/files.json"}]}`;
+   with `manifest.json` (`{"tables": [{"name": "t", "files": "tables/t/files.json"}]}`;
    `write_views_db` reads only these keys) and a `files.json` listing two Parquet files,
    `data/part-00000.parquet` (3 rows) and `data/part-00001.parquet` (4 rows), written with
    `duckdb.sql("COPY (SELECT range AS x FROM range(n)) TO '…'")`.
