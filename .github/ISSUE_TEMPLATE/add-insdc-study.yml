@@ -6,6 +6,13 @@ body:
   - type: markdown
     attributes:
       value: >
+        **⏸ Submissions are on hold** while the control plane moves to Postgres
+        (#381; reopens with #379). The `add-study` workflow is disabled, so no preview
+        is posted and approvals register nothing. You can still open a request; it is
+        processed when the hold lifts.
+  - type: markdown
+    attributes:
+      value: >
         Submitting this issue triggers a **dry-run preview** (how many samples the
         accession expands to, and how many are new). A maintainer then applies the
         `approved` label to register them for real.

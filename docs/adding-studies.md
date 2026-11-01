@@ -1,5 +1,9 @@
 # Adding studies
 
+> **On hold (2026-11-01):** new submissions are paused while the control plane moves to
+> Postgres (#381). The `add-study` workflow is disabled; it comes back with #379, which
+> registers through the new service in one transaction.
+
 How to register an SRA study / BioProject's samples into the telemetry system.
 Two audiences: **submitters** (request a study) and **maintainers** (review,
 approve, and dispatch). The normal path is a GitHub issue; a direct API/CLI path
