@@ -7,7 +7,11 @@ the dashboard consumes.
 from __future__ import annotations
 
 import gzip
+import importlib
 import json
+import logging
+import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -226,3 +230,40 @@ async def test_running_counts_tasks_of_running_runs(archive, tmp_path, db_asyncp
 
     assert (body.active_nf_runs, body.total_running, body.total_queued) == (1, 1, 1)
     assert [(p.process, p.running, p.queued) for p in body.by_process] == [("kneaddata", 1, 1)]
+
+
+def test_lifespan_warms_event_archive(tmp_path, monkeypatch):
+    _write(tmp_path / "events", NOW.date().isoformat(), "120000-a.ndjson.gz",
+           [_task("run-a", "s1", "kneaddata", "COMPLETED")])
+    monkeypatch.setenv("EVENTS_ARCHIVE_URL", str(tmp_path / "events"))
+    monkeypatch.setenv("BLOB_STORE_URL", str(tmp_path / "blobs"))
+    monkeypatch.setenv("TELEMETRY_SKIP_DB_INIT", "1")
+    monkeypatch.setenv("V2_API_URL", "http://v2.invalid/api")
+    for flag in ("DEADLINE_SWEEP_ENABLED", "RETIRED_ARCHIVE_ENABLED", "EVENT_INGEST_ENABLED"):
+        monkeypatch.delenv(flag, raising=False)
+    for name in list(sys.modules):
+        if name.startswith("nextflow_telemetry"):
+            del sys.modules[name]
+    module = importlib.import_module("nextflow_telemetry.main")
+    monkeypatch.setattr(
+        sys.modules["nextflow_telemetry.services.v2_api"], "run_workflows",
+        lambda _url, runs: {r: ("cmgd_nextflow", "2.2.1") for r in runs},
+    )
+    with TestClient(module.app):
+        deadline = time.monotonic() + 5
+        while module.event_archive._refreshed_at is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert module.event_archive._refreshed_at is not None
+        assert len(module.event_archive._files) == 1
+        assert module.event_archive.query("select count(*) as n from task_executions")[0]["n"] == 1
+
+
+async def test_warm_logs_and_swallows_a_failed_load(archive, monkeypatch, caplog):
+    def boom():
+        raise RuntimeError("r2 down")
+
+    monkeypatch.setattr(archive, "refresh", boom)
+    with caplog.at_level(logging.ERROR, logger="nextflow_telemetry"):
+        assert await archive.warm() is None
+    assert "event_archive.warm_failed" in [r.getMessage() for r in caplog.records]
+    assert archive._refreshed_at is None

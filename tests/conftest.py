@@ -16,8 +16,9 @@ from collections.abc import Generator
 import pytest
 from testcontainers.postgres import PostgresContainer
 
-# `config` reads this at import and `main` refuses to import without it; a local directory keeps tests off R2.
+# config reads these at import; local directories keep tests off R2.
 os.environ.setdefault("BLOB_STORE_URL", tempfile.mkdtemp(prefix="blobs-"))
+os.environ.setdefault("EVENTS_ARCHIVE_URL", tempfile.mkdtemp(prefix="events-"))
 
 
 # ---------------------------------------------------------------------------
