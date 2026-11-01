@@ -217,7 +217,7 @@ pinned in `src/nextflow_telemetry/meta/schema/` with a generated LinkML schema
 
 | Route | Command | What a consumer gets |
 |---|---|---|
-| Public releases | `nf-etl publish --sync` | Immutable, dated snapshots per registration (pipeline version + config) at <https://cmgd-public.cancerdatasci.org>: Parquet tables, a read-only DuckLake catalog, per-study downloads and provenance. See [Data access](docs/data-access.md). |
+| Public releases | `nf-etl publish --sync` | Immutable, dated snapshots per registration (pipeline version + config) at <https://cmgd-public.cancerdatasci.org>: Parquet tables, a DuckDB views database (`cmgd.duckdb`), per-study downloads and provenance. See [Data access](docs/data-access.md). |
 | Mirrors | `nf-etl mirror --to zenodo\|hf` | A built release copied to Zenodo (draft deposition, for a DOI) or Hugging Face. |
 | Deliverables | `nf-etl deliver --sync` | A scoped, expiring hand-off for one requester: chosen collections, completed samples, wide TSVs plus METHODS.md. Not a release. |
 | Gene-family files | (published with each HUMAnN release) | Per-sample HUMAnN gene families served straight from `cmgd-raw.cancerdatasci.org`, indexed in each release. |

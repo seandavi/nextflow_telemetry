@@ -34,7 +34,7 @@ https://cmgd-public.cancerdatasci.org/
     releases.json                     every release, oldest first
     <release>/
       manifest.json                   tables, row counts, schema digests, licence
-      catalog.ducklake                read-only DuckLake catalog over the tables below
+      cmgd.duckdb                     DuckDB database: one view per table over the Parquet below
       README.md                       table and column documentation
       tables/<table>/schema.json      columns, types, units, descriptions
       tables/<table>/files.json       data files with size, sha256, row counts
@@ -69,22 +69,17 @@ curl -sSf https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/latest.json
 ## SQL with DuckDB
 
 You need [DuckDB](https://duckdb.org) 1.5.2 or newer (CLI, Python, R, …).
-Attaching the release's catalog is instant: DuckDB fetches only the parts of the
-Parquet files a query touches.
+Attaching the release's `cmgd.duckdb` (a few hundred KB of views) is instant:
+DuckDB fetches only the parts of the Parquet files a query touches.
 
 ```sql
-INSTALL ducklake; LOAD ducklake;
 INSTALL httpfs; LOAD httpfs;
-ATTACH 'https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/2026-10-08/catalog.ducklake' AS cmgd (
-  TYPE DUCKLAKE,
-  DATA_PATH 'https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/2026-10-08/',
-  OVERRIDE_DATA_PATH,
-  READ_ONLY);
-SELECT table_name FROM duckdb_tables() WHERE database_name = 'cmgd' ORDER BY table_name;
+ATTACH 'https://cmgd-public.cancerdatasci.org/cmgd_nextflow-2.2.1/2026-10-08/cmgd.duckdb' AS cmgd;
+SELECT view_name FROM duckdb_views() WHERE database_name = 'cmgd' ORDER BY view_name;
 ```
 
-`DATA_PATH` must be the release's own URL (with `OVERRIDE_DATA_PATH`): the
-catalog stores file paths relative to it.
+Each table is a read-only view over the Parquet files listed in its `files.json`,
+by absolute URL, so the database works from anywhere, including mirrors.
 
 Studies, sample counts and mean read depth (`qc_metrics` has one row per sample):
 
@@ -120,7 +115,7 @@ ORDER BY mean_percent DESC
 LIMIT 10;
 ```
 
-Without the catalog, read one table's Parquet file directly. `files.json` lists
+Without attaching, read one table's Parquet file directly. `files.json` lists
 every file of a table; today there is one per table.
 
 ```sql
@@ -145,7 +140,7 @@ BASE = "https://cmgd-public.cancerdatasci.org"
 DATASET = "cmgd_nextflow-2.2.1"
 
 con = duckdb.connect()
-con.execute("INSTALL ducklake; LOAD ducklake; INSTALL httpfs; LOAD httpfs;")
+con.execute("INSTALL httpfs; LOAD httpfs;")
 
 
 def fetch_json(url):
@@ -154,8 +149,7 @@ def fetch_json(url):
 
 release = fetch_json(f"{BASE}/{DATASET}/latest.json")["release"]
 url = f"{BASE}/{DATASET}/{release}"
-con.execute(f"ATTACH '{url}/catalog.ducklake' AS cmgd "
-            f"(TYPE DUCKLAKE, DATA_PATH '{url}/', OVERRIDE_DATA_PATH, READ_ONLY)")
+con.execute(f"ATTACH '{url}/cmgd.duckdb' AS cmgd")
 rows = con.execute(
     "SELECT sample_key, clade_name, relative_abundance "
     "FROM cmgd.taxonomic_profile_metaphlan "
@@ -185,12 +179,10 @@ release <- jsonlite::fromJSON(paste0(base, "/", dataset, "/latest.json"))$releas
 url <- paste0(base, "/", dataset, "/", release)
 
 con <- dbConnect(duckdb())
-for (sql in c("INSTALL ducklake", "LOAD ducklake", "INSTALL httpfs", "LOAD httpfs")) {
+for (sql in c("INSTALL httpfs", "LOAD httpfs")) {
   dbExecute(con, sql)
 }
-dbExecute(con, sprintf(
-  "ATTACH '%s/catalog.ducklake' AS cmgd (TYPE DUCKLAKE, DATA_PATH '%s/', OVERRIDE_DATA_PATH, READ_ONLY)",
-  url, url))
+dbExecute(con, sprintf("ATTACH '%s/cmgd.duckdb' AS cmgd", url))
 
 study <- "ZellerG_2014"
 long <- dbGetQuery(con, "

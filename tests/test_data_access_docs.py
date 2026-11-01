@@ -23,7 +23,9 @@ def _doc(site) -> str:
 def test_doc_has_snippets_for_every_access_path():
     langs = [lang for lang, _ in smoke.snippets(smoke.DOC.read_text())]
     assert {"sql", "python", "bash", "r"} <= set(langs)
-    assert smoke.PUBLIC_BASE in smoke.DOC.read_text()
+    text = smoke.DOC.read_text()
+    assert smoke.PUBLIC_BASE in text
+    assert "/cmgd.duckdb" in text and "ducklake" not in text
 
 
 def test_doc_sql_python_bash_snippets_run(public_site, tmp_path):
