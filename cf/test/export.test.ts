@@ -72,6 +72,10 @@ describe("POST /admin/export", () => {
         const back: unknown[] = [];
         for (const key of entry.objects) back.push(...lines(await gunzipObject(key)).map((l) => JSON.parse(l)));
         expect(back, t).toEqual(truth);
+        if (t === "jobs") {
+          expect(back.length).toBeGreaterThan(0);
+          for (const row of back as { priority: unknown }[]) expect(typeof row.priority).toBe("number");
+        }
       }
     });
     expect(manifest.tables.samples.rows).toBeGreaterThan(0);
