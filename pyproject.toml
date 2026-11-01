@@ -23,6 +23,7 @@ dependencies = [
     "cdsci-lake @ git+https://github.com/seandavi/cdsci-lake@0f535a752cce3b4b4f0ebdc7cb99faa79a8fe35b", # shared lake + publish_release
     "huggingface-hub>=2.2.0",
     "obstore>=0.12.1,<0.13.0",
+    "fsspec>=2026.9.0",           # nf-etl publish: serve release URLs locally while cmgd.duckdb's views bind
 ]
 
 [project.scripts]

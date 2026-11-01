@@ -7,7 +7,11 @@ manifest, ``releases.json``/``latest.json``) into a local store. The per-study
 downloads and the gene-family index (``export.py``) are built from the same
 snapshot and moved into the release directory once ``publish_release`` returns:
 it has no hook for extra artifacts, so they are not in the manifest (their own
-``index.json`` files carry sizes and checksums; cdsci-lake#134). Last, the
+``index.json`` files carry sizes and checksums; cdsci-lake#134). So is
+``cmgd.duckdb`` (#416), the readers' entry point: one view per table over the
+release's public Parquet URLs. ``publish`` writes it and appends a query section
+to the README after ``publish_release`` returns; the frozen DuckLake catalog is
+still built but no longer documented. Last, the
 store's root ``index.json`` gets the dataset's entry, so clients can find every
 dataset without LIST.
 
@@ -15,7 +19,7 @@ dataset without LIST.
 
   <root>/index.json                                    every dataset in the store
   <root>/<dataset>/releases.json, latest.json
-  <root>/<dataset>/<release>/manifest.json, catalog.ducklake, tables/<table>/...
+  <root>/<dataset>/<release>/manifest.json, cmgd.duckdb, tables/<table>/...
   <root>/<dataset>/<release>/studies/index.json, studies/<study>/...
   <root>/<dataset>/<release>/genefamilies/index.json, <study>.json, index.tsv
 
@@ -25,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import shutil
 import subprocess
 import tempfile
@@ -34,6 +39,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import duckdb
+from fsspec.implementations.dirfs import DirFileSystem  # type: ignore[import-untyped]
+from fsspec.implementations.local import LocalFileSystem  # type: ignore[import-untyped]
 from cdsci.lake.contracts import ColumnContract, DatasetContract, TableContract, TemporalModel  # type: ignore[import-untyped]
 from cdsci.lake.publish.builder import LocalDirStore  # type: ignore[import-untyped]
 from cdsci.lake.publish.pipeline import publish_release  # type: ignore[import-untyped]
@@ -45,6 +52,8 @@ from .v2 import CompletedJob, Registration
 
 PUBLISH_ROOT = os.environ.get("ETL_PUBLISH_ROOT", "/data/cmgd/publish")
 SYNC_REMOTE = os.environ.get("ETL_PUBLIC_REMOTE", "r2:cmgd-public")
+# The release's DuckDB entry point (#416): one view per table over its public Parquet URLs.
+VIEWS_DB = "cmgd.duckdb"
 # Every published table carries it (schema.json, README.md, manifest).
 CMGD_DATA_LICENSE = "CC0-1.0"
 # Public HTTPS base of cmgd-raw for gene-family download URLs. No default: until
@@ -463,6 +472,8 @@ def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
             source_asset_versions=tuple(sources), run_id=str(uuid.uuid4()), today=today)
         rcon.close()
         release_dir = root / contract.id / manifest.release
+        release_url = f"{public_base_url.rstrip('/')}/{contract.id}/{manifest.release}"
+        write_views_db(extras / VIEWS_DB, release_dir, release_url)
         for extra in sorted(extras.iterdir()):
             shutil.move(str(extra), str(release_dir / extra.name))
         source_releases = []
@@ -471,10 +482,64 @@ def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
                           f"FROM lake.{META_SCHEMA}.source_releases WHERE pinned ORDER BY ALL")
             source_releases = [dict(zip(rel.columns, r)) for r in rel.fetchall()]
     add_provenance(release_dir, workflow_id, version, registration, manifest, source_releases)
+    add_readme_query(release_dir, release_url)
     site.write_study_pages(release_dir, public_base_url)
     update_root_index(root, workflow_id, version, manifest.release)
     site.write_site(root, public_base_url)
     return manifest
+
+
+class _ReleaseMirror(DirFileSystem):
+    """Serves ``<release_url>/<path>`` from ``<release_dir>/<path>``, so cmgd.duckdb's
+    views bind before the release is uploaded (CREATE VIEW reads the first file)."""
+    protocol = ("https", "http")
+
+    def __init__(self, release_url: str, release_dir: Path) -> None:
+        super().__init__(path=str(release_dir), fs=LocalFileSystem())
+        self.release_url = release_url
+
+    def _join(self, path: str | list[str]) -> str | list[str]:
+        if isinstance(path, str):
+            path = path.removeprefix(self.release_url + "/")
+        return super()._join(path)
+
+
+def write_views_db(out: Path, release_dir: Path, release_url: str) -> None:
+    """``out`` (cmgd.duckdb): one view per table in ``release_dir``'s manifest.json,
+    ``read_parquet`` over the absolute URLs of the files in the table's files.json
+    (the manifest entry's ``files`` path; URL ``<release_url>/<its dir>/<uri>``), in
+    files.json order. Views only: a reader ATTACHes it and DuckDB fetches the Parquet
+    a query needs."""
+    manifest = json.loads((release_dir / "manifest.json").read_text())
+    con = duckdb.connect(str(out))
+    try:
+        con.register_filesystem(_ReleaseMirror(release_url, release_dir))
+        for table in manifest["tables"]:
+            files_path = table["files"]
+            files = json.loads((release_dir / files_path).read_text())["files"]
+            urls = ", ".join(
+                "'" + f"{release_url}/{posixpath.dirname(files_path)}/{f['uri']}".replace("'", "''") + "'"
+                for f in files)
+            con.execute(f'CREATE VIEW "{table["name"]}" AS SELECT * FROM read_parquet([{urls}])')
+    finally:
+        con.close()
+
+
+def add_readme_query(release_dir: Path, release_url: str) -> None:
+    """Append a "Query this release" section to the release README.md."""
+    with (release_dir / "README.md").open("a") as f:
+        f.write(f"""
+## Query this release
+
+With [DuckDB](https://duckdb.org) 1.5.2 or newer, attach the release's views. DuckDB
+fetches only the Parquet a query needs:
+
+```sql
+INSTALL httpfs; LOAD httpfs;
+ATTACH '{release_url}/cmgd.duckdb' AS cmgd;
+SELECT study_name, count(*) AS n_samples FROM cmgd.samples GROUP BY 1 ORDER BY 1;
+```
+""")
 
 
 def add_provenance(release_dir: Path, workflow_id: str, version: str,

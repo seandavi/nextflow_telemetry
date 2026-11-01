@@ -238,14 +238,12 @@ def _files_table(r: Release, prefix: str) -> str:
                          f"{t['row_count']:,}", _size(f["size"]),
                          f'<span class="pill">{escape(t["license"])}</span>',
                          f'<span class="sha">{escape(f["sha256"])}</span>'])
-    for name in ("manifest.json", "provenance.json", "catalog.ducklake", "README.md",
+    for name in ("manifest.json", "provenance.json", "cmgd.duckdb", "README.md",
                  "studies/index.json"):
         p = r.dir / name
         if p.exists():
-            art = (r.manifest.get("artifacts", {}).get("ducklake", {})
-                   if name == "catalog.ducklake" else {})
             rows.append([f'<a href="{prefix}{name}"><code>{name}</code></a>', "", _size(p.stat().st_size),
-                         "", f'<span class="sha">{escape(art.get("sha256", ""))}</span>'])
+                         "", ""])
     return _table(["File", "Rows", "Size", "Licence", "sha256"], rows, {1, 2})
 
 
@@ -262,10 +260,9 @@ def _snippet_list(r: Release, study: str | None = None) -> list[str]:
     runs = _sql(r.parquet("qc_metrics"), "SELECT run_ids FROM {p} WHERE sample_key = $k",
                 {"k": rs}) if sample else []
     run = (runs[0][0] or "").split(";")[0] if runs else "SRR…"
-    out = [f"""-- DuckDB 1.5+: attach the whole release (read-only, fetches only what a query needs)
-INSTALL ducklake; LOAD ducklake; INSTALL httpfs; LOAD httpfs;
-ATTACH '{u}/catalog.ducklake' AS cmgd (
-  TYPE DUCKLAKE, DATA_PATH '{u}/', OVERRIDE_DATA_PATH, READ_ONLY);
+    out = [f"""-- DuckDB 1.5.2+: attach the release's views (read-only, fetches only what a query needs)
+INSTALL httpfs; LOAD httpfs;
+ATTACH '{u}/cmgd.duckdb' AS cmgd;
 SELECT study_name, count(*) AS n_samples FROM cmgd.samples GROUP BY 1 ORDER BY 1;""",
            f"""-- Top 5 MetaPhlAn species of the sample holding a run accession, straight from Parquet.
 -- run_ids / run_accessions are ';'-joined text: split them to match one run.
@@ -447,7 +444,7 @@ def llms_txt(rels: list[tuple[dict, Release | None]], featured: Release | None, 
               f"- newest release of a dataset: {base}/{{dataset}}/latest.json",
               f"- release manifest (tables, row counts, licence per table): {base}/{{dataset}}/{{release}}/manifest.json",
               f"- table Parquet: {base}/{{dataset}}/{{release}}/tables/{{table}}/data/part-00000.parquet",
-              f"- DuckLake catalog: {base}/{{dataset}}/{{release}}/catalog.ducklake",
+              f"- DuckDB views over every table (ATTACH it): {base}/{{dataset}}/{{release}}/cmgd.duckdb",
               f"- per-study files: {base}/{{dataset}}/{{release}}/studies/index.json "
               "and studies/{study}/index.html",
               f"- provenance (pipeline, databases, metadata sources): {base}/{{dataset}}/{{release}}/provenance.json",

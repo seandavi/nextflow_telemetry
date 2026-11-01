@@ -151,7 +151,7 @@ def public_site(tmp_path_factory):
     host = f"http://127.0.0.1:{server.server_port}"
     con = build_lake(tmp_path_factory.mktemp("lake"))
     manifests = {reg: publish.publish(con, *reg, site / "public", raw_base_url=f"{host}/raw",
-                                      today=RELEASE_DAY)
+                                      public_base_url=f"{host}/public", today=RELEASE_DAY)
                  for reg in REGS}
     con.close()
     try:
