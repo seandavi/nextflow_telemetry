@@ -30,6 +30,12 @@ class Detail(Envelope):
     detail: str
 
 
+class JobPriorityUpdated(Envelope):
+    """Zod `JobPriorityUpdated`."""
+
+    updated: int
+
+
 class Sample(Loose):
     """Zod `Sample`."""
 

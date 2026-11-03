@@ -187,7 +187,7 @@ no-op on an already-closed run.
 | `/dispatch/batch`, `/dispatch/submitted` | full |
 | `/telemetry`, `/api/runs/{run}/event`, `/runs`, `/runs/{run}` | full |
 | `/samples*`, `/workflows*`, `/daemons*`, `/task-logs*`, `/cohorts`, `/cohorts/leaderboard`, `/cohorts/{id}/summary` | full |
-| `/admin/{reconcile-jobs,reset-running,close-run,requeue-dead-letter,dispatchability,stats}` | full |
+| `/admin/{reconcile-jobs,reset-running,close-run,requeue-dead-letter,job-priority,dispatchability,stats}` | full |
 | `/metrics/processes/running` | full (live counters in SinkDO) |
 | `/dispatch/requeue-expired`, `/admin/expire-stale-runs`, `/admin/heartbeat-watchdog` | **deprecated no-ops** — expiry is a per-run timer now. v1-shaped success bodies + `Deprecation: true`. |
 | `/metrics/processes/{summary,retries,resources-by-attempt,failures,failure-signatures,tasks,timeline}`, `/cohorts/{id}/failures` | **proxied** to the catalog service when `CATALOG_URL` is set, else **501** — historical tier, see below |

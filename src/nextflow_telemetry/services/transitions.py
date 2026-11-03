@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from ..config import settings
 from ..control_db import (
+    collections_tbl,
     collection_samples_tbl,
     dead_letter_tbl,
     jobs_tbl,
@@ -42,6 +43,7 @@ _INT4_MIN, _INT4_MAX = -(2**31), 2**31 - 1
 # (right after a bulk load) the planner turned the correlated form into a quadratic index scan.
 _RECONCILE_SQL = text(
     """
+    -- priority is left to the column default (0); a registration-level default would select it from w here (#420).
     insert into jobs (sample_id, workflow_pk, workflow_id, workflow_version, status, retry_count)
     select s.sample_id, w.id, w.workflow_id, w.version, 'pending', 0
       from workflows w cross join samples s
@@ -533,6 +535,22 @@ async def requeue_dead_letter(
         update(dead_letter_tbl).where(dead_letter_tbl.c.id.in_([m.id for m in matched])).values(resolved_at=now)
     )
     return len(matched)
+
+
+async def set_job_priority(
+    conn: AsyncConnection, *, collection_id: str, priority: int, workflow_pk: int | None
+) -> int | None:
+    """Set ``priority`` on the pending jobs whose sample is in ``collection_id`` (of ``workflow_pk`` when given).
+    Returns the jobs matched, the same on a repeat call, or None for an unknown collection or workflow."""
+    if (await conn.execute(select(collections_tbl.c.collection_id).where(collections_tbl.c.collection_id == collection_id))).first() is None:
+        return None
+    if workflow_pk is not None and (await conn.execute(select(workflows_tbl.c.id).where(workflows_tbl.c.id == workflow_pk))).first() is None:
+        return None
+    members = select(collection_samples_tbl.c.sample_id).where(collection_samples_tbl.c.collection_id == collection_id)
+    stmt = update(jobs_tbl).where(jobs_tbl.c.status == "pending", jobs_tbl.c.sample_id.in_(members)).values(priority=priority)
+    if workflow_pk is not None:
+        stmt = stmt.where(jobs_tbl.c.workflow_pk == workflow_pk)
+    return (await conn.execute(stmt)).rowcount
 
 
 async def reset_jobs_to_pending(conn: AsyncConnection, workflow_pk: int, *, now: datetime) -> int:

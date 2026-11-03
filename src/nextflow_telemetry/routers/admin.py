@@ -11,6 +11,8 @@ from ..control_models import (
     Dispatchability,
     ExpiredStaleRuns,
     HeartbeatWatchdog,
+    JobPriorityRequest,
+    JobPriorityUpdated,
     Reconciled,
     RequeueDeadLetterRequest,
     RequeuedDeadLetter,
@@ -107,6 +109,29 @@ def create_admin_router(engine: AsyncEngine) -> APIRouter:
                 conn, workflow_pk=req.workflow_pk, collection=req.collection, job_ids=req.job_ids, now=utcnow()
             )
         return {"requeued": requeued}
+
+    @router.post(
+        "/job-priority",
+        response_model=JobPriorityUpdated,
+        dependencies=[Depends(require_service)],
+        summary="Set the claim priority of a collection's pending jobs (higher is claimed first)",
+        description=(
+            "Sets `priority` on every pending job whose sample is in `collection_id`, limited to `workflow_pk` "
+            "when given. Claimed, running and finished jobs keep theirs. `updated` counts the jobs matched, so a "
+            "repeat call returns the same. 404 for an unknown collection or workflow."
+        ),
+    )
+    async def job_priority(req: JobPriorityRequest):
+        async with engine.begin() as conn:
+            updated = await transitions.set_job_priority(
+                conn, collection_id=req.collection_id, priority=req.priority, workflow_pk=req.workflow_pk
+            )
+        if updated is None:
+            what = f"Collection '{req.collection_id}'" if req.workflow_pk is None else (
+                f"Collection '{req.collection_id}' or workflow {req.workflow_pk}"
+            )
+            raise HTTPException(status_code=404, detail=f"{what} not found")
+        return {"updated": updated}
 
     @router.get(
         "/dead-letter",

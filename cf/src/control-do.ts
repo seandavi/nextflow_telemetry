@@ -48,6 +48,7 @@ export class ControlDO extends DurableObject<Env> {
     this.sql = ctx.storage.sql;
     this.sql.exec(SCHEMA);
     this.addWorkflowBundleColumns();
+    this.addJobPriority();
     this.backfillJobCounts();
     // Digests are async (Web Crypto); hold every request until the migration is in.
     ctx.blockConcurrencyWhile(() => this.addReadsetIds());
@@ -90,6 +91,13 @@ export class ControlDO extends DurableObject<Env> {
     const cols = this.columns("workflows");
     if (!cols.has("params")) this.sql.exec(`alter table workflows add column params text not null default '{}'`);
     if (!cols.has("collections")) this.sql.exec(`alter table workflows add column collections text`);
+  }
+
+  /** #420: objects created before priority get the column; every existing job reads 0. */
+  private addJobPriority(): void {
+    if (!this.columns("jobs").has("priority")) {
+      this.sql.exec(`alter table jobs add column priority integer not null default 0`);
+    }
   }
 
   /**
@@ -442,6 +450,7 @@ export class ControlDO extends DurableObject<Env> {
    */
   reconcileJobs(): number {
     const now = iso();
+    // priority is left to the column default (0); a registration-level default would select it from w here (#420).
     return this.run(
       `insert or ignore into jobs (sample_id, workflow_pk, workflow_id, workflow_version, status, retry_count, created_at)
        select s.sample_id, w.id, w.workflow_id, w.version, 'pending', 0, ?
@@ -457,11 +466,32 @@ export class ControlDO extends DurableObject<Env> {
   }
 
   /**
+   * Operator priority (#420): every pending job whose sample is in the collection,
+   * optionally of one registration. Claimed and later jobs keep theirs. Returns the jobs
+   * matched (the same on a repeat call), or null for an unknown collection or workflow.
+   */
+  setJobPriority(collectionId: string, priority: number, workflowPk: number | null): number | null {
+    if (!this.first(`select 1 as x from collections where collection_id = ?`, collectionId)) return null;
+    if (workflowPk !== null && !this.first(`select 1 as x from workflows where id = ?`, workflowPk)) return null;
+    return this.run(
+      `update jobs set priority = ?
+        where status = 'pending' and (? is null or workflow_pk = ?)
+          and sample_id in (select sample_id from collection_samples where collection_id = ?)`,
+      priority,
+      workflowPk,
+      workflowPk,
+      collectionId,
+    );
+  }
+
+  /**
    * Claim up to `limit` pending jobs for ONE workflow version and mint a run.
    *
    * Two-step pick-then-take is kept from v1 for its *ordering* semantics
-   * (oldest pending job decides the workflow, one workflow version per
-   * batch), not for its locking — there is nothing to lock here.
+   * (the highest-priority pending job decides the workflow version, ties as
+   * before: lowest workflow_id, workflow_version; one version per batch, taken
+   * highest priority first, then oldest), not for its locking — there is
+   * nothing to lock here.
    */
   claimBatch(limit: number, workflowIds?: string[] | null, workflowVersion?: string | null) {
     const where = [`j.status = 'pending'`, `w.status = 'active'`];
@@ -476,11 +506,15 @@ export class ControlDO extends DurableObject<Env> {
     }
     const w = where.join(" and ");
 
+    // ponytail: no index leads with priority, so both queries sort every pending job in
+    // scope (~55k rows read per claim at 2026-11 volume, a few hundred claims a day).
+    // Add (status, priority desc, workflow_id, workflow_version, created_at) if rows read
+    // ever matter; v2 retires at M10.
     const pick = this.first(
       `select j.workflow_id, j.workflow_version from jobs j
          join workflows w on j.workflow_pk = w.id
         where ${w}
-        order by j.workflow_id, j.workflow_version, j.created_at, j.id
+        order by j.priority desc, j.workflow_id, j.workflow_version, j.created_at, j.id
         limit 1`,
       ...args,
     );
@@ -490,7 +524,7 @@ export class ControlDO extends DurableObject<Env> {
       `select j.id, j.sample_id, j.workflow_pk, w.repository_url, w.revision, w.params, w.sample_key
          from jobs j join workflows w on j.workflow_pk = w.id
         where ${w} and j.workflow_id = ? and j.workflow_version = ?
-        order by j.created_at, j.id
+        order by j.priority desc, j.created_at, j.id
         limit ?`,
       ...args,
       pick.workflow_id,

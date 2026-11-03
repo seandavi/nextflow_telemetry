@@ -64,6 +64,7 @@ create table if not exists jobs (
   status           text not null default 'pending',
   run_name         text,
   retry_count      integer not null default 0,
+  priority         integer not null default 0, -- claimed highest first; set by POST /admin/job-priority (#420)
   created_at       text not null,
   completed_at     text,
   failed_at        text,

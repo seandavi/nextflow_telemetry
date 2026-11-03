@@ -15,6 +15,7 @@ def _needs_token(target: Target) -> None:
 def test_writes_need_bearer(anon: httpx.Client) -> None:
     calls = [
         ("POST", "admin/reconcile-jobs"),
+        ("POST", "admin/job-priority"),
         ("POST", "samples"),
         ("POST", "workflows"),
         ("PATCH", "workflows/1/status"),

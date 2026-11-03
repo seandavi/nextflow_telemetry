@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from .readset import normalize_runs
 
@@ -97,6 +97,12 @@ class RequeueDeadLetterRequest(BaseModel):
     workflow_pk: int | None = None
     collection: str | None = None
     job_ids: list[int] | None = None
+
+
+class JobPriorityRequest(BaseModel):
+    collection_id: str = Field(min_length=1)
+    priority: Annotated[StrictInt, Field(ge=-(2**31), le=2**31 - 1)]
+    workflow_pk: StrictInt | None = None
 
 
 # --------------------------------------------------------------- responses
@@ -320,6 +326,10 @@ class ClosedRun(BaseModel):
 
 class ResetRunning(BaseModel):
     reset: int
+
+
+class JobPriorityUpdated(BaseModel):
+    updated: int
 
 
 class StuckWorkflow(BaseModel):

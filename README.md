@@ -327,7 +327,7 @@ Postgres with the same wire paths as the Worker in `cf/`, whose endpoint status 
 | Task logs | `POST /task-logs`, `GET /task-logs/{run_name}/{task_hash}` |
 | Daemons | `GET /daemons/`, `PUT /daemons/heartbeat` |
 | Curated | `GET/POST /curated/studies`, `/curated/samples` |
-| Admin | `POST /admin/reconcile-jobs`, `/admin/close-run`, `/admin/requeue-dead-letter`, `GET /admin/dead-letter`, `/admin/stats`; `POST /admin/expire-stale-runs` and `/admin/heartbeat-watchdog` are deprecated no-ops (deadlines are per run) |
+| Admin | `POST /admin/reconcile-jobs`, `/admin/close-run`, `/admin/requeue-dead-letter`, `/admin/job-priority`, `GET /admin/dead-letter`, `/admin/stats`; `POST /admin/expire-stale-runs` and `/admin/heartbeat-watchdog` are deprecated no-ops (deadlines are per run) |
 | Submissions | `POST /submissions` (study by accession), `GET /submissions/{submission_id}` |
 | Auth | `GET /auth/login`, `/auth/callback`, `/auth/me`, `POST /auth/logout` (Google OAuth) |
 
