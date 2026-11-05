@@ -416,3 +416,24 @@ def test_slurm_template_sends_wrapper_events_to_event_url() -> None:
     # A context built before event_url existed (template drift, #249) still renders.
     legacy = {k: v for k, v in ctx.items() if k != "event_url"} | {"server_url": "https://origin/api"}
     assert "--telemetry-url https://origin/api" in render_submission_script(tmpl, legacy)
+
+
+def test_slurm_template_sends_tasks_to_task_partition() -> None:
+    """task_partition (FASRC) puts tasks on another partition than the wrapper; unset, they share it."""
+    from pathlib import Path
+
+    from nf_client.submission import render_submission_script
+
+    tmpl = Path(__file__).resolve().parents[3] / "templates" / "submit_slurm.sh.j2"
+    ctx = {
+        "mem": "8G", "cpus": 2, "time": "7-00:00:00", "partition": "huttenhower", "log_dir": "/l",
+        "run_name": "r1", "sample_ids": "s", "workflow_repository": "o/r",
+        "workflow_revision": "2.3.4", "profile": "fasrc,r2", "server_url": "u",
+        "weblog_url": "w", "workflow_id": "wf", "workflow_version": "1",
+        "metadata_tsv_content": "",
+    }
+    split = render_submission_script(tmpl, {**ctx, "task_partition": "hsph,shared"})
+    assert "#SBATCH --partition=huttenhower" in split
+    assert "process.clusterOptions = '--partition hsph,shared " in split
+    same = render_submission_script(tmpl, ctx)
+    assert "process.clusterOptions = '--partition huttenhower " in same

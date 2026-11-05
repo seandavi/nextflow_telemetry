@@ -56,12 +56,15 @@ def test_deployed_cluster_configs_load_and_gate_dispatch(monkeypatch):
     for var in ("NF_OPERATOR_TOKEN", "NF_TEL_ACCOUNT", "NF_TEL_LOGS", "NF_TEL_REPO"):
         monkeypatch.setenv(var, "x")
     root = Path(__file__).resolve().parents[3] / "config"
-    cfgs = {c: ClientConfig.from_yaml(root / f"client-{c}.yaml") for c in ("alpine", "anvil", "bridges2")}
+    cfgs = {c: ClientConfig.from_yaml(root / f"client-{c}.yaml") for c in ("alpine", "anvil", "bridges2", "fasrc")}
     assert cfgs["alpine"].dispatch.workflow_id == ["cmgd_humann4a2", "cmgd_mpa4.2"]
     assert cfgs["alpine"].submission.defaults["task_qos"] == "cpu-normal"  # tasks need a qos <= 24 h
     assert cfgs["anvil"].dispatch.workflow_id == ["cmgd_humann4a2", "cmgd_mpa4.2"]
     assert cfgs["bridges2"].dispatch.workflow_id == ["cmgd_humann4a2", "cmgd_mpa4.2"]
     assert cfgs["bridges2"].submission.max_concurrent_runs == 6
+    assert cfgs["fasrc"].dispatch.workflow_id == ["cmgd_mpa4.2"]  # HUMAnN databases aren't staged there
+    assert cfgs["fasrc"].submission.defaults["partition"] == "huttenhower"
+    assert cfgs["fasrc"].submission.defaults["task_partition"] == "hsph,shared"
 
 
 def test_event_url_defaults_to_empty():

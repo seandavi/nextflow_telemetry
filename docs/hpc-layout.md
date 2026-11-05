@@ -125,6 +125,20 @@ and check `sbatch --test-only` with the rendered script before starting the daem
 | Pipeline profile | `-profile bridges2,r2` uses `conf/profiles/bridges2.config` (pipeline 2.3.2+). Its hardcoded `store_dir` is overridden by the submit template from `NF_TEL_STORE` |
 | Concurrency | `batch_size: 10`, `max_concurrent_runs: 3` to stay under the 2 TB Ocean quota |
 
+### Harvard FASRC / Cannon (added 2026-11-05)
+
+| | |
+|---|---|
+| SSH | `ssh fasrc` (`holylogin.rc.fas.harvard.edu` via `ProxyJump` dccapp720). Each new login needs password + OpenAuth, so non-interactive commands and `deploy-clients` ride an open `ControlMaster` (`ControlPersist 12h`). Login nodes are round-robin; the daemon's node is pinned by `deploy-clients` |
+| Account | Default account `huttenhower_lab` (seandavi's primary group). FASRC schedules by **fairshare**, not billed units: heavy use lowers the lab's priority (FairShare 0.573 on 2026-11-05) |
+| Partitions | Wrapper on `huttenhower` (2 lab nodes, 48 cores / 192 GB, 30 d; a 2-core job starts at once). Tasks on `hsph,shared`: `hsph` 56 nodes × 112 cores / 1 TB, `shared` 370 × 48 / 192 GB, both 3 d. Measured with `sbatch --test-only`: an 8-core / 56 GB job started at once on `hsph`, in ~75 min on `shared`. `serial_requeue` (preemptible) not used until requeue handling is tested (#367) |
+| Pipeline profile | `-profile fasrc,r2` needs pipeline **>= 2.3.4** (`conf/profiles/fasrc.config`, profile-only). Template overrides store_dir and bind from `NF_TEL_STORE` |
+| Template | `task_partition` in the client yaml sends tasks to a different partition than the wrapper |
+| Storage | `$NF_TEL_HOME` on `/n/holylfs05/LABS/huttenhower_lab` (50 TB **lab** quota, 44 TB used 2026-11-05); run dirs on `/n/netscratch/huttenhower_lab` (purged); SIF cache kept on lab storage |
+| Network | Login and compute nodes reach the API, GitHub, ENA (portal + FTP), R2 and ghcr.io (checked from `holy8a26602`, 2026-11-05) |
+| Java / containers | System java is 1.8: Temurin 21 at `$NF_TEL_DAEMON/jdk`. Singularity CE 4.5 on PATH |
+| Databases | The lab keeps bioBakery data, but not our pinned layout; stage with `--databases_only` |
+
 ## Storage facts (2026-09-21)
 
 | | Alpine | Anvil |

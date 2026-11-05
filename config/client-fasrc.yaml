@@ -1,0 +1,37 @@
+# Read in place from the checkout ($NF_TEL_CONFIG); deployed by `just deploy-clients` (#254).
+# ${NAME} is expanded from the daemon's environment
+# (~/.nf_tel.env, ~/.nf_tel.secrets); an unset variable fails the load.
+server_url: "https://nf-telemetry.seandavi.workers.dev/api"
+event_url: "https://nf-telemetry.seandavi.workers.dev/api"
+weblog_url: "https://nf-telemetry.seandavi.workers.dev/telemetry"
+token: "${NF_OPERATOR_TOKEN}"
+
+profile: "fasrc,r2"   # pipeline >= 2.3.4 carries conf/profiles/fasrc.config; R2 output (ADR 0008)
+continuous: true
+
+dispatch:
+  # Larger, fewer runs: wrappers sit on the lab's 2-node `huttenhower`
+  # partition (about 6 spare cores), so concurrency is low and each run carries
+  # more samples. Only cmgd_mpa4.2: the HUMAnN/BAQLaVa databases aren't staged here.
+  batch_size: 50
+  workflow_id: [cmgd_mpa4.2]
+
+submission:
+  mode: slurm
+  template_path: "${NF_TEL_REPO}/templates/submit_slurm.sh.j2"
+  max_concurrent_runs: 3
+  slurm_export_none: false
+
+  defaults:
+    # Wrapper: the Nextflow driver waits on every task, including retries, so it
+    # needs the lab partition's long walltime (30 d max). Tasks go to `hsph`
+    # (112 cores / 1 TB, short queue) and spill to `shared` (48 / 192 GB) when it
+    # is full (2026-11-05: hsph started an 8-core/56 GB job at once, shared in ~75 min).
+    partition: "huttenhower"
+    task_partition: "hsph,shared"
+    cpus: 2
+    mem: "8G"
+    time: "7-00:00:00"
+    account: "${NF_TEL_ACCOUNT}"
+    log_dir: "${NF_TEL_LOGS}"
+    publish_base: "s3://cmgd-raw"   # must match the r2 profile; results go to <base>/<workflow_id>/<version>/ (#220)
