@@ -147,6 +147,33 @@ Plan `docs/plans/onboarding-and-publication.md` §4–5, #270.
     but no longer documented; removing it is a cdsci-lake change. This replaces the first
     Consequence ("Readers attach a frozen catalog").
 
+## Amendment (2026-11-05): releases are built with `cdsci-publish` (#428)
+
+13. **The bundle mechanics are cdsci-lake's shared `cdsci.publish`** (its ADR-0027),
+    replacing `publish_release`, which is being retired (cdsci-lake#166). It writes
+    the Parquet (same `tables/<table>/data/part-00000.parquet` paths, via `path=`),
+    `cmgd.duckdb`, `views.sql`, `restore.sql` and `manifest.json`. `manifest.json`
+    is the shared contract (`manifest_version` 1: `release`, `published_at`, `git_sha`,
+    `base_url`, `tables[]` with `path`, `row_count`, `bytes`, `sha256`, `columns[]`,
+    `provenance`) plus cmgd's fields, additive: `dataset`, `release` in cmgd's
+    `YYYY-MM-DD[.N]` form, `release_date`, `description`, and per table `name`,
+    `description`, `license`, `grain`, `primary_key`. Dropped from the manifest:
+    `status`, `run_id`, `artifacts`, `lineage`, `spec_version`, and per table
+    `owner`, `temporal_model`, `schema_digest` and the `schema`/`files` paths (the
+    files themselves stay at their documented paths). `lineage.json` is gone.
+14. **No frozen DuckLake catalog.** `catalog.ducklake` is no longer built; nothing
+    read it (the other products dropped it on the same evidence, cdsci-lake ADR-0027).
+    `cmgd.duckdb` is the entry point (12).
+15. **Everything else stays cmgd policy in `etl/publish.py`**: the per-dataset
+    `<dataset>/<release>/` layout, release ids, `releases.json`/`latest.json`, the
+    root `index.json`, `studies/` and `genefamilies/`, per-table `files.json`/
+    `schema.json`, the per-table licence, `provenance.json`'s `cmgd` block, the README
+    query section and the pages. A release is built in a staging directory and
+    moved into the store whole, so a failed build leaves nothing behind. The upload
+    stays `nf-etl publish --sync` (rclone): `cdsci.publish.upload` publishes a
+    `v{date}/` + `latest/` folder pair and cannot carry the side directories or the
+    pointer files.
+
 ## References
 
 - Issues #229, #230, #234; monode#52 (`cmgd-public` bucket and domain).

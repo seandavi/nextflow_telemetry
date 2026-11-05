@@ -33,8 +33,9 @@ https://cmgd-public.cancerdatasci.org/
     latest.json                       {"release": "2026-10-08", ...}
     releases.json                     every release, oldest first
     <release>/
-      manifest.json                   tables, row counts, schema digests, licence
+      manifest.json                   tables: path, row count, bytes, sha256, columns and types, licence
       cmgd.duckdb                     DuckDB database: one view per table over the Parquet below
+      views.sql, restore.sql          the same views as SQL; a local copy with a row-count check
       README.md                       table and column documentation
       tables/<table>/schema.json      columns, types, units, descriptions
       tables/<table>/files.json       data files with size, sha256, row counts
@@ -285,11 +286,16 @@ for f in mine[:2]:
 
 ## Index files
 
-The JSON indexes this site adds to cdsci-lake's release files follow the **cmgd
+The JSON indexes this site adds to the release bundle follow the **cmgd
 index spec**, versioned by the `spec_version` each one carries (`"1.0"` today).
 A reader should check the major version: a change that breaks readers bumps it.
-This is separate from the `spec_version` of cdsci-lake's own files
-(`manifest.json`, `files.json`, `releases.json`, `latest.json`: spec 2.0).
+This is separate from `manifest.json`, which follows the shared `cdsci-publish`
+manifest contract (`manifest_version` 1, cdsci-lake ADR-0027: `release`,
+`published_at`, `git_sha`, `base_url`, `tables[]` with `path`, `row_count`,
+`bytes`, `sha256`, `columns[]`, `provenance`) plus cmgd's own fields (`dataset`,
+`release_date`, `description`, and per table `name`, `description`, `license`,
+`grain`, `primary_key`), and from `files.json`, `releases.json` and `latest.json`
+(spec 2.0, unchanged).
 
 | file | holds |
 |---|---|
@@ -305,8 +311,8 @@ URL; in the root index, relative to the site root. `url` values are absolute.
 `artifacts` lists the release's other index files with `size` and `sha256`:
 `studies/index.json` lists `genefamilies/index.json`, which lists
 `genefamilies/index.tsv`. They are there because a release's `manifest.json`
-cannot list files outside its tables yet (cdsci-lake#134); `studies/index.json`
-itself and the root `index.json` have no checksum anywhere.
+lists only its tables; `studies/index.json` itself and the root `index.json`
+have no checksum anywhere.
 
 `studies/index.json` is one file for all studies (about 1 kB per study). The
 gene-family index is split per study because it has one entry per sample.
