@@ -1,19 +1,18 @@
 """Public releases of ``lake.cmgd`` (ADR-0011): one dataset per registration.
 
 ``publish`` reads one registration's rows from the shared lake at a single lake
-snapshot and hands them to cdsci-lake's ``publish_release``, which writes the
-release (sorted Parquet, schema/file indexes, frozen read-only DuckLake catalog,
-manifest, ``releases.json``/``latest.json``) into a local store. The per-study
-downloads and the gene-family index (``export.py``) are built from the same
-snapshot and moved into the release directory once ``publish_release`` returns:
-it has no hook for extra artifacts, so they are not in the manifest (their own
-``index.json`` files carry sizes and checksums; cdsci-lake#134). So is
-``cmgd.duckdb`` (#416), the readers' entry point: one view per table over the
-release's public Parquet URLs. ``publish`` writes it and appends a query section
-to the README after ``publish_release`` returns; the frozen DuckLake catalog is
-still built but no longer documented. Last, the
-store's root ``index.json`` gets the dataset's entry, so clients can find every
-dataset without LIST.
+snapshot, stages them as sorted Parquet, and hands them to ``cdsci.publish``
+(cdsci-lake ADR-0027), which writes the release bundle: one Parquet file per
+table under ``tables/<table>/data/``, ``cmgd.duckdb`` (#416, the readers' entry
+point: one view per table over the release's public Parquet URLs), ``views.sql``,
+``restore.sql`` and ``manifest.json``. Everything else is cMGD policy, written
+here around the bundle: the per-study downloads and the gene-family index
+(``export.py``, built from the same snapshot; their own ``index.json`` files
+carry sizes and checksums), ``files.json``/``schema.json`` per table, the
+``provenance.json`` ``cmgd`` block, the README with its query section, the pages
+(``site.py``), the dataset's ``releases.json``/``latest.json`` and, last, the
+store's root ``index.json``, so clients can find every dataset without LIST.
+A release is built in a staging directory and moved into the store whole.
 
 ``sync`` is the separate, explicit upload of a local dataset to ``cmgd-public``.
 
@@ -24,27 +23,25 @@ dataset without LIST.
   <root>/<dataset>/<release>/genefamilies/index.json, <study>.json, index.tsv
 
 The dataset id is ``<workflow_id>-<version>`` (e.g. ``cmgd_nextflow-2.2.1``).
+The release id is the UTC build date, ``YYYY-MM-DD``; a second release the same
+day is ``YYYY-MM-DD.2``, then ``.3`` (cdsci-lake's old spec, kept for readers).
 """
 from __future__ import annotations
 
 import json
 import os
-import posixpath
+import re
 import shutil
 import subprocess
 import tempfile
-import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 import duckdb
-from fsspec.implementations.dirfs import DirFileSystem  # type: ignore[import-untyped]
-from fsspec.implementations.local import LocalFileSystem  # type: ignore[import-untyped]
 from cdsci.lake.contracts import ColumnContract, DatasetContract, TableContract, TemporalModel  # type: ignore[import-untyped]
-from cdsci.lake.publish.builder import LocalDirStore  # type: ignore[import-untyped]
-from cdsci.lake.publish.pipeline import publish_release  # type: ignore[import-untyped]
-from cdsci.lake.publish.release import ReleaseManifest, SourceAssetVersion  # type: ignore[import-untyped]
+from cdsci.lake.contracts_render import render_dataset_markdown  # type: ignore[import-untyped]
+from cdsci.publish import publish as build_bundle  # type: ignore[import-untyped]
 
 from . import export, lake, site
 from .specs import DATABASES, SPECS
@@ -54,6 +51,12 @@ PUBLISH_ROOT = os.environ.get("ETL_PUBLISH_ROOT", "/data/cmgd/publish")
 SYNC_REMOTE = os.environ.get("ETL_PUBLIC_REMOTE", "r2:cmgd-public")
 # The release's DuckDB entry point (#416): one view per table over its public Parquet URLs.
 VIEWS_DB = "cmgd.duckdb"
+# Schema of the views in cmgd.duckdb: readers query ``cmgd.<table>`` after ATTACH.
+VIEWS_SCHEMA = "main"
+# spec of the pointer files (releases.json, latest.json) and files.json: unchanged
+# from cdsci-lake's old release spec, so existing readers keep working.
+POINTER_SPEC_VERSION = "2.0"
+_RELEASE_ID = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:\.([2-9]|[1-9]\d+))?$")
 # Every published table carries it (schema.json, README.md, manifest).
 CMGD_DATA_LICENSE = "CC0-1.0"
 # Public HTTPS base of cmgd-raw for gene-family download URLs. No default: until
@@ -357,7 +360,67 @@ def dataset_contract(workflow_id: str, version: str,
                      "gene families are per-sample downloads listed in genefamilies/index.json."),
         publisher="curatedMetagenomicData",
         tables=tables,
+        required_artifacts=frozenset({"parquet"}),  # no frozen DuckLake catalog (ADR-0027)
     )
+
+
+def _release_sort_key(release: str) -> tuple[str, int]:
+    m = _RELEASE_ID.match(release)
+    if m is None:
+        raise ValueError(f"release id must be 'YYYY-MM-DD' or 'YYYY-MM-DD.N' (N>=2): {release!r}")
+    return m.group(1), int(m.group(2) or 1)
+
+
+def _write_json(path: Path, doc: dict) -> None:
+    """Atomic replace, so a pointer or index file is never half-written."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(json.dumps(doc, indent=2, default=str) + "\n")
+    os.replace(tmp, path)
+
+
+def load_releases(dataset_dir: Path, dataset: str) -> dict:
+    """``<dataset>/releases.json``; a missing file is an empty index."""
+    path = dataset_dir / "releases.json"
+    if path.exists():
+        return json.loads(path.read_text())
+    return {"spec_version": POINTER_SPEC_VERSION, "dataset": dataset, "releases": []}
+
+
+def next_release_id(index: dict, today: date) -> str:
+    """``YYYY-MM-DD`` for ``today``, or ``YYYY-MM-DD.N`` one above the day's highest rank."""
+    day = today.isoformat()
+    ranks = [_release_sort_key(r["release"])[1] for r in index["releases"]
+             if _release_sort_key(r["release"])[0] == day]
+    return day if not ranks else f"{day}.{max(ranks) + 1}"
+
+
+def promote_release(dataset_dir: Path, dataset: str, release: str, published_at: str) -> None:
+    """Add a built release to ``releases.json`` and point ``latest.json`` at the newest
+    (by release id order, so promoting an older id never moves it backwards)."""
+    index = load_releases(dataset_dir, dataset)
+    if any(r["release"] == release for r in index["releases"]):
+        raise ValueError(f"{dataset} {release}: already in releases.json")
+    index["releases"] = sorted(
+        index["releases"] + [{"release": release, "release_date": release.partition(".")[0],
+                              "published_at": published_at, "pinned": False}],
+        key=lambda r: _release_sort_key(r["release"]))
+    latest = index["releases"][-1]["release"]
+    _write_json(dataset_dir / "releases.json", index)
+    _write_json(dataset_dir / "latest.json", {
+        "spec_version": POINTER_SPEC_VERSION, "dataset": dataset, "release": latest,
+        "release_date": latest.partition(".")[0], "manifest": f"{latest}/manifest.json"})
+
+
+def _claim_release_id(dataset_dir: Path, dataset: str, today: date) -> str:
+    """The id the next build gets. A release directory that exists for it was built by
+    a run that crashed before promotion (the move into the store is the build's last
+    step), so it is promoted and the next id taken; single writer per store."""
+    while True:
+        release = next_release_id(load_releases(dataset_dir, dataset), today)
+        manifest = dataset_dir / release / "manifest.json"
+        if not manifest.exists():
+            return release
+        promote_release(dataset_dir, dataset, release, json.loads(manifest.read_text())["published_at"])
 
 
 def _snapshot(con: duckdb.DuckDBPyConnection, table: str, sid: int, workflow_id: str,
@@ -416,25 +479,76 @@ def _metadata(con: duckdb.DuckDBPyConnection, snap: Path) -> dict[str, dict[str,
     return out
 
 
+def table_path(schema: str, table: str) -> str:
+    """Where a table's Parquet sits in the release (``cdsci.publish`` ``path=``)."""
+    return f"tables/{table}/data/part-00000.parquet"
+
+
+def _release_select(snap: Path, contract: TableContract) -> str:
+    """The staged table, sorted by ``sort_by`` then the rest of the primary key: one
+    row order, so a filtered query reads only the row groups it needs."""
+    order = (*contract.sort_by, *(k for k in contract.primary_key if k not in contract.sort_by))
+    return f"SELECT * FROM read_parquet('{snap / f'{contract.name}.parquet'}') ORDER BY {', '.join(order)}"
+
+
+def column_doc(column: ColumnContract) -> str:
+    return f"{column.description} ({column.units})" if column.units else column.description
+
+
+def cmgd_manifest(manifest: dict, contract: DatasetContract, release: str) -> dict:
+    """cMGD's fields on the shared manifest (ADR-0027, ``manifest_version`` 1, additive):
+    ``release`` becomes cMGD's release id (``YYYY-MM-DD`` or ``.N``), ``dataset``,
+    ``release_date`` and ``description`` are added, and each table gets its ``name``,
+    ``description``, ``license``, ``grain`` and ``primary_key`` from the contract.
+    ``provenance`` (the shared field) already holds the source asset versions."""
+    manifest.update(release=release, dataset=contract.id, release_date=release.partition(".")[0],
+                    description=contract.description)
+    for t in manifest["tables"]:
+        tc = contract.tables[t["table"]]
+        t.update(name=tc.name, description=tc.description, license=tc.license, grain=tc.grain,
+                 primary_key=list(tc.primary_key))
+    return manifest
+
+
+def write_table_index(release_dir: Path, release: str, table: dict, contract: TableContract) -> None:
+    """``tables/<table>/files.json`` (the data files with size, sha256 and rows) and
+    ``schema.json`` (columns, types, units, descriptions): the documented per-table
+    files, from the manifest entry and the contract."""
+    d = release_dir / "tables" / table["table"]
+    _write_json(d / "files.json", {
+        "spec_version": POINTER_SPEC_VERSION, "table": table["table"], "release": release,
+        "files": [{"uri": table["path"].removeprefix(f"tables/{table['table']}/"),
+                   "size": table["bytes"], "sha256": table["sha256"], "rows": table["row_count"],
+                   "content_type": "application/vnd.apache.parquet"}]})
+    _write_json(d / "schema.json", contract.to_schema_dict())
+
+
 def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
             root: Path | str = PUBLISH_ROOT, *, jobs: Sequence[CompletedJob] = (),
             registration: Registration | None = None,
             raw_base_url: str | None = RAW_PUBLIC_BASE_URL,
             public_base_url: str = PUBLIC_BASE_URL,
-            today: date | None = None) -> ReleaseManifest:
-    """Build one release of a registration's dataset into the local store ``root``.
+            today: date | None = None, snapshot: int | None = None) -> dict:
+    """Build one release of a registration's dataset into the local store ``root``;
+    returns its manifest.
 
     ``con`` has the shared lake attached as ``lake`` (``cdsci.lake.lake_connect``).
     ``jobs`` are the registration's completed v2 jobs (run accessions and
     completion times for the ``samples`` table); ``registration`` its v2 record
-    (revision, params) for the provenance block."""
+    (revision, params) for the provenance block. ``snapshot`` pins the lake snapshot
+    the result tables are read at (default: the newest); the metadata tables and
+    ``jobs`` are always current."""
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
-    sid = con.sql("SELECT max(snapshot_id) FROM lake.snapshots()").fetchone()[0]  # type: ignore[index]
+    sid = snapshot or con.sql("SELECT max(snapshot_id) FROM lake.snapshots()").fetchone()[0]  # type: ignore[index]
+    did = dataset_id(workflow_id, version)
+    dataset_dir = root / did
+    release = _claim_release_id(dataset_dir, did, today or datetime.now(UTC).date())
+    release_url = f"{public_base_url.rstrip('/')}/{did}/{release}"
 
-    # Staged next to the store so moving the extras into the release is a rename.
+    # Staged next to the store so moving the finished release into it is a rename.
     with tempfile.TemporaryDirectory(dir=root, prefix=".staging-") as tmp:
-        snap, extras = Path(tmp) / "snapshot", Path(tmp) / "extras"
+        snap, extras, bundle = Path(tmp) / "snapshot", Path(tmp) / "extras", Path(tmp) / release
         snap.mkdir()
         for t in published_tables(workflow_id, version):
             if t != SAMPLES_TABLE:
@@ -442,13 +556,11 @@ def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
         _samples(con, snap, jobs)
         meta = _metadata(con, snap)
         contract = dataset_contract(workflow_id, version, meta)
-        sources = [SourceAssetVersion(ref=f"lake.{LAKE_SCHEMA}.{t}", version=f"snapshot:{sid}")
+        sources = [(f"lake.{LAKE_SCHEMA}.{t}", f"snapshot:{sid}")
                    for t in contract.tables if t in lake.SCHEMAS]
         if registration:  # the samples table's runs and completion times
-            sources.append(SourceAssetVersion(ref="nf_telemetry.v2.jobs",
-                                              version=f"registration:{registration.pk}"))
-        sources += [SourceAssetVersion(ref=f"lake.{META_SCHEMA}.{META_TABLES[t][0]}",
-                                       version=f"snapshot:{sid}") for t in meta]
+            sources.append(("nf_telemetry.v2.jobs", f"registration:{registration.pk}"))
+        sources += [(f"lake.{META_SCHEMA}.{META_TABLES[t][0]}", f"snapshot:{sid}") for t in meta]
         artifacts = []
         if has_humann(workflow_id, version):
             files = con.sql(
@@ -461,79 +573,53 @@ def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
             export.write_genefamilies_index(files, extras / "genefamilies", contract.id,
                                             raw_base_url)
             artifacts.append(export.entry(extras, extras / "genefamilies" / "index.json"))
-            sources.append(SourceAssetVersion(ref=f"lake.{LAKE_SCHEMA}.{GENEFAMILY_FILES_TABLE}",
-                                              version=f"snapshot:{sid}"))
+            sources.append((f"lake.{LAKE_SCHEMA}.{GENEFAMILY_FILES_TABLE}", f"snapshot:{sid}"))
         export.write_studies(snap, extras / "studies", contract.id, artifacts)
-
-        rcon = duckdb.connect()
-        manifest = publish_release(
-            LocalDirStore(root), contract=contract,
-            tables={t: rcon.read_parquet(str(snap / f"{t}.parquet")) for t in contract.tables},
-            source_asset_versions=tuple(sources), run_id=str(uuid.uuid4()), today=today)
-        rcon.close()
-        release_dir = root / contract.id / manifest.release
-        release_url = f"{public_base_url.rstrip('/')}/{contract.id}/{manifest.release}"
-        for extra in sorted(extras.iterdir()):
-            shutil.move(str(extra), str(release_dir / extra.name))
         source_releases = []
         if meta and _has_meta(con, "source_releases"):
             rel = con.sql(f"SELECT * REPLACE (loaded_at::VARCHAR AS loaded_at) "
                           f"FROM lake.{META_SCHEMA}.source_releases WHERE pinned ORDER BY ALL")
             source_releases = [dict(zip(rel.columns, r)) for r in rel.fetchall()]
-    add_provenance(release_dir, workflow_id, version, registration, manifest, source_releases)
-    add_readme_query(release_dir, release_url)
-    # Last of the release's own files, after studies/, genefamilies/ and provenance are in
-    # place: a failed views build then loses only cmgd.duckdb, never half-written (#419 review).
-    tmp_db = release_dir / f".{VIEWS_DB}.tmp"
-    tmp_db.unlink(missing_ok=True)
-    write_views_db(tmp_db, release_dir, release_url)
-    tmp_db.replace(release_dir / VIEWS_DB)
-    site.write_study_pages(release_dir, public_base_url)
-    update_root_index(root, workflow_id, version, manifest.release)
+
+        # The bundle (ADR-0027): Parquet, cmgd.duckdb, views.sql, restore.sql, manifest.json.
+        rcon = duckdb.connect()
+        rcon.execute("CREATE TABLE publish_sources (ref VARCHAR, version VARCHAR)")
+        rcon.executemany("INSERT INTO publish_sources VALUES (?, ?)", [list(s) for s in sources])
+        manifest = build_bundle(
+            rcon, bundle,
+            tables=[(VIEWS_SCHEMA, t, _release_select(snap, contract.tables[t]))
+                    for t in sorted(contract.tables)],
+            docs=lambda name: (contract.tables[name.removeprefix(f"{VIEWS_SCHEMA}.")].description,
+                               {c.name: column_doc(c)
+                                for c in contract.tables[name.removeprefix(f"{VIEWS_SCHEMA}.")].columns}),
+            base_url=release_url, db_file=VIEWS_DB, code_dir=Path(__file__).resolve().parent,
+            provenance_sql="SELECT DISTINCT ref, version FROM publish_sources ORDER BY ALL",
+            path=table_path)
+        rcon.close()
+        # cMGD's own files around it, then the pages; the manifest is rewritten with
+        # cMGD's fields before anything reads it.
+        for extra in sorted(extras.iterdir()):
+            shutil.move(str(extra), str(bundle / extra.name))
+        for t in manifest["tables"]:
+            write_table_index(bundle, release, t, contract.tables[t["table"]])
+        _write_json(bundle / "manifest.json", cmgd_manifest(manifest, contract, release))
+        _write_json(bundle / "provenance.json", {
+            "source_asset_versions": [{"ref": r, "version": v} for r, v in sources],
+            "cmgd": provenance_block(bundle, workflow_id, version, registration, contract,
+                                     source_releases)})
+        (bundle / "README.md").write_text(render_dataset_markdown(contract) + readme_query(release_url))
+        site.write_study_pages(bundle, public_base_url)
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(bundle), str(dataset_dir / release))
+    promote_release(dataset_dir, did, release, manifest["published_at"])
+    update_root_index(root, workflow_id, version, release)
     site.write_site(root, public_base_url)
     return manifest
 
 
-class _ReleaseMirror(DirFileSystem):
-    """Serves ``<release_url>/<path>`` from ``<release_dir>/<path>``, so cmgd.duckdb's
-    views bind before the release is uploaded (CREATE VIEW reads the first file)."""
-    protocol = ("https", "http")
-
-    def __init__(self, release_url: str, release_dir: Path) -> None:
-        super().__init__(path=str(release_dir), fs=LocalFileSystem())
-        self.release_url = release_url
-
-    def _join(self, path: str | list[str]) -> str | list[str]:
-        if isinstance(path, str):
-            path = path.removeprefix(self.release_url + "/")
-        return super()._join(path)
-
-
-def write_views_db(out: Path, release_dir: Path, release_url: str) -> None:
-    """``out`` (cmgd.duckdb): one view per table in ``release_dir``'s manifest.json,
-    ``read_parquet`` over the absolute URLs of the files in the table's files.json
-    (the manifest entry's ``files`` path; URL ``<release_url>/<its dir>/<uri>``), in
-    files.json order. Views only: a reader ATTACHes it and DuckDB fetches the Parquet
-    a query needs."""
-    manifest = json.loads((release_dir / "manifest.json").read_text())
-    con = duckdb.connect(str(out))
-    try:
-        con.register_filesystem(_ReleaseMirror(release_url, release_dir))
-        for table in manifest["tables"]:
-            files_path = table["files"]
-            files = json.loads((release_dir / files_path).read_text())["files"]
-            urls = ", ".join(
-                "'" + f"{release_url}/{posixpath.dirname(files_path)}/{f['uri']}".replace("'", "''") + "'"
-                for f in files)
-            con.execute(f'CREATE VIEW "{table["name"]}" AS SELECT * FROM read_parquet([{urls}])')
-    finally:
-        con.close()
-
-
-def add_readme_query(release_dir: Path, release_url: str) -> None:
-    """Append a "Query this release" section to the release README.md."""
-    with (release_dir / "README.md").open("a") as f:
-        f.write(f"""
+def readme_query(release_url: str) -> str:
+    """The "Query this release" section of the release README.md."""
+    return f"""
 ## Query this release
 
 With [DuckDB](https://duckdb.org) 1.5.2 or newer, attach the release's views. DuckDB
@@ -544,18 +630,17 @@ INSTALL httpfs; LOAD httpfs;
 ATTACH '{release_url}/cmgd.duckdb' AS cmgd;
 SELECT study_name, count(*) AS n_samples FROM cmgd.samples GROUP BY 1 ORDER BY 1;
 ```
-""")
+"""
 
 
-def add_provenance(release_dir: Path, workflow_id: str, version: str,
-                   registration: Registration | None, manifest: ReleaseManifest,
-                   source_releases: list[dict]) -> dict:
-    """Append the ``cmgd`` block to the release's ``provenance.json`` (plan §4.3):
-    the registration, the pipeline versions the samples actually ran, the
-    reference databases pinned for the registration, the metadata source
-    releases, and each table's licence. ``verify_release`` only checks that the
-    document is readable, so adding to it after the build keeps the release valid."""
-    samples = release_dir / "tables" / SAMPLES_TABLE / "data" / "part-00000.parquet"
+def provenance_block(release_dir: Path, workflow_id: str, version: str,
+                     registration: Registration | None, contract: DatasetContract,
+                     source_releases: list[dict]) -> dict:
+    """The ``cmgd`` block of the release's ``provenance.json`` (plan §4.3): the
+    registration, the pipeline versions the samples actually ran, the reference
+    databases pinned for the registration, the metadata source releases, and each
+    table's licence."""
+    samples = release_dir / table_path(VIEWS_SCHEMA, SAMPLES_TABLE)
     ran = duckdb.sql(
         "SELECT pipeline_version, git_commit, count(*) AS n_samples, "
         f"count(DISTINCT study_name) AS n_studies FROM read_parquet('{samples}') "
@@ -572,16 +657,10 @@ def add_provenance(release_dir: Path, workflow_id: str, version: str,
         "databases": DATABASES.get((workflow_id, version)),
         "metadata_sources": [{k: (str(v) if isinstance(v, (datetime, date)) else v)
                               for k, v in r.items()} for r in source_releases],
-        "licenses": {t.name: t.license for t in manifest.tables},
+        "licenses": {t.name: t.license for t in contract.tables.values()},
         "citation": CITATION,
     }
-    path = release_dir / "provenance.json"
-    doc = json.loads(path.read_text())
-    doc["cmgd"] = block
-    path.write_text(json.dumps(doc, indent=2, default=str))
     return block
-
-
 
 
 def update_root_index(root: Path, workflow_id: str, version: str, release: str) -> None:
@@ -594,11 +673,8 @@ def update_root_index(root: Path, workflow_id: str, version: str, release: str) 
     datasets = sorted([d for d in datasets if d["id"] != did] + [
         {"id": did, "workflow_id": workflow_id, "version": version, "latest_release": release,
          "latest": f"{did}/latest.json", "updated_at": now}], key=lambda d: d["id"])
-    with tempfile.NamedTemporaryFile("w", dir=root, prefix=".index-", suffix=".json",
-                                     delete=False) as f:
-        json.dump({"spec_version": export.INDEX_SPEC_VERSION, "updated_at": now,
-                   "datasets": datasets}, f, indent=2)
-    os.replace(f.name, path)
+    _write_json(path, {"spec_version": export.INDEX_SPEC_VERSION, "updated_at": now,
+                       "datasets": datasets})
 
 
 def sync_commands(root: Path | str, dataset: str, remote: str = SYNC_REMOTE) -> list[list[str]]:

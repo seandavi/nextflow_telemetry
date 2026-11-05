@@ -189,13 +189,22 @@ wheels = [
 [[package]]
 name = "cdsci-lake"
 version = "0.4.2"
-source = { git = "https://github.com/seandavi/cdsci-lake?rev=0f535a752cce3b4b4f0ebdc7cb99faa79a8fe35b#0f535a752cce3b4b4f0ebdc7cb99faa79a8fe35b" }
+source = { git = "https://github.com/seandavi/cdsci-lake?rev=e0f7ca8bcabd459f3e5c99170cd9dac8bd7ced0a#e0f7ca8bcabd459f3e5c99170cd9dac8bd7ced0a" }
 dependencies = [
     { name = "duckdb" },
     { name = "httpx" },
     { name = "loguru" },
     { name = "pydantic-settings" },
     { name = "tenacity" },
+]
+
+[[package]]
+name = "cdsci-publish"
+version = "0.1.0"
+source = { git = "https://github.com/seandavi/cdsci-lake?subdirectory=packages%2Fcdsci-publish&rev=e0f7ca8bcabd459f3e5c99170cd9dac8bd7ced0a#e0f7ca8bcabd459f3e5c99170cd9dac8bd7ced0a" }
+dependencies = [
+    { name = "duckdb" },
+    { name = "fsspec" },
 ]
 
 [[package]]
@@ -1294,6 +1303,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "authlib" },
     { name = "cdsci-lake" },
+    { name = "cdsci-publish" },
     { name = "duckdb" },
     { name = "fastapi" },
     { name = "fsspec" },
@@ -1326,7 +1336,8 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13.0,<2.0.0" },
     { name = "asyncpg", specifier = ">=0.29.0,<1.0.0" },
     { name = "authlib", specifier = ">=1.3.0,<2.0.0" },
-    { name = "cdsci-lake", git = "https://github.com/seandavi/cdsci-lake?rev=0f535a752cce3b4b4f0ebdc7cb99faa79a8fe35b" },
+    { name = "cdsci-lake", git = "https://github.com/seandavi/cdsci-lake?rev=e0f7ca8bcabd459f3e5c99170cd9dac8bd7ced0a" },
+    { name = "cdsci-publish", git = "https://github.com/seandavi/cdsci-lake?subdirectory=packages%2Fcdsci-publish&rev=e0f7ca8bcabd459f3e5c99170cd9dac8bd7ced0a" },
     { name = "duckdb", specifier = ">=1.5.2,<2.0.0" },
     { name = "fastapi", specifier = ">=0.115.0,<0.116.0" },
     { name = "fsspec", specifier = ">=2026.9.0" },

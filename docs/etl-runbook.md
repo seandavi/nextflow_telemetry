@@ -160,14 +160,17 @@ uv run nf-etl publish --registration cmgd_nextflow/2.2.1 --sync             # up
 uv run python scripts/smoke_public_data.py                     # run docs/data-access.md against the live site
 ```
 
-A build reads the registration's rows at one lake snapshot, then runs cdsci-lake's
-`publish_release`: sorted Parquet, a frozen `catalog.ducklake` (still built,
-no longer documented for readers), manifest and checksums, acceptance checks, then
-`releases.json`/`latest.json`. A failed acceptance leaves no `manifest.json` and the index untouched. `studies/`
-and `genefamilies/` are added to the release directory afterwards, and the
-dataset's entry in the store's root `index.json` is replaced last. `publish` then
-writes `cmgd.duckdb` (one view per table over the release's public Parquet URLs,
-from `files.json`) and appends a query section to `README.md`.
+A build reads the registration's rows at one lake snapshot into sorted staging
+Parquet, then runs the shared `cdsci.publish` (cdsci-lake ADR-0027) over it: one
+Parquet file per table, `cmgd.duckdb` (one view per table over the release's public
+Parquet URLs), `views.sql`, `restore.sql` and `manifest.json` with each file's size
+and sha256. `studies/`, `genefamilies/`, `files.json`/`schema.json` per table,
+`provenance.json`, `README.md` and the pages are then written around it, all in a
+staging directory under the store; the finished release is moved into
+`<dataset>/<release>/` whole, then `releases.json`/`latest.json` and the dataset's
+entry in the store's root `index.json` are replaced. A failed build leaves no
+release directory and the pointers untouched. No frozen DuckLake catalog is built
+(dropped 2026-11-05 with the move to `cdsci.publish`).
 
 The sync copies release directories with `rclone copy --immutable` (a published
 object is never rewritten), then the two pointer files with

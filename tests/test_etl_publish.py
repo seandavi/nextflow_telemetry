@@ -1,24 +1,19 @@
 """nf-etl publish (ADR-0011): one public release per registration, built with
-cdsci-lake's publish_release from a local fixture lake (cmgd_release_fixture)."""
+cdsci.publish (cdsci-lake ADR-0027) from a local fixture lake (cmgd_release_fixture)."""
 from __future__ import annotations
 
 import csv
 import gzip
 import hashlib
-import functools
-import http.server
 import io
 import json
 import subprocess
-import threading
 
 import duckdb
 import pytest
-from cdsci.lake.publish.builder import LocalDirStore
-from cdsci.lake.publish.frozen import frozen_ducklake_attach_sql
-from cdsci.lake.publish.verify import verify_release
+from cdsci.publish.bundle import MANIFEST_VERSION, check_files
 from cmgd_release_fixture import (  # noqa: F401 -- public_site is a fixture
-    GF_FILE, GF_ROWS, HUMANN, LEGACY, REGS, SPECIES, STUDIES, RangeHandler, build_lake, public_site,
+    GF_FILE, GF_ROWS, HUMANN, LEGACY, REGS, RELEASE_DAY, SPECIES, STUDIES, build_lake, public_site,
     sample_keys,
 )
 
@@ -28,27 +23,68 @@ from nextflow_telemetry.etl.specs import SPECS
 
 def _release(site, reg):
     m = site.manifests[reg]
-    return m, site.root / m.dataset / m.release
+    return m, site.root / m["dataset"] / m["release"]
 
 
-def test_release_is_published_verified_and_indexed(public_site):
+def test_release_is_published_checked_and_indexed(public_site):
     for reg in (LEGACY, HUMANN):
         m, rdir = _release(public_site, reg)
-        assert (m.dataset, m.release) == (publish.dataset_id(*reg), "2026-10-08")
-        assert {t.name for t in m.tables} == set(publish.published_tables(*reg))
-        assert verify_release(LocalDirStore(public_site.root), m.dataset, m.release,
-                              contract=publish.dataset_contract(*reg)).passed
-        latest = json.loads((public_site.root / m.dataset / "latest.json").read_text())
-        assert latest["release"] == m.release
-        assert {s.ref for s in m.source_asset_versions} >= {f"lake.cmgd.{t.name}" for t in m.tables
-                                                            if t.name != "samples"}
-        assert all(t.license == publish.CMGD_DATA_LICENSE for t in m.tables)
+        assert m == json.loads((rdir / "manifest.json").read_text())
+        assert (m["dataset"], m["release"], m["release_date"]) == (
+            publish.dataset_id(*reg), "2026-10-08", "2026-10-08")
+        # the shared contract's fields (ADR-0027) plus cMGD's, additive
+        assert m["manifest_version"] == MANIFEST_VERSION and m["git_sha"] and m["published_at"]
+        assert m["base_url"] == f"{public_site.base}/{m['dataset']}/{m['release']}"
+        assert m["description"].startswith("Profiles from")
+        assert [t["name"] for t in m["tables"]] == sorted(publish.published_tables(*reg))
+        for t in m["tables"]:
+            assert (t["schema"], t["table"], t["path"]) == (
+                "main", t["name"], f"tables/{t['name']}/data/part-00000.parquet")
+            assert (rdir / t["path"]).stat().st_size == t["bytes"]
+            assert t["comment"] == t["description"] and t["grain"] and t["primary_key"]
+            assert [c["name"] for c in t["columns"]] == list(
+                publish.SAMPLES_COLUMNS if t["name"] == "samples" else lake.SCHEMAS[t["name"]])
+            assert all(c["doc"] for c in t["columns"])
+            files = json.loads((rdir / "tables" / t["name"] / "files.json").read_text())
+            assert files["files"] == [{"uri": "data/part-00000.parquet", "size": t["bytes"],
+                                       "sha256": t["sha256"], "rows": t["row_count"],
+                                       "content_type": "application/vnd.apache.parquet"}]
+            schema = json.loads((rdir / "tables" / t["name"] / "schema.json").read_text())
+            assert [c["name"] for c in schema["columns"]] == [c["name"] for c in t["columns"]]
+            assert schema["license"] == t["license"] == publish.CMGD_DATA_LICENSE
+        check_files(rdir, m)  # every Parquet matches its manifest sha256
+        assert not (rdir / "catalog.ducklake").exists() and not (rdir / "lineage.json").exists()
+        assert (rdir / "views.sql").exists() and (rdir / "restore.sql").exists()
+        latest = json.loads((public_site.root / m["dataset"] / "latest.json").read_text())
+        assert (latest["release"], latest["manifest"]) == (m["release"], f"{m['release']}/manifest.json")
+        releases = json.loads((public_site.root / m["dataset"] / "releases.json").read_text())
+        assert [(r["release"], r["published_at"]) for r in releases["releases"]] == [
+            (m["release"], m["published_at"])]
+        sources = {p["ref"] for p in m["provenance"]}
+        assert sources >= {f"lake.cmgd.{t['name']}" for t in m["tables"] if t["name"] != "samples"}
+        assert all(p["version"].startswith("snapshot:") for p in m["provenance"])
+        prov = json.loads((rdir / "provenance.json").read_text())
+        assert prov["source_asset_versions"] and set(prov) == {"source_asset_versions", "cmgd"}
     # gene families are downloads, never a release table; pathways only with HUMAnN
     legacy, _ = _release(public_site, LEGACY)
     humann, _ = _release(public_site, HUMANN)
-    assert "humann_genefamilies" not in {t.name for t in humann.tables}
-    assert "humann_pathabundance" in {t.name for t in humann.tables}
-    assert "humann_pathabundance" not in {t.name for t in legacy.tables}
+    assert "humann_genefamilies" not in {t["name"] for t in humann["tables"]}
+    assert "humann_pathabundance" in {t["name"] for t in humann["tables"]}
+    assert "humann_pathabundance" not in {t["name"] for t in legacy["tables"]}
+
+
+def test_same_day_releases_get_dot_n_ids(tmp_path):
+    con = build_lake(tmp_path / "lake")
+    ids = [publish.publish(con, *LEGACY, tmp_path / "store", today=RELEASE_DAY, raw_base_url=None)["release"]
+           for _ in range(3)]
+    assert ids == ["2026-10-08", "2026-10-08.2", "2026-10-08.3"]
+    ds = tmp_path / "store" / publish.dataset_id(*LEGACY)
+    assert json.loads((ds / "latest.json").read_text())["release"] == "2026-10-08.3"
+    assert [r["release"] for r in json.loads((ds / "releases.json").read_text())["releases"]] == ids
+    for release in ids:
+        assert json.loads((ds / release / "manifest.json").read_text())["release"] == release
+    assert publish.next_release_id({"releases": [{"release": "2026-10-08.10"}]}, RELEASE_DAY) == "2026-10-08.11"
+    assert not list((tmp_path / "store").glob(".staging-*"))
 
 
 def test_root_index_lists_every_published_dataset(public_site):
@@ -81,17 +117,6 @@ def test_release_holds_only_its_registration_sorted_by_study_sample_feature(publ
     assert keys == sorted(keys)
 
 
-def test_frozen_catalog_attaches_over_http(public_site):
-    m, _ = _release(public_site, HUMANN)
-    con = duckdb.connect()
-    con.execute("INSTALL ducklake; LOAD ducklake; INSTALL httpfs; LOAD httpfs;")
-    con.execute(frozen_ducklake_attach_sql(f"{public_site.base}/{m.dataset}/{m.release}", alias="cmgd"))
-    for t in m.tables:
-        assert con.sql(f"SELECT count(*) FROM cmgd.{t.name}").fetchone()[0] == t.row_count
-    n = con.sql("SELECT count(*) FROM cmgd.qc_metrics WHERE study_name = 'ArtachoA_2021'").fetchone()[0]
-    assert n == STUDIES["ArtachoA_2021"]
-
-
 def _attach_views(url):
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs;")
@@ -102,50 +127,21 @@ def _attach_views(url):
 def test_views_db_attaches_over_http_and_matches_manifest(public_site):
     for reg in REGS:
         m, rdir = _release(public_site, reg)
-        url = f"{public_site.base}/{m.dataset}/{m.release}"
+        url = f"{public_site.base}/{m['dataset']}/{m['release']}"
         assert (rdir / "cmgd.duckdb").exists() and not (rdir / "cmgd.duckdb.wal").exists()
         con = _attach_views(url)
         views = dict(con.execute("SELECT view_name, sql FROM duckdb_views() "
                                  "WHERE database_name = 'cmgd' AND NOT internal").fetchall())
-        assert set(views) == {t.name for t in m.tables}
+        assert set(views) == {t["name"] for t in m["tables"]}
         assert not con.execute("SELECT 1 FROM duckdb_tables() WHERE database_name = 'cmgd'").fetchall()
-        for t in m.tables:
-            assert con.sql(f"SELECT count(*) FROM cmgd.{t.name}").fetchone()[0] == t.row_count
-            files = json.loads((rdir / "tables" / t.name / "files.json").read_text())["files"]
-            for f in files:
-                assert f"{url}/tables/{t.name}/{f['uri']}" in views[t.name]
-
-
-def test_views_db_builds_before_upload_from_every_file(tmp_path):
-    rdir = tmp_path / "rel"
-    (rdir / "tables" / "t" / "data").mkdir(parents=True)
-    for i, n in enumerate((3, 4)):
-        duckdb.sql(f"COPY (SELECT range AS x FROM range({n})) TO "
-                   f"'{rdir}/tables/t/data/part-0000{i}.parquet' (FORMAT parquet)")
-    (rdir / "manifest.json").write_text(json.dumps(
-        {"tables": [{"name": "t", "files": "tables/t/files.json"}]}))
-    uris = ["data/part-00000.parquet", "data/part-00001.parquet"]
-    (rdir / "tables" / "t" / "files.json").write_text(
-        json.dumps({"files": [{"uri": u} for u in uris]}))
-
-    # nothing is uploaded and the host never resolves: the build serves the URLs locally
-    invalid = "https://cmgd-public.invalid/d/2026-10-08"
-    publish.write_views_db(tmp_path / "invalid.duckdb", rdir, invalid)
-    local = duckdb.connect(str(tmp_path / "invalid.duckdb"), read_only=True)
-    sql = local.execute("SELECT sql FROM duckdb_views() WHERE view_name = 't'").fetchone()[0]
-    assert [sql.index(f"{invalid}/tables/t/{u}") for u in uris] == sorted(
-        sql.index(f"{invalid}/tables/t/{u}") for u in uris)
-    local.close()
-
-    server = http.server.ThreadingHTTPServer(
-        ("127.0.0.1", 0), functools.partial(RangeHandler, directory=str(tmp_path)))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        url = f"http://127.0.0.1:{server.server_port}/rel"
-        publish.write_views_db(rdir / "cmgd.duckdb", rdir, url)
-        assert _attach_views(url).sql("SELECT count(*) FROM cmgd.t").fetchone()[0] == 7
-    finally:
-        server.shutdown()
+        for t in m["tables"]:
+            assert con.sql(f"SELECT count(*) FROM cmgd.{t['name']}").fetchone()[0] == t["row_count"]
+            assert f"{url}/{t['path']}" in views[t["name"]]
+        # restore.sql materialises the release locally and checks it against the manifest
+        local = duckdb.connect()
+        local.execute("INSTALL httpfs; LOAD httpfs;")
+        local.execute((rdir / "restore.sql").read_text())
+        assert local.sql("SELECT count(*) FROM main.qc_metrics").fetchone()[0] == sum(STUDIES.values())
 
 
 def _sha(path):
@@ -227,29 +223,48 @@ def test_genefamilies_index_is_split_per_study(public_site):
 def test_genefamilies_url_is_null_without_raw_base(tmp_path):
     con = build_lake(tmp_path / "lake")
     m = publish.publish(con, *HUMANN, tmp_path / "store", raw_base_url=None)
-    gf = tmp_path / "store" / m.dataset / m.release / "genefamilies"
+    gf = tmp_path / "store" / m["dataset"] / m["release"] / "genefamilies"
     assert json.loads((gf / "index.json").read_text())["raw_base_url"] is None
     files = json.loads((gf / "ArtachoA_2021.json").read_text())["files"]
     assert all(f["url"] is None and f["key"] for f in files)
     assert not list((tmp_path / "store").glob(".staging-*"))  # staging cleaned up
 
 
-def test_failed_views_build_keeps_the_rest_of_the_release(tmp_path, monkeypatch):
-    """cmgd.duckdb is built last: if it fails, studies/, genefamilies/ and provenance are
-    already in the release and no half-written cmgd.duckdb is left (#419 review)."""
+def test_failed_build_leaves_no_release_and_the_id_is_reused(tmp_path, monkeypatch):
+    """A release is staged and moved into the store whole: a build that fails after the
+    bundle leaves no release directory, no pointer and no index entry, and the next
+    build gets the same id."""
     con = build_lake(tmp_path / "lake")
 
-    def boom(out, release_dir, release_url):
-        out.write_bytes(b"partial")
-        raise RuntimeError("views build failed")
+    def boom(release_dir, base):
+        raise RuntimeError("pages failed")
 
-    monkeypatch.setattr(publish, "write_views_db", boom)
-    with pytest.raises(RuntimeError, match="views build failed"):
-        publish.publish(con, *HUMANN, tmp_path / "store", raw_base_url=None)
-    [rdir] = [d for d in (tmp_path / "store").glob("*/*") if (d / "manifest.json").exists()]
-    assert (rdir / "studies").is_dir() and (rdir / "genefamilies").is_dir()
-    assert (rdir / "provenance.json").exists()
-    assert not (rdir / publish.VIEWS_DB).exists()
+    monkeypatch.setattr(publish.site, "write_study_pages", boom)
+    with pytest.raises(RuntimeError, match="pages failed"):
+        publish.publish(con, *HUMANN, tmp_path / "store", raw_base_url=None, today=RELEASE_DAY)
+    store = tmp_path / "store"
+    assert not list(store.glob("**/manifest.json")) and not list(store.glob(".staging-*"))
+    assert not (store / "index.json").exists()
+    monkeypatch.undo()
+    m = publish.publish(con, *HUMANN, tmp_path / "store", raw_base_url=None, today=RELEASE_DAY)
+    assert m["release"] == "2026-10-08"
+    assert (store / m["dataset"] / m["release"] / "studies" / "index.json").exists()
+
+
+def test_unpromoted_release_is_promoted_and_the_next_id_taken(tmp_path):
+    """A crash between the move into the store and the pointer files leaves a complete
+    release; the next build promotes it rather than overwriting it."""
+    con = build_lake(tmp_path / "lake")
+    store = tmp_path / "store"
+    m = publish.publish(con, *LEGACY, store, raw_base_url=None, today=RELEASE_DAY)
+    ds = store / m["dataset"]
+    (ds / "releases.json").unlink()
+    (ds / "latest.json").unlink()
+    m2 = publish.publish(con, *LEGACY, store, raw_base_url=None, today=RELEASE_DAY)
+    assert m2["release"] == "2026-10-08.2"
+    releases = json.loads((ds / "releases.json").read_text())["releases"]
+    assert [r["release"] for r in releases] == ["2026-10-08", "2026-10-08.2"]
+    assert json.loads((ds / "2026-10-08" / "manifest.json").read_text())["published_at"] == m["published_at"]
 
 
 def test_contract_documents_every_published_column():
@@ -302,7 +317,7 @@ def test_samples_table_provenance_and_site(public_site):
     samples = duckdb.sql(f"SELECT study_name, count(DISTINCT readset_id) FROM read_parquet("
                          f"'{rdir}/tables/samples/data/part-00000.parquet') GROUP BY 1 ORDER BY 1").fetchall()
     assert samples == sorted(STUDIES.items())
-    assert {t.name: t.license for t in m.tables}["samples"] == publish.CMGD_DATA_LICENSE
+    assert {t["name"]: t["license"] for t in m["tables"]}["samples"] == publish.CMGD_DATA_LICENSE
     block = json.loads((rdir / "provenance.json").read_text())["cmgd"]
     assert block["registration"]["workflow_id"] == HUMANN[0]
     assert sum(r["n_samples"] for r in block["pipeline_runs"]) == sum(STUDIES.values())
@@ -310,18 +325,20 @@ def test_samples_table_provenance_and_site(public_site):
     # pages: root landing + llms.txt, the release page, one page per study
     root = public_site.root
     landing, llms = (root / "index.html").read_text(), (root / "llms.txt").read_text()
-    assert f"{m.dataset}/{m.release}/index.html" in landing and "not part of this release" in landing
+    assert f"{m['dataset']}/{m['release']}/index.html" in landing and "not part of this release" in landing
     assert f"/{{dataset}}/{{release}}/tables/{{table}}/data/part-00000.parquet" in llms
     assert "/{dataset}/{release}/cmgd.duckdb" in llms and "catalog.ducklake" not in llms
     page = (rdir / "index.html").read_text()
     assert "cmgd.duckdb" in page and "catalog.ducklake" not in page
-    assert (f"ATTACH '{public_site.base}/{m.dataset}/{m.release}/cmgd.duckdb' AS cmgd;"
-            in (rdir / "README.md").read_text())
+    readme = (rdir / "README.md").read_text()
+    assert readme.startswith(f"# curatedMetagenomicData: {HUMANN[0]} {HUMANN[1]}")
+    assert f"ATTACH '{public_site.base}/{m['dataset']}/{m['release']}/cmgd.duckdb' AS cmgd;" in readme
+    assert "ducklake" not in readme
     for study in STUDIES:
         page = (rdir / "studies" / study / "index.html").read_text()
         assert all(k in page for k in sample_keys(HUMANN[0], study))
     # the release's checksummed files are untouched by the pages
-    assert verify_release(LocalDirStore(root), m.dataset, m.release).passed
+    check_files(rdir, m)
 
 
 def test_site_snippets_run_against_the_release(public_site):

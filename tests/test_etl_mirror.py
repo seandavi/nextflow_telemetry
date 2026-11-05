@@ -12,7 +12,7 @@ from nextflow_telemetry.etl import mirror
 
 def _rdir(site):
     m = site.manifests[MPA]
-    return site.root / m.dataset / m.release
+    return site.root / m["dataset"] / m["release"]
 
 
 def test_zenodo_draft_uploads_every_file_and_checks_md5(public_site, monkeypatch):

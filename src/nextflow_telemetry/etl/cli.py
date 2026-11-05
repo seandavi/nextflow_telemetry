@@ -140,8 +140,8 @@ def cmd_publish(a) -> None:
         m = publish.publish(con, workflow_id, version, a.out, jobs=jobs, registration=reg)
     finally:
         con.close()
-    rows = {t.name: t.row_count for t in m.tables}
-    print(f"{m.dataset} {m.release} -> {a.out}/{m.dataset}/{m.release}: {json.dumps(rows)}")
+    rows = {t["name"]: t["row_count"] for t in m["tables"]}
+    print(f"{m['dataset']} {m['release']} -> {a.out}/{m['dataset']}/{m['release']}: {json.dumps(rows)}")
 
 
 def cmd_mirror(a) -> None:

@@ -6,8 +6,8 @@ it are relative to the release directory
 (``https://cmgd-public.cancerdatasci.org/<dataset>/<release>/<path>``). Every
 index carries ``spec_version`` (the cmgd index spec, ``INDEX_SPEC_VERSION``,
 documented in docs/data-access.md; separate from cdsci-lake's manifest spec)
-and names file sizes and checksums ``size``/``sha256`` like cdsci-lake's
-``files.json``.
+and names file sizes and checksums ``size``/``sha256`` like the release's
+``files.json`` and ``manifest.json``.
 """
 from __future__ import annotations
 
@@ -86,8 +86,8 @@ def write_studies(snap: Path, out: Path, dataset: str, artifacts: list[dict]) ->
     """``<out>/<study>/…`` for every study in the snapshot, plus ``<out>/index.json``.
     ``snap`` holds one ``<table>.parquet`` per published table. ``out`` becomes the
     release's ``studies/`` directory. ``artifacts`` (``entry`` dicts) are the
-    release's other index files, listed with size and sha256 because
-    ``publish_release`` can't put extra files in the manifest (cdsci-lake#134).
+    release's other index files, listed with size and sha256 because the
+    release's ``manifest.json`` lists only its tables.
 
     One file for all studies: ~1 kB per study."""
     studies = duckdb.sql(

@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 
 import duckdb
-from cdsci.lake.publish.builder import LocalDirStore
-from cdsci.lake.publish.verify import verify_release
+from cdsci.publish.bundle import check_files
 from cmgd_release_fixture import MPA, RELEASE_DAY, _rows, build_lake
 
 from nextflow_telemetry.etl import publish
@@ -56,24 +55,26 @@ def test_release_with_metadata_tables(tmp_path):
     qc = [r for r in _rows(*MPA)["qc_metrics"] if r["study_name"] == "ZellerG_2014"]
     _meta_store(con, [r["sample_key"] for r in qc], [r["run_ids"] for r in qc])
     m = publish.publish(con, *MPA, tmp_path / "store", today=RELEASE_DAY)
-    rdir = tmp_path / "store" / m.dataset / m.release
-    tables = {t.name: t for t in m.tables}
-    assert {t: tables[t].license for t in publish.META_TABLES} == {
+    rdir = tmp_path / "store" / m["dataset"] / m["release"]
+    tables = {t["name"]: t for t in m["tables"]}
+    assert {t: tables[t]["license"] for t in publish.META_TABLES} == {
         "sample_metadata_cmd": "CC0-1.0", "sample_metadata_olm": "CC-BY-4.0",
         "sample_metadata_harmonized": "CC-BY-4.0", "metadata_comparison": "CC-BY-4.0",
         "metadata_sources": "CC0-1.0"}
-    assert "zenodo.23087712" in tables["sample_metadata_olm"].description
+    assert "zenodo.23087712" in tables["sample_metadata_olm"]["description"]
     n = len(qc)
-    assert (tables["sample_metadata_cmd"].row_count, tables["sample_metadata_olm"].row_count,
-            tables["sample_metadata_harmonized"].row_count, tables["metadata_comparison"].row_count,
-            tables["metadata_sources"].row_count) == (n, n, 2 * n, 1, 3)
+    assert (tables["sample_metadata_cmd"]["row_count"], tables["sample_metadata_olm"]["row_count"],
+            tables["sample_metadata_harmonized"]["row_count"], tables["metadata_comparison"]["row_count"],
+            tables["metadata_sources"]["row_count"]) == (n, n, 2 * n, 1, 3)
+    assert [(c["name"], c["type"]) for c in tables["metadata_comparison"]["columns"]][-2:] == [
+        ("n_olm_only", "BIGINT"), ("agreement", "DOUBLE")]
     olm = duckdb.sql(f"SELECT * FROM read_parquet('{rdir}/tables/sample_metadata_olm/data/part-00000.parquet')")
     assert "evidence_quote" not in olm.columns
     assert {r[0] for r in olm.select("release").fetchall()} == {"R2026.25"}
     samples = duckdb.sql(f"SELECT biosample, bioproject FROM read_parquet('{rdir}/tables/samples/data/"
                          "part-00000.parquet') WHERE study_name = 'ZellerG_2014'").fetchall()
     assert samples and all(b.startswith("SAMEA") and p == "PRJEB1" for b, p in samples)
-    assert verify_release(LocalDirStore(tmp_path / "store"), m.dataset, m.release).passed
+    check_files(rdir, m)
     prov = json.loads((rdir / "provenance.json").read_text())["cmgd"]
     assert ("olm", "R2026.25") in {(s["source"], s["release"]) for s in prov["metadata_sources"]}
     page = (rdir / "studies" / "ZellerG_2014" / "index.html").read_text()
