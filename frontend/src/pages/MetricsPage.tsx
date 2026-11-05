@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { usePoll, fmtUpdated } from '../lib/usePoll'
-import { useUrlFilters } from '../lib/useUrlFilters'
+import { useUrlFilters, localInputToIso, isoToLocalInput } from '../lib/useUrlFilters'
 import { T } from '../tokens'
 import { fmtNum, fmtPct, fmtDate } from '../lib/format'
 import { api, unless501, NOT_AVAILABLE, type MetricsFilters, type NotAvailableValue } from '../lib/api'
@@ -12,6 +12,7 @@ import Panel from '../components/Panel'
 import PageWrap from '../components/PageWrap'
 import Btn from '../components/Btn'
 import Select from '../components/Select'
+import Input from '../components/Input'
 import NotAvailable from '../components/NotAvailable'
 import type {
   ProcessSummaryResponse,
@@ -31,20 +32,32 @@ import type {
 } from '../types'
 
 // ── Window presets ────────────────────────────────────────────────────────────
-const WINDOW_PRESETS = [
-  { label: 'Last 30 min', windowHours: undefined, windowMinutes: 30 },
+const CUSTOM = 'Custom range'
+const WINDOW_PRESETS: Array<{ label: string; windowHours?: number; windowDays?: number }> = [
   { label: 'Last 1 h',    windowHours: 1  },
   { label: 'Last 6 h',    windowHours: 6  },
   { label: 'Last 24 h',   windowHours: 24 },
   { label: 'Last 7 d',    windowDays: 7   },
   { label: 'Last 30 d',   windowDays: 30  },
-  { label: 'All time',    windowDays: undefined },
-] as const
+  { label: 'All time' },
+]
 
 function windowLabel(f: MetricsFilters): string {
-  if (!f.windowHours && !f.windowDays) return 'All time'
+  if (f.since || f.until) return CUSTOM
   if (f.windowHours) return `Last ${f.windowHours} h`
-  return `Last ${f.windowDays} d`
+  if (f.windowDays) return `Last ${f.windowDays} d`
+  return 'All time'
+}
+
+function windowDescription(f: MetricsFilters): string {
+  if (f.since || f.until) {
+    const from = f.since ? fmtDate(f.since) : 'start'
+    const to = f.until ? fmtDate(f.until) : 'now'
+    return `${from} → ${to}`
+  }
+  if (f.windowHours) return `last ${f.windowHours}h`
+  if (f.windowDays) return `last ${f.windowDays}d`
+  return 'all time'
 }
 
 // ── Filter bar ────────────────────────────────────────────────────────────────
@@ -55,14 +68,24 @@ function FilterBar({
   onChange: (f: MetricsFilters) => void
   workflows: string[]
 }) {
-  const presetOptions = WINDOW_PRESETS.map(p => ({ value: p.label, label: p.label }))
-  const currentPresetLabel = windowLabel(filters)
+  const [customOpen, setCustomOpen] = useState(false)
+  const presetOptions = [...WINDOW_PRESETS, { label: CUSTOM }].map(p => ({ value: p.label, label: p.label }))
+  const custom = customOpen || !!filters.since || !!filters.until
 
   function applyPreset(label: string) {
+    if (label === CUSTOM) {
+      setCustomOpen(true)
+      return
+    }
     const preset = WINDOW_PRESETS.find(p => p.label === label)
     if (!preset) return
-    const { windowHours, windowDays } = preset as { windowHours?: number; windowDays?: number }
-    onChange({ ...filters, windowHours, windowDays })
+    setCustomOpen(false)
+    const { since: _s, until: _u, ...rest } = filters
+    onChange({ ...rest, windowHours: preset.windowHours, windowDays: preset.windowDays })
+  }
+
+  function applyBound(key: 'since' | 'until', v: string) {
+    onChange({ ...filters, windowHours: undefined, windowDays: undefined, [key]: localInputToIso(v) })
   }
 
   return (
@@ -70,11 +93,21 @@ function FilterBar({
       <div style={{ width: 140 }}>
         <Select
           label="Window"
-          value={currentPresetLabel}
+          value={custom ? CUSTOM : windowLabel(filters)}
           onChange={applyPreset}
           options={presetOptions}
         />
       </div>
+      {custom && (
+        <>
+          <div style={{ width: 210 }}>
+            <Input label="From" type="datetime-local" value={isoToLocalInput(filters.since)} onChange={v => applyBound('since', v)} />
+          </div>
+          <div style={{ width: 210 }}>
+            <Input label="To" type="datetime-local" value={isoToLocalInput(filters.until)} onChange={v => applyBound('until', v)} />
+          </div>
+        </>
+      )}
       <div style={{ width: 200 }}>
         <Select
           label="Workflow"
@@ -83,8 +116,8 @@ function FilterBar({
           options={[{ value: '', label: 'All workflows' }, ...workflows.map(w => ({ value: w, label: w }))]}
         />
       </div>
-      {(filters.workflowId || filters.windowHours || filters.windowDays) && (
-        <Btn variant="ghost" small onClick={() => onChange({})}>Clear filters</Btn>
+      {(filters.workflowId || filters.windowHours || filters.windowDays || filters.since || filters.until) && (
+        <Btn variant="ghost" small onClick={() => { setCustomOpen(false); onChange({}) }}>Clear filters</Btn>
       )}
     </div>
   )
@@ -710,11 +743,7 @@ export default function MetricsPage({ pollInterval = 30_000 }: { pollInterval?: 
     unless501(api.metrics.timeline(filters, bucket)).then(setTimeline).catch(console.error)
   }, [tick, filters, bucket])
 
-  const windowDesc = filters.windowHours
-    ? `last ${filters.windowHours}h`
-    : filters.windowDays
-      ? `last ${filters.windowDays}d`
-      : 'all time'
+  const windowDesc = windowDescription(filters)
   const filterDesc = filters.workflowId ? ` · ${filters.workflowId}` : ''
 
   return (

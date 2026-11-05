@@ -27,17 +27,39 @@ function paramsToFilters(p: URLSearchParams): MetricsFilters {
   return f
 }
 
-export function useUrlFilters(defaults: MetricsFilters = {}): [MetricsFilters, (f: MetricsFilters) => void] {
-  const [filters, setFiltersState] = useState<MetricsFilters>(() => {
-    const p = new URLSearchParams(window.location.search)
-    const fromUrl = paramsToFilters(p)
-    // Use URL params if any are present, otherwise fall back to defaults
-    return Object.keys(fromUrl).length > 0 ? fromUrl : defaults
-  })
+const STORAGE_KEY = 'metricsFilters'
 
-  // Keep URL in sync whenever filters change
+// URL params win (shared links); else the last selection this session (sidebar
+// navigation drops the query string); else defaults.
+export function initialFilters(search: string, stored: string | null, defaults: MetricsFilters): MetricsFilters {
+  const fromUrl = paramsToFilters(new URLSearchParams(search))
+  if (Object.keys(fromUrl).length > 0) return fromUrl
+  if (stored !== null) return paramsToFilters(new URLSearchParams(stored))
+  return defaults
+}
+
+// <input type="datetime-local"> value (browser-local time) <-> UTC ISO-8601 for the API.
+export function localInputToIso(v: string): string | undefined {
+  if (!v) return undefined
+  const d = new Date(v)
+  return isNaN(d.getTime()) ? undefined : d.toISOString()
+}
+
+export function isoToLocalInput(iso: string | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
+
+export function useUrlFilters(defaults: MetricsFilters = {}): [MetricsFilters, (f: MetricsFilters) => void] {
+  const [filters, setFiltersState] = useState<MetricsFilters>(() =>
+    initialFilters(window.location.search, sessionStorage.getItem(STORAGE_KEY), defaults))
+
+  // Keep URL and session storage in sync whenever filters change
   useEffect(() => {
     const params = filtersToParams(filters)
+    sessionStorage.setItem(STORAGE_KEY, params.toString())
     const search = params.toString()
     const next = search ? `?${search}` : window.location.pathname
     history.replaceState(null, '', next)
