@@ -27,15 +27,19 @@ from sqlalchemy.dialects.postgresql import JSONB
 metadata = MetaData()
 
 # Metadata inventory: independent of samples, collections and processing jobs.
+# Its own MetaData because the catalog lives in a different database from the
+# control plane (ADR-0014): the service never creates, reads or references these
+# tables, and `nf-meta` is their only user.
+catalog_metadata = MetaData()
 metadata_sources_tbl = Table(
-    "metadata_sources", metadata,
+    "metadata_sources", catalog_metadata,
     Column("source_id", String(80), primary_key=True),
     Column("descriptor", JSONB, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 metadata_assets_tbl = Table(
-    "metadata_source_assets", metadata,
+    "metadata_source_assets", catalog_metadata,
     Column("source_id", String(80), ForeignKey("metadata_sources.source_id"), primary_key=True),
     Column("asset_id", String(80), primary_key=True),
     Column("descriptor", JSONB, nullable=False),
@@ -43,7 +47,7 @@ metadata_assets_tbl = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 metadata_snapshots_tbl = Table(
-    "metadata_source_snapshots", metadata,
+    "metadata_source_snapshots", catalog_metadata,
     Column("source_id", String(80), primary_key=True),
     Column("asset_id", String(80), primary_key=True),
     Column("version", String(300), primary_key=True),
@@ -61,7 +65,7 @@ metadata_snapshots_tbl = Table(
     CheckConstraint("size_bytes >= 0", name="ck_metadata_snapshot_size"),
 )
 metadata_source_events_tbl = Table(
-    "metadata_source_events", metadata,
+    "metadata_source_events", catalog_metadata,
     Column("id", Integer, primary_key=True),
     Column("source_id", String(80), ForeignKey("metadata_sources.source_id"), nullable=False),
     Column("asset_id", String(80), nullable=True),
@@ -206,18 +210,10 @@ submissions_tbl = Table(
     Column("metadata_", JSONB, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     # Which catalog snapshot the submission was derived from; all three set or none.
+    # No foreign key: the catalog is in another database (ADR-0014).
     Column("source_snapshot_source_id", String(80), nullable=True),
     Column("source_snapshot_asset_id", String(80), nullable=True),
     Column("source_snapshot_version", String(300), nullable=True),
-    ForeignKeyConstraint(
-        ["source_snapshot_source_id", "source_snapshot_asset_id", "source_snapshot_version"],
-        [
-            "metadata_source_snapshots.source_id",
-            "metadata_source_snapshots.asset_id",
-            "metadata_source_snapshots.version",
-        ],
-        name="fk_submissions_source_snapshot",
-    ),
     CheckConstraint(
         "num_nulls(source_snapshot_source_id, source_snapshot_asset_id, source_snapshot_version) in (0, 3)",
         name="ck_submissions_source_snapshot",

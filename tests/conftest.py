@@ -90,6 +90,24 @@ def integration_client(db_asyncpg_url: str):
 
 
 @pytest.fixture()
+def catalog_tables(db_asyncpg_url: str) -> Generator[None, None, None]:
+    """The metadata_source* tables for one test. The control-plane schema above
+    does not include them (they live in the catalog database, ADR-0014)."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from nextflow_telemetry.db import catalog_metadata
+
+    async def _run(op: str) -> None:
+        engine = create_async_engine(db_asyncpg_url)
+        async with engine.begin() as conn:
+            await conn.run_sync(getattr(catalog_metadata, op))
+        await engine.dispose()
+
+    asyncio.run(_run("create_all"))
+    yield
+    asyncio.run(_run("drop_all"))
+
+
+@pytest.fixture()
 def db_url(db_asyncpg_url: str) -> str:
     return db_asyncpg_url
 
