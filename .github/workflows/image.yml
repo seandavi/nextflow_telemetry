@@ -24,6 +24,7 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_IMAGE_PUSHER_SERVICE_ACCOUNT }}
           token_format: access_token
+          create_credentials_file: false   # the build context is `.`; never write a credentials file into it
       - uses: docker/login-action@v3
         with:
           registry: us-east4-docker.pkg.dev

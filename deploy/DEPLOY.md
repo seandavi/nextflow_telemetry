@@ -1,6 +1,9 @@
 # Deployment Guide
 
-The API runs on **Cloud Run** (GCP project `curatedmetagenomicdata`, region `us-east4`)
+> **Planned runbook (ADR-0014, Proposed).** Cutover is a later milestone (M8). Until then the API
+> still runs on `onclappc02`: use [`onclappc02/README.md`](onclappc02/README.md) for current production.
+
+The API will run on **Cloud Run** (GCP project `curatedmetagenomicdata`, region `us-east4`)
 against **PlanetScale Postgres** (database `nf-telemetry`, `gcp-us-east4`, PS-5 single node,
 created from the Cloudflare dashboard). It follows ADR-0014 (amends ADR-0013). Daemons and the
 dashboard use the service's `run.app` URL as the origin; there is no custom domain.
@@ -14,8 +17,8 @@ Worker ──────┘            │                                     
 onclappc02:  pg_main (source-catalog tables only) · nf-meta · nf-etl · lake · dashboard container
 ```
 
-The dashboard container and the lake tooling still run on `onclappc02`; see
-[`onclappc02/README.md`](onclappc02/README.md) for those. The API is no longer deployed there.
+The dashboard container and the lake tooling stay on `onclappc02`
+([`onclappc02/README.md`](onclappc02/README.md)); after cutover the API is no longer deployed there.
 
 The service must stay at one instance: it runs the deadline sweep, the R2 event ingester, the
 history warm-up and the daily retired-job archive in-process.
@@ -32,7 +35,11 @@ repository **variables** (an operator creates them; nothing is a secret):
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>` |
 | `GCP_IMAGE_PUSHER_SERVICE_ACCOUNT` | service account the provider may impersonate, with `roles/artifactregistry.writer` on the `nextflow-telemetry` repository |
 
-The provider's attribute condition should be limited to `seandavi/nextflow_telemetry`.
+The provider's attribute condition must restrict trust to this repository **and** to pushes to
+`refs/heads/main` (for example `assertion.repository == 'seandavi/nextflow_telemetry' && assertion.ref == 'refs/heads/main'`),
+so pull-request and other workflow runs cannot mint a token. The service account's
+`roles/iam.workloadIdentityUser` binding goes to that restricted principal only; the account holds
+no role other than `artifactregistry.writer` on the one repository.
 
 ## Configuration
 
@@ -65,6 +72,20 @@ Plain (non-secret) variables:
 Everything else (`CLAIM_TTL_MINUTES`, `LIVENESS_MINUTES`, `EVENTS_ARCHIVE_URL`, ...) has a default in
 `src/nextflow_telemetry/config.py`. `SESSION_COOKIE_DOMAIN` stays empty (host-only cookie) on a
 `run.app` origin.
+
+**Known limitation: dashboard login.** The dashboard stays at `cmgd.cancerdatasci.org` and the API is
+on `run.app`, which are different sites. The session cookie is `SameSite=Lax` (`main.py`), so the
+browser does not send it on the dashboard's credentialed `/auth/me` fetch: OAuth completes but the
+dashboard still sees an anonymous user. CORS does not change that. Daemon and dispatch endpoints use
+the bearer token and are unaffected. Making login work needs either an API origin on the same site as
+the dashboard (a custom domain, out of scope for #435) or a `SameSite=None; Secure` cookie with CSRF
+protection and a browser check; neither is implemented here. Decide before the dashboard is pointed
+at the Cloud Run API.
+
+**Invocation policy (monode).** Daemons send only the application bearer token, not a Google identity
+token, so the service must allow unauthenticated invocation (`allUsers` as `roles/run.invoker`, or
+`--allow-unauthenticated`); the application enforces `DISPATCH_TOKEN` on every write. Without it Cloud
+Run rejects every daemon request before FastAPI. The operator jobs stay IAM-restricted.
 
 Cloud Run flags that matter: `--port 8000` (the image listens on 8000, not Cloud Run's default
 `$PORT`), `--min-instances 1 --max-instances 1`, `--no-cpu-throttling`, `--memory 4Gi --cpu 2`,
@@ -131,8 +152,12 @@ gcloud run jobs execute <job> --region us-east4 --project curatedmetagenomicdata
 
 `v2_import` and `v2_replay` read **local directories** (a `v2-export` copy and the events directory),
 so a job running them needs those mounted (for example a GCS bucket volume) or copied in before the
-command. `v2_replay` refuses the production database name; `v2_import --replace` is for scratch and
-staging databases only.
+command. `v2_replay` always truncates and reloads the control-plane tables, so run it only with credentials for a
+**scratch database**, never the service's `SQLALCHEMY_URI`. It refuses a connection whose database is
+named `nf_telemetry` or `nf-telemetry`, but that is a name check only: the connection database name of
+the PlanetScale `nf-telemetry` database (PlanetScale's default is `postgres`) is not confirmed, so do
+not rely on the guard. `v2_import --replace` has no guard and is likewise for scratch and staging
+databases only.
 
 ## Source-catalog tables
 
