@@ -61,4 +61,5 @@ other. This preserves the historical record rather than rewriting it.
 | [0010](0010-registrations-are-bundles.md) | Registrations are bundles | Accepted |
 | [0011](0011-results-storage-and-publication.md) | Results storage and publication | Accepted |
 | [0012](0012-multi-source-sample-metadata-in-the-lake.md) | Multi-source sample metadata in the lake | Accepted (amended 2026-10-30) |
-| [0013](0013-postgres-control-plane-edge-event-sink.md) | Run the control plane on Postgres; keep Cloudflare as the edge event sink | Accepted |
+| [0013](0013-postgres-control-plane-edge-event-sink.md) | Run the control plane on Postgres; keep Cloudflare as the edge event sink | Accepted (amended by [0014](0014-control-plane-on-cloud-run-and-planetscale.md)) |
+| [0014](0014-control-plane-on-cloud-run-and-planetscale.md) | Run the control plane on Cloud Run and PlanetScale Postgres | Proposed |
