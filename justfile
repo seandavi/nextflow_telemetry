@@ -35,7 +35,8 @@ help:
 	@echo "  just down          Stop and remove compose services/containers."
 	@echo "  just logs          Tail API container logs for troubleshooting."
 	@echo ""
-	@echo "Production deploy (onclappc02)"
+	@echo "Production deploy (Cloud Run: deploy/DEPLOY.md; onclappc02: dashboard and legacy API)"
+	@echo "  just deploy-api <sha>    Roll the Cloud Run service to api:<sha> (deploy/DEPLOY.md)."
 	@echo "  just deploy-onclappc02   Fetch OAuth secrets from GCP SM, rebuild+restart the API."
 	@echo "  just deploy-clients [alpine|anvil|bridges2|fasrc|all] [ref]   Deploy HPC daemons at a pushed commit (FORCE=1 over active runs)."
 
@@ -199,39 +200,14 @@ cmd-schema-pin commit:
 daemon:
 	uv run nf-client daemon --config client-local.yaml --batch-size 10
 
-# ── LEGACY Cloud Run deployment (RETIRED May 2026) ─────────────────────────────
-# Production now runs on onclappc02 via `just deploy-onclappc02` (see
-# deploy/onclappc02/README.md). The build-api / deploy-api / deploy-frontend
-# recipes below target the retired Cloud Run + Firebase stack and are kept only
-# for historical reference / possible rollback while the GCP resources exist.
-# Set GCP_PROJECT and REGION env vars (or export them) before using these.
+# ── Cloud Run (see deploy/DEPLOY.md) ───────────────────────────────────────────
+# CI (.github/workflows/image.yml) pushes api:<sha> to Artifact Registry on every push to main.
 
-GCP_PROJECT := env_var_or_default("GCP_PROJECT", "curatedmetagenomicdata")
-REGION      := env_var_or_default("REGION", "us-central1")
-AR_REPO     := "nextflow-telemetry"
-IMAGE       := REGION + "-docker.pkg.dev/" + GCP_PROJECT + "/" + AR_REPO + "/api"
-GIT_SHA     := `git rev-parse --short HEAD`
-
-# Build and push the API image tagged with the current git SHA.
-build-api:
-	gcloud builds submit --tag {{IMAGE}}:{{GIT_SHA}} --project {{GCP_PROJECT}} .
-
-# Deploy the git-SHA-tagged image to Cloud Run.
-deploy-api:
-	gcloud run deploy nf-telemetry \
-	  --image {{IMAGE}}:{{GIT_SHA}} \
-	  --region {{REGION}} \
-	  --project {{GCP_PROJECT}} \
-	  --service-account nextflow-telemetry-api@{{GCP_PROJECT}}.iam.gserviceaccount.com \
-	  --set-secrets SQLALCHEMY_URI=nextflow-telemetry-db-uri:latest \
-	  --min-instances 1 --max-instances 4 \
-	  --memory 512Mi --cpu 1 --port 8000 \
-	  --allow-unauthenticated
-
-# Build frontend and deploy to Firebase Hosting.
-deploy-frontend:
-	cd frontend && VITE_API_URL=https://nf-telemetry-819875667022.us-central1.run.app npm run build
-	firebase deploy --only hosting
+# Roll the Cloud Run service to a pushed image (rollback = the previous sha).
+deploy-api sha:
+	gcloud run services update nf-telemetry \
+	  --image us-east4-docker.pkg.dev/curatedmetagenomicdata/nextflow-telemetry/api:{{sha}} \
+	  --region us-east4 --project curatedmetagenomicdata
 
 # Run Alembic migrations against a target DB.
 # Usage: SQLALCHEMY_URI=postgresql://... just migrate-prod

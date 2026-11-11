@@ -133,9 +133,14 @@ def test_cli_exit_codes(db_url: str, exports: tuple[Path, Path, Path], monkeypat
 
 
 @pytest.mark.parametrize("uri", ["postgresql://u:p@localhost:5432/nf_telemetry",
-                                 "postgresql+asyncpg://u:p@localhost:5432/nf_telemetry", "sqlite:///x.db", ""])
+                                 "postgresql+asyncpg://u:p@localhost:5432/nf_telemetry",
+                                 "postgresql://u:p@localhost:5432/nf-telemetry", "sqlite:///x.db", ""])
 def test_cli_refuses_production_and_non_postgres(uri: str, exports: tuple[Path, Path, Path],
                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+    def no_database_access(*_a: object, **_k: object) -> None:
+        raise AssertionError("refusal must come before any database access")
+
+    monkeypatch.setattr(v2_replay, "_run", no_database_access)
     monkeypatch.setenv("SQLALCHEMY_URI", uri)
     with pytest.raises(SystemExit) as refused:
         v2_replay.main([str(p) for p in exports])

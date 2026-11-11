@@ -40,6 +40,7 @@ def test_resolve_biosample_scheme_and_unresolvable_scheme():
     assert "biosample" not in links["predict2_000001"]
 
 
+@pytest.mark.usefixtures("catalog_tables")
 def test_link_end_to_end_from_retained_snapshots(db_url, tmp_path):
     ena_version = "ena-test"
     ena = {a: [run(f"ERR{n}", f"SAMEA{n}", f"{c}_1") for n in (1,)] for a, (c, _, _) in zoe.COHORTS.items()}

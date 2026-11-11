@@ -38,6 +38,7 @@ def run(db_url, scenario):
     return asyncio.run(go())
 
 
+@pytest.mark.usefixtures("catalog_tables")
 def test_registration_preview_idempotence_and_filters(db_url):
     async def scenario(c):
         m = manifest()
@@ -62,6 +63,7 @@ def test_registration_preview_idempotence_and_filters(db_url):
     run(db_url, scenario)
 
 
+@pytest.mark.usefixtures("catalog_tables")
 def test_edits_are_audited_and_omitted_assets_are_preserved(db_url):
     async def scenario(c):
         m = manifest()
@@ -83,6 +85,7 @@ def test_edits_are_audited_and_omitted_assets_are_preserved(db_url):
     run(db_url, scenario)
 
 
+@pytest.mark.usefixtures("catalog_tables")
 def test_capture_retains_whole_file_freezes_context_and_is_immutable(db_url, tmp_path):
     raw, root = tmp_path / "raw.tsv", tmp_path / "persistent-archive"
     data = b"study\tstatus\nknown\tpublic\nfuture\tprivate\n\x00\xff"
@@ -121,6 +124,7 @@ def test_capture_retains_whole_file_freezes_context_and_is_immutable(db_url, tmp
     run(db_url, scenario)
 
 
+@pytest.mark.usefixtures("catalog_tables")
 def test_unknown_source_asset_and_actor_are_errors(db_url, tmp_path):
     raw = tmp_path / "input"
     raw.write_bytes(b"raw")
@@ -142,6 +146,7 @@ def test_unknown_source_asset_and_actor_are_errors(db_url, tmp_path):
     run(db_url, scenario)
 
 
+@pytest.mark.usefixtures("catalog_tables")
 def test_archive_failure_cannot_commit_a_receipt(db_url, tmp_path):
     raw, root = tmp_path / "input", tmp_path / "archive"
     raw.write_bytes(b"all bytes")
@@ -216,6 +221,7 @@ def test_cli_validation_has_no_database_or_lake(monkeypatch, tmp_path, capsys):
     assert "must-not-echo" not in str(error.value)
 
 
+@pytest.mark.usefixtures("catalog_tables")
 def test_cli_apply_and_reads(db_url, monkeypatch, tmp_path, capsys):
     from nextflow_telemetry.meta.cli import main
 
@@ -242,6 +248,7 @@ def test_cli_apply_and_reads(db_url, monkeypatch, tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["snapshot"]["sha256"] == hashlib.sha256(raw.read_bytes()).hexdigest()
 
 
+@pytest.mark.usefixtures("catalog_tables")
 def test_concurrent_registration_and_capture_are_idempotent(db_url, tmp_path):
     raw, root = tmp_path / "raw", tmp_path / "archive"
     raw.write_bytes(b"same bytes")
@@ -277,6 +284,7 @@ def test_remote_root_detection():
 
 
 @needs_rclone
+@pytest.mark.usefixtures("catalog_tables")
 def test_remote_capture_retains_verifies_and_never_overwrites(db_url, tmp_path, fake_remote):
     root, bucket = fake_remote
     raw = tmp_path / "raw.bz2"
