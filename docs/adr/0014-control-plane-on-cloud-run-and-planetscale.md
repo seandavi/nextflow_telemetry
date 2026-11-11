@@ -66,12 +66,16 @@ the source catalog on `pg_main`.
      Cloudflare dashboard (Storage & databases → Postgres & MySQL → Create
      PlanetScale database), because `pscale database create` fails without a card
      on the PlanetScale org. Start at PS-5, single node.
-   - **Service:** the existing Python service (M1–M6), unchanged, on Cloud Run in
+   - **Service:** the existing Python service (M1–M6) on Cloud Run in
      GCP project `curatedmetagenomicdata`, region `us-east4`. `min=max=1`
      instance with CPU always allocated, because the loops above run in-process
      and must not be throttled or run twice. Deploys set the three `*_ENABLED`
      flags. Cloud Run allows unauthenticated invocation, because GETs are public
      and writes carry a bearer token checked by the service (0013 decision 6).
+     That check fails open: with `DISPATCH_TOKEN` empty, `require_service` lets
+     every write through. The service must not be exposed until `DISPATCH_TOKEN`
+     is set from Secret Manager, and M7 checks that a control write without a
+     valid token gets 401.
    - **Secrets:** GCP Secret Manager in `cdsci-infra` stays the source of truth.
    - **Origin URL:** daemons and the dashboard use the Cloud Run `run.app` URL.
      A custom domain is not part of this work. This replaces 0013 decision 7's
@@ -93,6 +97,9 @@ the source catalog on `pg_main`.
    - 0013 decision 1 ("one database") becomes two, split by who can reach them.
 3. **Operator commands that need the database run as Cloud Run Jobs** from the
    same image, not on onclappc02: `alembic upgrade`, `v2_import` and `v2_replay`.
+   `v2_replay` truncates the control tables before it replays, and its guard is
+   only a check on the database name. It runs against a separate scratch database
+   with credentials that cannot reach production, never with the production role.
 4. **What still depends on onclappc02 after cutover:** the lake catalog and
    `pg_main`, `nf-etl` (over HTTPS to the new origin), `nf-meta`, publishing, and
    the dashboard container. **Dispatch does not.**
@@ -144,6 +151,16 @@ the source catalog on `pg_main`.
 - **The origin URL is now `run.app`.** Changing it later means updating every
   daemon config and rebuilding the dashboard. The dashboard's baked-in API origin
   (`FRONTEND_API_URL`) and the service's `CORS_ORIGINS` change with it.
+- **Dashboard login does not work across sites as the service stands.** With the
+  dashboard on `cmgd.cancerdatasci.org` and the API on `run.app`, the browser
+  drops the session cookie: `main.py` sets `SameSite=Lax`, and a cookie scoped to
+  `.cancerdatasci.org` is not accepted from `run.app`. CORS does not fix this.
+  Daemons use bearer tokens and are unaffected. Before the dashboard points at
+  Cloud Run (M8/M9), pick one and test it in a browser: a same-site hostname for
+  the API (a `cancerdatasci.org` name in front of Cloud Run), or a
+  `SameSite=None; Secure` cookie with CSRF protection. The OAuth callback URL
+  changes either way. The dashboard is read-only today (#176), so cutover of
+  dispatch does not wait on this.
 - **A single PS-5 node has no standby.** That is accepted for the scale in 0013
   (3 daemons, about 76k jobs). Revisit if availability matters more.
 - **Docs.** `deploy/onclappc02/README.md` and `deploy/DEPLOY.md` describe the
