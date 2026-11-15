@@ -12,6 +12,7 @@ every registration with an OutputSpec is processed, narrowed by ``--workflow`` /
   nf-etl volumes                                    measured sizes + extrapolations (markdown)
   nf-etl publish --registration W/V [--out DIR]     build a public release into the local store
   nf-etl publish --registration W/V --sync          upload the built dataset to r2:cmgd-public
+  nf-etl bucketed --registration W/V --out DIR      bucketed, sorted tables into a new local directory
   nf-etl mirror  --registration W/V --to zenodo|hf  copy a built release (Zenodo draft / HF repo)
   nf-etl deliver --registration W/V --collection C [--collection ...] --name N [--olm-cache P] [--sync]
                                                     scoped, expiring wide-TSV hand-off (#302)
@@ -144,6 +145,28 @@ def cmd_publish(a) -> None:
     print(f"{m['dataset']} {m['release']} -> {a.out}/{m['dataset']}/{m['release']}: {json.dumps(rows)}")
 
 
+def cmd_bucketed(a) -> None:
+    """Build the bucketed, sorted tables of a registration into a new local directory
+    (etl/bucketed.py). Reads the lake; writes nothing outside --out."""
+    from cdsci.lake import lake_connect  # type: ignore[import-untyped]
+
+    from . import bucketed
+
+    workflow_id, version = publish.parse_registration(a.registration)
+    with httpx.Client(timeout=60) as client:
+        reg = next((r for r in v2.registrations(client)
+                    if (r.workflow_id, r.version) == (workflow_id, version)), None)
+        jobs = v2.completed_jobs(client, reg) if reg else []
+    con = lake_connect(read_only=True)
+    try:
+        m = bucketed.build(con, workflow_id, version, a.out, jobs=jobs, base_url=a.base_url,
+                           bucket_samples=a.bucket_samples, target_bytes=a.target_mb * 1_000_000,
+                           memory_limit=a.memory_limit, threads=a.threads)
+    finally:
+        con.close()
+    print(json.dumps({"samples": m["samples"], **m["build"]}))
+
+
 def cmd_mirror(a) -> None:
     """Copy a built release to Zenodo (as an unpublished draft) or a Hugging Face
     Dataset repo (private unless --public). Never builds; never mints a DOI."""
@@ -219,6 +242,15 @@ def main(argv: list[str] | None = None) -> None:
     pub.add_argument("--remote", default=publish.SYNC_REMOTE)
     pub.add_argument("--dry-run", action="store_true", help="with --sync: print the rclone commands")
 
+    bk = sub.add_parser("bucketed", help="bucketed, sorted release tables into a local directory")
+    bk.add_argument("--registration", required=True, help="<workflow_id>/<version>")
+    bk.add_argument("--out", required=True, help="new or empty local directory")
+    bk.add_argument("--base-url", default=None, help="where --out will be served (default: --out)")
+    bk.add_argument("--bucket-samples", type=int, default=500, help="samples sorted together")
+    bk.add_argument("--target-mb", type=int, default=700, help="approximate file size")
+    bk.add_argument("--memory-limit", default="32GB", help="DuckDB memory_limit")
+    bk.add_argument("--threads", type=int, default=16)
+
     mir = sub.add_parser("mirror", help="copy a built release to Zenodo (draft) or Hugging Face")
     mir.add_argument("--registration", required=True, help="<workflow_id>/<version>")
     mir.add_argument("--release", default=None, help="release id (default: latest.json)")
@@ -248,7 +280,8 @@ def main(argv: list[str] | None = None) -> None:
 
     a = p.parse_args(argv)
     {"status": cmd_status, "ingest": cmd_ingest, "tick": cmd_tick, "parse": cmd_parse,
-     "volumes": cmd_volumes, "publish": cmd_publish, "mirror": cmd_mirror,
+     "volumes": cmd_volumes, "publish": cmd_publish, "bucketed": cmd_bucketed,
+     "mirror": cmd_mirror,
      "deliver": cmd_deliver}[a.cmd](a)
 
 
