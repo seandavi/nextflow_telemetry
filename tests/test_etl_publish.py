@@ -312,6 +312,28 @@ def test_cli_publish_builds_from_the_lake(tmp_path, monkeypatch, capsys):
     assert json.loads((tmp_path / "store" / "cmgd_nextflow-2.2.1" / "latest.json").read_text())["release"]
 
 
+def test_croissant_describes_the_release(public_site):
+    m, rdir = _release(public_site, HUMANN)
+    doc = json.loads((rdir / "croissant.json").read_text())
+    assert doc["conformsTo"] == "http://mlcommons.org/croissant/1.1"
+    assert (doc["version"], doc["url"]) == (m["release"], m["base_url"])  # cMGD's id, not the build date
+    assert doc["license"] == [publish.LICENSE_URLS[publish.CMGD_DATA_LICENSE]] and doc["citeAs"]
+    # one FileObject and one RecordSet per table, with the manifest's URL and checksum
+    files = {f["@id"]: f for f in doc["distribution"]}
+    assert {(f["contentUrl"], f["sha256"]) for f in files.values()} == {
+        (f"{m['base_url']}/{t['path']}", t["sha256"]) for t in m["tables"]}
+    sets = {rs["name"]: {f["name"]: f for f in rs["field"]} for rs in doc["recordSet"]}
+    assert set(sets) == {f"main.{t['name']}" for t in m["tables"]}
+    assert sets["main.taxonomic_profile_metaphlan"]["relative_abundance"]["description"].endswith("(percent)")
+    # sample_key joins every table to the samples hub
+    assert sets["main.qc_metrics"]["sample_key"]["references"] == {"field": {"@id": "main.samples/sample_key"}}
+    assert "references" not in sets["main.samples"]["sample_key"]
+    # and the release page embeds it for dataset search
+    page = (rdir / "index.html").read_text()
+    embedded = page.split('<script type="application/ld+json">')[1].split("</script>")[0]
+    assert json.loads(embedded) == doc and "croissant.json" in page
+
+
 def test_samples_table_provenance_and_site(public_site):
     m, rdir = _release(public_site, HUMANN)
     samples = duckdb.sql(f"SELECT study_name, count(DISTINCT readset_id) FROM read_parquet("

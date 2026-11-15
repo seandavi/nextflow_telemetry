@@ -34,6 +34,8 @@ https://cmgd-public.cancerdatasci.org/
     releases.json                     every release, oldest first
     <release>/
       manifest.json                   tables: path, row count, bytes, sha256, columns and types, licence
+      croissant.json                  the same tables as Croissant 1.1 JSON-LD (MLCommons), for
+                                      dataset search and tools that read Croissant
       cmgd.duckdb                     DuckDB database: one view per table over the Parquet below
       views.sql, restore.sql          the same views as SQL; a local copy with a row-count check
       README.md                       table and column documentation
