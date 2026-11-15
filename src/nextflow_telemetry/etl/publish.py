@@ -41,6 +41,7 @@ from pathlib import Path
 import duckdb
 from cdsci.lake.contracts import ColumnContract, DatasetContract, TableContract, TemporalModel  # type: ignore[import-untyped]
 from cdsci.lake.contracts_render import render_dataset_markdown  # type: ignore[import-untyped]
+from cdsci.publish import croissant  # type: ignore[import-untyped]
 from cdsci.publish import publish as build_bundle  # type: ignore[import-untyped]
 
 from . import export, lake, site
@@ -59,6 +60,11 @@ POINTER_SPEC_VERSION = "2.0"
 _RELEASE_ID = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:\.([2-9]|[1-9]\d+))?$")
 # Every published table carries it (schema.json, README.md, manifest).
 CMGD_DATA_LICENSE = "CC0-1.0"
+# SPDX id -> the licence URL croissant.json carries (schema.org wants a URL).
+LICENSE_URLS = {"CC0-1.0": "https://creativecommons.org/publicdomain/zero/1.0/",
+                "CC-BY-4.0": "https://creativecommons.org/licenses/by/4.0/"}
+KEYWORDS = ["metagenomics", "microbiome", "shotgun sequencing", "taxonomic profile",
+            "MetaPhlAn", "HUMAnN", "curatedMetagenomicData"]
 # Public HTTPS base of cmgd-raw for gene-family download URLs. No default: until
 # it is set, genefamilies/index.json carries object keys and url = null.
 # Production: https://cmgd-raw.cancerdatasci.org (public since 2026-10-08, monode#53).
@@ -510,6 +516,38 @@ def cmgd_manifest(manifest: dict, contract: DatasetContract, release: str) -> di
     return manifest
 
 
+def croissant_doc(manifest: dict, contract: DatasetContract, release_url: str) -> dict:
+    """The release's ``croissant.json`` (Croissant 1.1 JSON-LD, ``cdsci.publish.croissant``)
+    from the finished cMGD manifest, so ``version`` is cMGD's release id. The manifest
+    stays the operational record: Croissant carries no snapshot, commit or provenance.
+
+    Every other table's ``sample_key`` is declared a reference to ``samples``. The
+    dataset licence lists each licence a table carries; which table has which is in
+    the description and in manifest.json."""
+    by_license: dict[str, list[str]] = {}
+    for t in contract.tables.values():
+        by_license.setdefault(t.license, []).append(t.name)
+    description = contract.description
+    if len(by_license) > 1:
+        description += " Licences: " + "; ".join(
+            f"{lic}: {', '.join(sorted(names))}" for lic, names in sorted(by_license.items())) + "."
+    hub = f"{VIEWS_SCHEMA}.{SAMPLES_TABLE}/sample_key"
+    return croissant(
+        manifest,
+        dataset={
+            "name": contract.title, "description": description, "url": release_url,
+            "license": [LICENSE_URLS[lic] for lic in sorted(by_license)],
+            "creator": {"@type": "Organization", "name": contract.publisher},
+            "citeAs": " ".join(CITATION[k] for k in ("cmgd", "olm", "zoe")
+                               if k == "cmgd" or OLM_LICENSE in by_license),
+            "keywords": KEYWORDS,
+        },
+        field_semantics={
+            f"{VIEWS_SCHEMA}.{t.name}": {"sample_key": {"references": {"field": {"@id": hub}}}}
+            for t in contract.tables.values()
+            if t.name != SAMPLES_TABLE and any(c.name == "sample_key" for c in t.columns)})
+
+
 def write_table_index(release_dir: Path, release: str, table: dict, contract: TableContract) -> None:
     """``tables/<table>/files.json`` (the data files with size, sha256 and rows) and
     ``schema.json`` (columns, types, units, descriptions): the documented per-table
@@ -603,6 +641,7 @@ def publish(con: duckdb.DuckDBPyConnection, workflow_id: str, version: str,
         for t in manifest["tables"]:
             write_table_index(bundle, release, t, contract.tables[t["table"]])
         _write_json(bundle / "manifest.json", cmgd_manifest(manifest, contract, release))
+        _write_json(bundle / "croissant.json", croissant_doc(manifest, contract, release_url))
         _write_json(bundle / "provenance.json", {
             "source_asset_versions": [{"ref": r, "version": v} for r, v in sources],
             "cmgd": provenance_block(bundle, workflow_id, version, registration, contract,

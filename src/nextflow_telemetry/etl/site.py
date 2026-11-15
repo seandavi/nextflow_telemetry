@@ -238,7 +238,7 @@ def _files_table(r: Release, prefix: str) -> str:
                          f"{t['row_count']:,}", _size(f["size"]),
                          f'<span class="pill">{escape(t["license"])}</span>',
                          f'<span class="sha">{escape(f["sha256"])}</span>'])
-    for name in ("manifest.json", "provenance.json", "cmgd.duckdb", "README.md",
+    for name in ("manifest.json", "croissant.json", "provenance.json", "cmgd.duckdb", "README.md",
                  "studies/index.json"):
         p = r.dir / name
         if p.exists():
@@ -329,6 +329,11 @@ def write_release_page(release_dir: Path, base: str) -> None:
             f'<span class="pill">{escape(r.release)}</span></h1>'
             f'<p class="lede">{escape(r.manifest.get("description") or "")}</p></header>'
             f"{release_body(r, '')}<h2>How to cite</h2>{_cite(r)}")
+    croissant = release_dir / "croissant.json"
+    if croissant.exists():
+        # Dataset search engines read JSON-LD from the page, not from a linked file.
+        body += ('<script type="application/ld+json">'
+                 + croissant.read_text().replace("</", "<\\/") + "</script>")
     (release_dir / "index.html").write_text(PAGE.substitute(
         title=escape(f"{r.dataset} {r.release} · curatedMetagenomicData"),
         description=escape(f"curatedMetagenomicData release {r.dataset} {r.release}"),
