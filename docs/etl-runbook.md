@@ -165,7 +165,8 @@ Parquet, then runs the shared `cdsci.publish` (cdsci-lake ADR-0027) over it: one
 Parquet file per table, `cmgd.duckdb` (one view per table over the release's public
 Parquet URLs), `views.sql`, `restore.sql` and `manifest.json` with each file's size
 and sha256. `studies/`, `genefamilies/`, `files.json`/`schema.json` per table,
-`provenance.json`, `README.md` and the pages are then written around it, all in a
+`provenance.json`, `croissant.json` (Croissant 1.1, from the manifest), `README.md`
+and the pages are then written around it, all in a
 staging directory under the store; the finished release is moved into
 `<dataset>/<release>/` whole, then `releases.json`/`latest.json` and the dataset's
 entry in the store's root `index.json` are replaced. A failed build leaves no
