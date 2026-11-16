@@ -412,7 +412,9 @@ def _studies(db: duckdb.DuckDBPyConnection, bundle: Path, dataset: str) -> list[
             raise ValueError(f"study name not safe as a path segment: {study!r}")
         d = bundle / "studies" / study
         d.mkdir(parents=True)
-        qc = db.sql(f"SELECT s.*, q.* EXCLUDE ({KEY}, sample_key) FROM {member} m "
+        # pipeline_version and git_commit are on the hub too
+        qc = db.sql(f"SELECT s.*, q.* EXCLUDE ({KEY}, sample_key, pipeline_version, git_commit) "
+                    f"FROM {member} m "
                     f"JOIN {HUB} s USING ({KEY}, sample_key) JOIN qc_metrics q USING ({KEY}, sample_key) "
                     f"ORDER BY {KEY}, sample_key", params={"s": study})
         qc.write_csv(str(d / export.QC_TSV), sep="\t", na_rep="", header=True)

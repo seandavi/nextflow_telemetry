@@ -95,6 +95,7 @@ def test_preview_release_is_its_own_dataset_with_studies_and_croissant(tmp_path)
             assert shared in next(csv.reader(f, delimiter="\t"))
         qc = list(csv.DictReader((rdir / "studies" / study / "qc.tsv").open(), delimiter="\t"))
         assert len(qc) == index[study]["n_samples"] and qc[0]["run_accessions"].startswith("ERR")
+        assert "reads_raw" in qc[0] and not [c for c in qc[0] if c.endswith("_1")]  # no duplicated columns
     assert [f["name"] for f in index["ZellerG_2014"]["files"]] == ["metaphlan_species.tsv.gz", "qc.tsv"]
     # Croissant: every part file listed with its checksum, multi-file tables read through a FileSet
     doc = json.loads((rdir / "croissant.json").read_text())
