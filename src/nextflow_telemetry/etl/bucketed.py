@@ -509,7 +509,7 @@ def _page(m: dict, title: str, studies: list[dict], study: str, croissant_json: 
         '<div class="stats">' + "".join(f'<div class="stat"><b>{v}</b><span>{k}</span></div>'
                                         for v, k in stats) + "</div>"
         "<h2>What changed</h2><ul>" + "".join(
-            "<li>" + re.sub(r"`([^`]+)`", r"<code>\\1</code>", escape(c)) + "</li>"
+            "<li>" + re.sub(r"`([^`]+)`", r"<code>\1</code>", escape(c)) + "</li>"
             for c in _CHANGES) + "</ul>"
         "<h2>Query it over HTTPS</h2>" + "".join(site._pre(s) for s in _snippets(m["base_url"], study))
         + "<h2>Tables and files</h2>"

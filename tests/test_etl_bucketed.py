@@ -109,7 +109,9 @@ def test_preview_release_is_its_own_dataset_with_studies_and_croissant(tmp_path)
         assert all({k: v for k, v in f["source"].items() if k != "extract"} == want for f in fields)
     page = (rdir / "index.html").read_text()
     assert "Preview of the new release layout" in page and "application/ld+json" in page
-    assert "<code>sample_studies</code>" in page and "`" not in page.split("<h2>Query")[0].split("What changed")[1]
+    changed = page.split("<h2>Query")[0].split("What changed")[1]
+    assert "live in <code>sample_studies</code>" not in changed and "lives in <code>sample_studies</code>" in changed
+    assert "`" not in changed and "\\1" not in page
     assert "taxonomic_profile_metaphlan_by_study" in (rdir / "README.md").read_text()
     prov = json.loads((rdir / "provenance.json").read_text())["cmgd"]
     assert prov["registration"]["workflow_id"] == MPA[0] and prov["pipeline_runs"][0]["n_samples"] == 6
