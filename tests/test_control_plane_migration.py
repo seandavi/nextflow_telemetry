@@ -22,9 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from nextflow_telemetry import control_db as c
 from nextflow_telemetry.db import (
     metadata,
-    metadata_assets_tbl,
-    metadata_snapshots_tbl,
-    metadata_sources_tbl,
     submissions_tbl,
 )
 
@@ -337,17 +334,8 @@ def test_daemon_alias_and_curation_constraints(migrated_url: str) -> None:
     _with_connection(migrated_url, check)
 
 
-def test_submission_snapshot_constraints(migrated_url: str) -> None:
+def test_submission_snapshot_is_all_or_none_with_no_catalog_reference(migrated_url: str) -> None:
     async def check(con: AsyncConnection) -> None:
-        await con.execute(insert(metadata_sources_tbl).values(
-            source_id="src", descriptor={}, created_at=NOW, updated_at=NOW))
-        await con.execute(insert(metadata_assets_tbl).values(
-            source_id="src", asset_id="asset", descriptor={}, created_at=NOW, updated_at=NOW))
-        await con.execute(insert(metadata_snapshots_tbl).values(
-            source_id="src", asset_id="asset", version="v1", sha256="0" * 64, size_bytes=1,
-            artifact_uri="r2://x", source_descriptor={}, asset_descriptor={},
-            captured_at=NOW, captured_by="t"))
-
         def submission(sid: str, **kw):
             return insert(submissions_tbl).values(
                 submission_id=sid, method="manual", submitted_by="t", status="succeeded",
@@ -356,11 +344,10 @@ def test_submission_snapshot_constraints(migrated_url: str) -> None:
         await _rejects(con, submission("a", source_snapshot_source_id="src"))
         await _rejects(con, submission(
             "b", source_snapshot_source_id="src", source_snapshot_asset_id="asset"))
-        await _rejects(con, submission(
-            "c", source_snapshot_source_id="src", source_snapshot_asset_id="asset",
-            source_snapshot_version="missing"))
+        # The snapshot lives in the catalog database: any complete triple is accepted.
         await _accepts(con, submission(
             "d", source_snapshot_source_id="src", source_snapshot_asset_id="asset",
             source_snapshot_version="v1"))
+        assert not await _all(con, "select 1 from pg_constraint where conname = 'fk_submissions_source_snapshot'")
 
     _with_connection(migrated_url, check)

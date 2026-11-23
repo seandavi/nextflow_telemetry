@@ -431,10 +431,7 @@ CORS_ORIGINS=https://cmgd.cancerdatasci.org
 Nextflow weblog POSTs and `nf_client.run_wrapper` events are server-to-server and are not
 subject to CORS, so the HPC endpoint does not need to be in the allowlist.
 
-### Legacy: Cloud Run + Cloud SQL (retired May 2026)
+### Cloud Run + PlanetScale
 
-The stack originally ran on Cloud Run (`nf-telemetry`, us-central1) with Cloud SQL and
-Firebase Hosting. That path is retired; the `just build-api` / `deploy-api` /
-`deploy-frontend` recipes, `deploy/cloudrun.yaml`, and `cloudbuild.yaml` remain only for
-historical reference and possible rollback while the GCP resources still exist (teardown
-status tracked in `deploy/onclappc02/README.md`).
+The API image is built by `.github/workflows/image.yml`; running it on Cloud Run against
+PlanetScale Postgres is described in [`deploy/DEPLOY.md`](deploy/DEPLOY.md).

@@ -31,7 +31,8 @@ from .services.deadlines import BACKSTOP_REASON, CLAIM_EXPIRED_REASON, LIVENESS_
 from .services.transitions import RUN_TERMINAL
 from .v2_import import Snapshot, import_snapshot, read_snapshot, to_pg_rows
 
-PRODUCTION_DATABASE = "nf_telemetry"
+# The onclappc02 name and the PlanetScale database name (ADR-0014).
+PRODUCTION_DATABASES = ("nf_telemetry", "nf-telemetry")
 DEADLINE_REASONS = (CLAIM_EXPIRED_REASON, BACKSTOP_REASON, LIVENESS_REASON)
 RUN_FIELDS = ("status", "run_id", "executor_job_id", "wait_seconds", "wrapper_exit_code",
               "last_known_slurm_state", "slurm_reason")
@@ -141,8 +142,8 @@ def main(argv: list[str] | None = None) -> None:
         print("v2 replay: set SQLALCHEMY_URI to a scratch PostgreSQL database", file=sys.stderr)
         raise SystemExit(2)
     uri = uri.replace("postgresql://", "postgresql+asyncpg://", 1)
-    if make_url(uri).database == PRODUCTION_DATABASE:
-        print(f"v2 replay: refusing to replace the control plane of {PRODUCTION_DATABASE}", file=sys.stderr)
+    if make_url(uri).database in PRODUCTION_DATABASES:
+        print(f"v2 replay: refusing to replace the control plane of {make_url(uri).database}", file=sys.stderr)
         raise SystemExit(2)
     try:
         report = asyncio.run(_run(args.before_dir, args.after_dir, args.events_dir, uri))

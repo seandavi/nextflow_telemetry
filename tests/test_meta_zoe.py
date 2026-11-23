@@ -64,6 +64,7 @@ def _capture_all(db_url, tmp_path, files):
     asyncio.run(go())
 
 
+@pytest.mark.usefixtures("catalog_tables")
 def test_load_reads_only_retained_bytes_and_is_idempotent(db_url, tmp_path):
     files = {a: HEADER + f"{c}_1\t40\tF\t22.0\n{c}_2\t41\tM\t\n" for a, (c, _, _) in zoe.COHORTS.items()}
     _capture_all(db_url, tmp_path, files)
@@ -96,6 +97,7 @@ def test_load_reads_only_retained_bytes_and_is_idempotent(db_url, tmp_path):
         con.close()
 
 
+@pytest.mark.usefixtures("catalog_tables")
 def test_load_requires_every_cohort_to_be_captured(db_url, tmp_path):
     _capture_all(db_url, tmp_path, {"p1-metadata": HEADER + "a\t1\tF\t2\n"})
     con = store.connect(Settings(_env_file=None, lake_backend="local",
