@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Cross-repo skills (release, config, pipeline-change, ADRs) live in ../cmgd_home; start sessions there.
+
 ## Commands
 
 ```bash

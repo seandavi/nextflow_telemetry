@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Cross-repo skills (release, config, pipeline-change, ADRs) live in ../cmgd_home; start sessions there.
+
 ## Metadata source catalog
 - `src/nextflow_telemetry/meta/catalog/`: source/asset inventory and immutable
   whole-file snapshots, independent of processing and lake field-value loads.
