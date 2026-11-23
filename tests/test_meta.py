@@ -1,7 +1,9 @@
 """nf-meta: cMD unpivot, readset ids, and the views over a tiny in-memory schema."""
 import csv
+from itertools import permutations
 
 import duckdb
+import pytest
 
 from nextflow_telemetry.meta import store, zoe, zoe_link
 
@@ -87,6 +89,25 @@ def test_views_unpivot_harmonize_and_compare():
     with open(store.HERE / "field_map.csv") as f:
         assert {r["field"] for r in csv.DictReader(f)} == {
             "age_years", "sex", "country", "bmi", "antibiotics_current_use", "health_condition"}
+
+
+@pytest.mark.parametrize("candidates", list(permutations([
+    ("age", "53"), ("age", "54"), ("age_years", "53"),
+])))
+def test_harmonized_ties_do_not_depend_on_input_order(candidates):
+    with duckdb.connect() as con:
+        _base_schema(con)
+        con.execute("DELETE FROM m.cmd_sample_values WHERE field = 'age'")
+        con.execute("INSERT INTO m.field_map VALUES ('cmd', 'age_years', 'age_years', NULL)")
+        for field, value in candidates:
+            con.execute("INSERT INTO m.cmd_sample_values VALUES "
+                        "('cmd', 'abc', 'X_2020', 's1', 'SRR1;SRR2', 'c', ?, ?, NULL, 'Year')",
+                        [field, value])
+        for name, sql in store.views_sql("m").items():
+            con.execute(f"CREATE VIEW m.{name} AS {sql}")
+        assert con.execute("SELECT value, source, release FROM m.sample_harmonized "
+                           "WHERE readset_id = 'RS.x' AND field = 'age_years'").fetchall() == [
+            ("53.0", "cmd", "abc")]
 
 
 def test_views_harmonize_zoe_precedence_sex_and_bmi_flag():

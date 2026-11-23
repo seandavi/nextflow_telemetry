@@ -454,7 +454,7 @@ def views_sql(schema: str = S) -> dict[str, str]:
             FROM t""",
         # One value per (readset, mapped field) from the pinned releases:
         # cmd > zoe > olm R1/R2 (not external.cmd) > olm R3/R4 with confidence >= 0.5.
-        # A value_flag does not demote a value.
+        # A value_flag does not demote a value; ties use source field then value, not scan order.
         "sample_harmonized": f"""
             WITH v AS (
                 SELECT v.*, CASE
@@ -471,7 +471,7 @@ def views_sql(schema: str = S) -> dict[str, str]:
                   WHERE v.rank IS NOT NULL)
             SELECT readset_id, field, value, source, release, route, confidence, value_flag
             FROM r QUALIFY row_number() OVER (PARTITION BY readset_id, field
-                ORDER BY rank, confidence DESC NULLS LAST, sample) = 1""",
+                ORDER BY rank, confidence DESC NULLS LAST, sample, source_field, value) = 1""",
         # Per cMD study x mapped field, pinned releases, Olm's resolved value with
         # (olm_rows = 'all') and without (= 'independent') its external.cmd rows.
         # cMD and Olm samples pair when they share a run; age agrees within 1 year, BMI 0.1.
