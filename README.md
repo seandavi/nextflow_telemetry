@@ -370,6 +370,11 @@ shared Traefik reverse proxy on `cancerdatasci.org`, using the shared `pg_main` 
 cluster (one database per app — this app owns `nf_telemetry`). The migration off Cloud Run
 + Cloud SQL completed in May 2026.
 
+> **Proposed ([ADR 0014](docs/adr/0014-control-plane-on-cloud-run-and-planetscale.md)):** the
+> service moves to Cloud Run (`us-east4`) with a PlanetScale Postgres database at cutover (M8),
+> because onclappc02 can't reach a hosted Postgres. The source catalog, `nf-etl`, `nf-meta` and
+> the dashboard stay on onclappc02. Until then this section describes production.
+
 | Component | Service |
 |-----------|---------|
 | Control plane (v2) | Cloudflare Worker `nf-telemetry.seandavi.workers.dev`, deployed from `cf/` with `npm run deploy` (see [`cf/README.md`](cf/README.md)) |
